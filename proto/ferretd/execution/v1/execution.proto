@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package ferretd.execution.v1;
+
+option go_package = "github.com/MontFerret/ferretd/gen/ferretd/execution/v1;executionv1";
+
+service ExecutionService {
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+}
+
+message CreateSessionRequest {}
+
+message CreateSessionResponse {
+  string session_id = 1;
+}

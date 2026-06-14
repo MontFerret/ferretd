@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package ferretd.debug.v1;
+
+option go_package = "github.com/MontFerret/ferretd/gen/ferretd/debug/v1;debugv1";
+
+service DebugService {
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+}
+
+message GetCapabilitiesRequest {}
+
+message GetCapabilitiesResponse {
+  bool supports_breakpoints = 1;
+}

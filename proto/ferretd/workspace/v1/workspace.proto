@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package ferretd.workspace.v1;
+
+option go_package = "github.com/MontFerret/ferretd/gen/ferretd/workspace/v1;workspacev1";
+
+service WorkspaceService {
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  string version = 1;
+}
