@@ -2,30 +2,32 @@ package source
 
 import "unicode/utf16"
 
-// Position identifies a zero-based position within a source document.
-type Position struct {
-	Line      uint32
-	Character uint32
-}
+type (
+	// Position identifies a zero-based position within a source document.
+	Position struct {
+		Line      uint32
+		Character uint32
+	}
 
-// Range identifies a half-open range within a source document.
-type Range struct {
-	Start Position
-	End   Position
-}
+	// Range identifies a half-open range within a source document.
+	Range struct {
+		Start Position
+		End   Position
+	}
 
-// Span identifies a half-open range using rune offsets.
-//
-// Ferret compiler spans originate from ANTLR's rune-indexed input stream.
-type Span struct {
-	Start int
-	End   int
-}
+	// Span identifies a half-open range using rune offsets.
+	//
+	// Ferret compiler spans originate from ANTLR's rune-indexed input stream.
+	Span struct {
+		Start int
+		End   int
+	}
 
-// Mapper converts rune-indexed source offsets into protocol-neutral positions.
-type Mapper struct {
-	runes []rune
-}
+	// Mapper converts rune-indexed source offsets into protocol-neutral positions.
+	Mapper struct {
+		runes []rune
+	}
+)
 
 // NewMapper creates a source position mapper for text.
 func NewMapper(text string) *Mapper {
@@ -78,8 +80,10 @@ func clamp(value, minValue, maxValue int) int {
 	if value < minValue {
 		return minValue
 	}
+
 	if value > maxValue {
 		return maxValue
 	}
+
 	return value
 }

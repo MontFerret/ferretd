@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package ferretd.daemon.v1;
+
+option go_package = "github.com/MontFerret/ferretd/gen/ferretd/daemon/v1;daemonv1";
+
+service DaemonService {
+  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+}
+
+message ApiVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+message GetInfoRequest {
+  ApiVersion client_api = 1;
+}
+
+message ServerInfo {
+  string version = 1;
+  string instance_id = 2;
+  ApiVersion api_version = 3;
+}
+
+message GetInfoResponse {
+  ServerInfo server_info = 1;
+}
+
+message ApiCompatibilityError {
+  ApiVersion client_api = 1;
+  ApiVersion server_api = 2;
+}
+
+message ShutdownRequest {}
+
+message ShutdownResponse {}

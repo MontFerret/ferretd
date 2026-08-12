@@ -9,8 +9,9 @@ This file is the canonical operating guide for coding agents working in this rep
 * `ferretd` is the experimental long-running developer service for Ferret.
 * The current executable provides `serve`, `lsp`, and version/help behavior.
 * The current language server tracks open `.fql` documents and publishes Ferret parser and compiler diagnostics over LSP stdio.
-* The daemon, workspace, execution-session, and debug-session packages are initial ownership boundaries, not complete implementations.
-* The protobuf files under `proto/ferretd/` are placeholder versioned contracts. There are no generated protobuf packages, gRPC servers, or configured protobuf generation workflow yet.
+* `serve` exposes daemon information, API negotiation, graceful shutdown, and process-local workspace lifecycle over a local gRPC transport.
+* The workspace manager is implemented; execution-session and debug-session packages remain boundary placeholders.
+* Buf generates the implemented daemon/workspace protobuf and gRPC packages under `gen/`. Execution/debug protobufs remain ungenerated placeholders.
 * Ferret remains the owner of FQL parsing, compilation, runtime semantics, VM execution, and core debugging behavior.
 
 Do not infer implemented behavior from architecture diagrams, placeholder service definitions, future-facing type names, or historical discussion. Current source, tests, dependency contracts, and build configuration are authoritative.
@@ -29,14 +30,15 @@ editor or language client
     -> LSP diagnostics notification
 ```
 
-The current daemon flow is only a lifecycle skeleton:
+The current daemon flow is:
 
 ```text
 ferretd serve
     -> internal/daemon
-    -> constructed workspace, language, execution, debug, and LSP services
-    -> wait for context cancellation
-    -> idempotent stop
+    -> internal/transport local listener
+    -> internal/grpc DaemonService, WorkspaceService, and health
+    -> protocol-neutral workspace manager
+    -> signal, RPC, or context-triggered graceful shutdown
 ```
 
 The intended longer-term architecture is:
@@ -52,13 +54,16 @@ Agents should reason about changes by ownership boundary:
 
 * `cmd/ferretd` owns process startup, command parsing, process-facing output, signal handling, and top-level service wiring.
 * `internal/daemon` owns long-running service lifecycle and coordination.
+* `internal/grpc` owns gRPC translation and health behavior, not daemon domain state.
+* `internal/transport` owns default endpoint discovery and Unix-socket/named-pipe I/O.
 * `internal/lsp` owns LSP translation and transport behavior, not language semantics.
 * `internal/language` owns protocol-neutral open-document state and language-service behavior built on Ferret.
 * `internal/source` owns protocol-neutral source locations, file-URI conversion, and source-position conversion.
 * `internal/workspace` owns workspace state as that capability is implemented.
 * `internal/exec` owns execution-session coordination as that capability is implemented.
 * `internal/debug` owns debug-session coordination as that capability is implemented.
-* `proto/ferretd` owns the source definitions for future versioned daemon RPC contracts.
+* `client` owns the supported Go client, compatibility negotiation, and public error classification.
+* `proto/ferretd` owns versioned daemon RPC source contracts; `gen/` is checked-in generated output.
 * The Ferret dependency owns parsing, compilation, diagnostics primitives, runtime semantics, VM execution, and core debugging machinery.
 
 Protocol adapters should translate and delegate. They must not become alternate owners of language, execution, workspace, or debugging behavior.
@@ -78,7 +83,10 @@ Protocol adapters should translate and delegate. They must not become alternate 
 * Shared service state must remain safe for concurrent callers. Do not bypass or leak mutable state protected by service synchronization.
 * Context cancellation must remain effective at process and service boundaries. Long-running operations must not outlive their owning context without an explicit lifecycle reason.
 * Daemon shutdown must remain safe after cancellation and `Stop` must remain idempotent.
-* Placeholder protobuf declarations do not imply that gRPC transport, generated clients, generated servers, or service behavior exists.
+* The daemon remains local-only: Unix sockets or Windows named pipes, permission-restricted to the current user, with no TCP, TLS, or remote mode.
+* API major mismatch is rejected; minor versions are additive. Workspace state survives client disconnects but not daemon restarts.
+* Workspace roots are existing absolute directories, cleaned without resolving symlinks; repeated opens converge and closes are idempotent.
+* Execution/debug placeholder protobuf declarations do not imply generated clients, servers, or service behavior.
 * Current package names, protobuf package names, `go_package` values, service versions, CLI behavior, and LSP wire behavior are compatibility-sensitive.
 * Preserve existing behavior unless the task explicitly changes it. Do not implement future architecture as a side effect of an unrelated change.
 
@@ -90,7 +98,7 @@ Begin with the package that owns the requested behavior. Do not move logic into 
 
 * `cmd/ferretd`
     * Owns the `ferretd` process, Cobra command tree, version output, help behavior, signal-aware root context, and composition of top-level services.
-    * `serve` starts the daemon lifecycle skeleton and waits for cancellation.
+    * `serve` starts the local gRPC daemon and supports explicit `--endpoint` selection.
     * `lsp` starts the language server over stdin and stdout.
     * Keep command parsing and process-facing error context here.
     * Preserve protocol-pure stdout for `lsp`.
@@ -101,8 +109,8 @@ Begin with the package that owns the requested behavior. Do not move logic into 
 * `internal/daemon`
     * Owns construction and lifecycle coordination for the services that make up `ferretd`.
     * Keep orchestration thin and delegate behavior to the owning service.
-    * `Start` currently waits for context cancellation; do not describe it as a network server until one is implemented.
-    * `Stop` is idempotent. Future lifecycle work must account for partial startup, cancellation, shutdown ordering, repeated stop calls, and cleanup failures.
+    * `Start` listens and serves until context cancellation, RPC shutdown, explicit stop, or transport failure.
+    * `Stop` marks health unavailable, drains or force-stops RPCs, clears workspaces, closes the listener, and remains idempotent.
 
 ### Protocol-neutral language service
 
@@ -138,8 +146,9 @@ Begin with the package that owns the requested behavior. Do not move logic into 
 ### Workspace, execution, and debug services
 
 * `internal/workspace`
-    * Is the future owner of workspace state and lifecycle.
-    * The current manager is a boundary placeholder and has no implemented workspace behavior.
+    * Owns concurrency-safe, process-local workspace identity and lifecycle.
+    * Canonicalizes with `filepath.Abs` at the public client boundary and `filepath.Clean` at the service boundary; it deliberately does not resolve symlinks.
+    * Returns value snapshots, keeps state independent of connections, sorts lists by root, and treats repeated open/close operations as convergent.
 * `internal/exec`
     * Is the future owner of Ferret execution-session coordination.
     * Ferret remains the owner of compilation, runtime semantics, and VM execution.
@@ -154,13 +163,15 @@ Do not add speculative abstractions to placeholder packages. Add state, interfac
 ### Protobuf contracts
 
 * `proto/ferretd/workspace/v1`
-    * Contains the placeholder `WorkspaceService` v1 source contract.
+    * Contains the implemented `WorkspaceService` v1 source contract.
+* `proto/ferretd/daemon/v1`
+    * Contains the implemented `DaemonService` v1 source contract and compatibility detail.
 * `proto/ferretd/execution/v1`
     * Contains the placeholder `ExecutionService` v1 source contract.
 * `proto/ferretd/debug/v1`
     * Contains the placeholder `DebugService` v1 source contract.
 
-These `.proto` files establish package names, Go package locations, service names, and initial message shapes. There is currently no `gen/` tree, protobuf dependency, generation target, checked-in generated output, or gRPC server. A task that activates protobuf generation must deliberately introduce pinned tooling, generation commands, generated-file ownership, build integration, tests, and CI validation. Do not hand-create files that pretend to be generated output.
+Buf v2 configuration at the repository root pins generation through `make generate`; checked-in output belongs under `gen/` and must never be edited manually. `make proto-lint` validates all source contracts, while generation intentionally targets only daemon/workspace v1. Keep execution/debug ungenerated until their services are implemented.
 
 ### Documentation, tooling, and release scripts
 
@@ -187,23 +198,24 @@ Currently implemented:
 
 * Cobra-based `serve`, `lsp`, help, and version behavior;
 * signal-aware process cancellation;
-* construction of daemon service boundaries;
-* placeholder daemon start/stop lifecycle;
+* local Unix-socket and Windows named-pipe gRPC serving;
+* API v1.0 negotiation, daemon information, health, and graceful shutdown;
+* supported Go client discovery, dialing, negotiation, and error classification;
+* concurrency-safe, process-local workspace open/get/list/close behavior;
 * LSP over stdio;
 * open, full-document change, and close notifications;
 * in-memory open-document snapshots and version checks;
 * Ferret parser/compiler diagnostics for open documents;
 * source-span to UTF-16 range conversion;
-* placeholder protobuf source contracts.
+* pinned protobuf generation for daemon/workspace v1;
+* placeholder execution/debug protobuf source contracts.
 
 Not currently implemented:
 
-* gRPC transport or generated protobuf clients and servers;
-* protobuf generation tooling;
 * DAP transport;
 * execution-session behavior;
 * debug-session behavior;
-* durable or multi-root workspace management;
+* durable workspace persistence or eviction;
 * module resolution;
 * document loading from disk;
 * incremental document synchronization;
@@ -349,6 +361,7 @@ type (
 		Message  string
 		Severity DiagnosticSeverity
 	}
+	
 	RelatedInformation struct {
 		Message string
 	}
@@ -668,10 +681,13 @@ Run commands from the repository root.
 * Format Go code: `make fmt`
 * Run the broad local build gate: `make build`
 * Install lint and formatting tools: `make install-tools`
+* Generate daemon/workspace protobuf code: `make generate`
+* Lint all protobuf sources: `make proto-lint`
+* Verify checked-in generated code: `make check-generate`
 
 `make build` runs vet, lint, tests, and compilation. It therefore requires `staticcheck`, `revive`, and the normal Go toolchain in addition to project dependencies.
 
-There is currently no `make generate` target and no configured protobuf generation command. Do not claim generation succeeded or run an invented command. Introduce a reproducible generation workflow only as part of a task that implements protobuf tooling.
+`make generate` uses the pinned Buf CLI and pinned Go protobuf plugins declared by the repository. It intentionally generates only implemented daemon/workspace contracts. Always inspect generated diffs and run `make check-generate` when contracts or generation configuration change.
 
 `make fmt` mutates Go files. Use it only when formatting changes are within task scope, and inspect the resulting diff for unrelated churn.
 
@@ -709,8 +725,7 @@ Never claim tests, lint, builds, benchmarks, generation, or review succeeded unl
 * Preserve unrelated dirty or untracked files.
 * Keep the diff focused on the requested behavior.
 * Do not update dependencies unless the task requires a dependency change.
-* Do not edit generated output manually if a generation workflow is introduced later.
-* Do not create a `gen/` tree before protobuf tooling and ownership are deliberately configured.
+* Do not edit files under `gen/` manually; update protobuf sources/configuration and regenerate.
 * Do not add protocol, session, workspace, or debug abstractions for hypothetical future use.
 * Avoid changing CLI, LSP, or protobuf contracts as collateral cleanup.
 * Keep documentation statements precise about current versus planned support.
@@ -724,7 +739,7 @@ Update repository documentation when a change affects user-visible or integratio
 * Update `docs/lsp.md` for editor setup, LSP capabilities, synchronization, or language features.
 * Update `docs/architecture.md` for ownership boundaries or intended service relationships.
 * Keep implemented behavior and future plans clearly separated.
-* Do not document placeholder protobuf services as running endpoints.
+* Do not document execution/debug placeholder protobuf services as running endpoints.
 * Keep examples consistent with actual command names, arguments, and transport behavior.
 
 Documentation synchronization is part of a behavior change when existing documentation would otherwise become incorrect. It does not authorize unrelated documentation cleanup.

@@ -5,10 +5,10 @@
 language tooling, workspaces, execution sessions, and debug sessions for CLI,
 Lab, and editor integrations.
 
-The repository contains the initial service boundaries and an experimental
-language server that publishes Ferret compiler diagnostics. The Ferret VM,
-compiler, runtime, and language semantics remain owned by the main Ferret
-project.
+The repository contains a local gRPC daemon with process-local workspace state,
+a supported Go client, and an experimental language server that publishes
+Ferret compiler diagnostics. The Ferret VM, compiler, runtime, and language
+semantics remain owned by the main Ferret project.
 
 ## Build
 
@@ -31,6 +31,7 @@ make build VERSION=v0.1.0
 make test
 make lint
 make generate
+make proto-lint
 ```
 
 ## Commands
@@ -38,23 +39,50 @@ make generate
 ```sh
 ./bin/ferretd --version
 ./bin/ferretd serve
+./bin/ferretd serve --endpoint unix:///tmp/ferretd.sock
 ./bin/ferretd lsp
 ```
 
-`serve` starts the placeholder daemon and waits for an interrupt. `lsp` starts
-the experimental language server over stdin and stdout.
+`serve` starts the local daemon and waits for an interrupt or a `Shutdown` RPC.
+It uses `$XDG_RUNTIME_DIR/ferret/ferretd.sock` on macOS and Linux, falling back
+to the user cache directory, and `\\.\pipe\ferretd` on Windows. Explicit local
+endpoints use `unix:///absolute/path` or `npipe:////./pipe/name`; TCP is not
+supported. Daemon logs go to stderr.
+
+The supported Go client discovers the default endpoint, performs API
+compatibility negotiation, and exposes daemon and workspace operations:
+
+```go
+c, err := client.Dial(ctx)
+if err != nil {
+	return err
+}
+defer c.Close()
+
+info, err := c.Info(ctx)
+workspace, err := c.Workspaces().Open(ctx, projectRoot)
+```
+
+Workspace state is in memory for the daemon process. Reopening the same cleaned
+absolute root returns the same workspace ID, closing a client connection does
+not close its workspaces, and `Close` is explicit and idempotent.
+
+`lsp` continues to start the experimental language server over stdin and
+stdout independently of the daemon.
 
 ## Current Status
 
-The language server supports opening, changing, and closing `.fql` documents
-with full-document synchronization. It publishes parser and compiler
-diagnostics for open documents. Other language features, DAP, gRPC serving,
-protobuf generation, execution sessions, debug sessions, and module resolution
-are not implemented yet.
+The daemon exposes versioned `DaemonService` and `WorkspaceService` APIs over a
+permission-restricted local transport, plus the standard gRPC health service.
+The checked-in Go code under `gen/` is generated from `proto/` with pinned Buf
+and protobuf tools. Execution and debug protobufs remain ungenerated
+placeholders.
 
-The placeholder protobuf contracts under `proto/` establish package names and
-service versions. Protobuf and gRPC tooling will be introduced in a follow-up
-change before generated clients or servers are needed.
+The language server supports opening, changing, and closing `.fql` documents
+with full-document synchronization and publishes parser and compiler
+diagnostics. Execution sessions, debug sessions, DAP, module resolution,
+workspace persistence, remote daemon operation, and LSP-over-gRPC are not
+implemented.
 
 See [docs/architecture.md](docs/architecture.md) for the intended architecture
 and [docs/lsp.md](docs/lsp.md) for experimental editor setup.
