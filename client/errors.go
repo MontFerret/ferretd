@@ -65,11 +65,7 @@ func mapError(ctx context.Context, err error) error {
 			}
 		}
 
-		return fmt.Errorf("%w: %s", ErrIncompatibleAPI, grpcStatus.Message())
-	case codes.InvalidArgument:
-		return fmt.Errorf("%w: %s", ErrInvalidWorkspaceRoot, grpcStatus.Message())
-	case codes.NotFound:
-		return fmt.Errorf("%w: %s", ErrWorkspaceNotFound, grpcStatus.Message())
+		return err
 	case codes.Unavailable:
 		return fmt.Errorf("%w: %s", ErrDaemonUnavailable, grpcStatus.Message())
 	default:

@@ -31,7 +31,7 @@ func (m *Manager) Open(ctx context.Context, root string) (Workspace, error) {
 		return Workspace{}, err
 	}
 
-	canonical, key, err := canonicalRoot(root)
+	canonical, err := canonicalRoot(root)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -41,7 +41,7 @@ func (m *Manager) Open(ctx context.Context, root string) (Workspace, error) {
 	}
 
 	m.mu.RLock()
-	if id, ok := m.byRoot[key]; ok {
+	if id, ok := m.byRoot[canonical]; ok {
 		result := m.byID[id]
 		m.mu.RUnlock()
 
@@ -63,7 +63,7 @@ func (m *Manager) Open(ctx context.Context, root string) (Workspace, error) {
 		return Workspace{}, err
 	}
 
-	if id, ok := m.byRoot[key]; ok {
+	if id, ok := m.byRoot[canonical]; ok {
 		return m.byID[id], nil
 	}
 
@@ -72,7 +72,7 @@ func (m *Manager) Open(ctx context.Context, root string) (Workspace, error) {
 		Root: canonical,
 	}
 	m.byID[result.ID] = result
-	m.byRoot[key] = result.ID
+	m.byRoot[canonical] = result.ID
 
 	return result, nil
 }
@@ -133,7 +133,7 @@ func (m *Manager) Close(ctx context.Context, id ID) error {
 	}
 
 	delete(m.byID, id)
-	delete(m.byRoot, rootKey(item.Root))
+	delete(m.byRoot, item.Root)
 
 	return nil
 }

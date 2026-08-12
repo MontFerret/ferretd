@@ -14,10 +14,12 @@ import (
 func testClientEndpoint(t *testing.T) client.Endpoint {
 	t.Helper()
 
-	return client.Endpoint{
-		Network: "npipe",
-		Address: fmt.Sprintf(`\\.\pipe\ferretd-test-%d`, time.Now().UnixNano()),
+	endpoint, err := client.ParseEndpoint(fmt.Sprintf("npipe:////./pipe/ferretd-test-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatalf("ParseEndpoint: %v", err)
 	}
+
+	return endpoint
 }
 
 func assertEndpointRemoved(t *testing.T, endpoint client.Endpoint) {

@@ -26,7 +26,7 @@ func (c *WorkspaceClient) Open(ctx context.Context, root string) (Workspace, err
 
 	response, err := c.client.Open(ctx, &workspacev1.OpenRequest{Root: filepath.Clean(absolute)})
 	if err != nil {
-		return Workspace{}, mapError(ctx, err)
+		return Workspace{}, mapWorkspaceOpenError(ctx, err)
 	}
 
 	if response == nil {
@@ -42,7 +42,7 @@ func (c *WorkspaceClient) Get(ctx context.Context, id string) (Workspace, error)
 		Id: &workspacev1.WorkspaceId{Value: id},
 	})
 	if err != nil {
-		return Workspace{}, mapError(ctx, err)
+		return Workspace{}, mapWorkspaceGetError(ctx, err)
 	}
 
 	if response == nil {

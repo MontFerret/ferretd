@@ -45,7 +45,11 @@ func Dial(ctx context.Context, options ...Option) (*Client, error) {
 		return nil, err
 	}
 
-	transportEndpoint := endpoint.transportEndpoint()
+	transportEndpoint, err := endpoint.transportEndpoint()
+	if err != nil {
+		return nil, err
+	}
+
 	connection, err := grpc.NewClient(
 		"passthrough:///ferretd",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),

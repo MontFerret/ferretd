@@ -135,23 +135,46 @@ func TestServeStopsOnCancellation(t *testing.T) {
 
 func TestServeEndToEnd(t *testing.T) {
 	endpoint := testClientEndpoint(t)
-	done := make(chan error, 1)
+	serveCtx, cancelServe := context.WithCancel(context.Background())
+	serveDone := make(chan struct{})
+	var serveErr error
+
 	go func() {
-		_, err := executeCommand(
-			context.Background(),
+		defer close(serveDone)
+
+		_, serveErr = executeCommand(
+			serveCtx,
 			"test-version",
 			"serve",
 			"--endpoint",
 			endpoint.String(),
 		)
-		done <- err
 	}()
 
+	t.Cleanup(func() {
+		cancelServe()
+
+		select {
+		case <-serveDone:
+			if serveErr != nil {
+				t.Errorf("execute serve during cleanup: %v", serveErr)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("serve did not stop during cleanup")
+		}
+
+		assertEndpointRemoved(t, endpoint)
+	})
+
 	connection := waitForClient(t, endpoint)
+	firstConnection := connection
+	t.Cleanup(func() { _ = firstConnection.Close() })
+
 	info, err := connection.Info(context.Background())
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
+
 	if info.Version != "test-version" || info.InstanceID == "" || info.APIVersion != (client.APIVersion{Major: 1}) {
 		t.Fatalf("server info = %#v", info)
 	}
@@ -171,35 +194,46 @@ func TestServeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
+
 	second, err := connection.Workspaces().Open(context.Background(), root+string(os.PathSeparator))
 	if err != nil {
 		t.Fatalf("second Open: %v", err)
 	}
+
 	if first != second {
 		t.Fatalf("workspaces differ: %#v != %#v", first, second)
 	}
+
 	if err := connection.Close(); err != nil {
 		t.Fatalf("Close client: %v", err)
 	}
 
 	connection = waitForClient(t, endpoint)
+	secondConnection := connection
+	t.Cleanup(func() { _ = secondConnection.Close() })
+
 	items, err := connection.Workspaces().List(context.Background())
 	if err != nil || len(items) != 1 || items[0] != first {
 		t.Fatalf("List after reconnect = %#v, %v", items, err)
 	}
+
 	got, err := connection.Workspaces().Get(context.Background(), first.ID)
 	if err != nil || got != first {
 		t.Fatalf("Get = %#v, %v; want %#v", got, err, first)
 	}
+
 	if err := connection.Workspaces().Close(context.Background(), first.ID); err != nil {
 		t.Fatalf("Close workspace: %v", err)
 	}
+
 	if err := connection.Workspaces().Close(context.Background(), first.ID); err != nil {
 		t.Fatalf("idempotent Close workspace: %v", err)
 	}
+
 	if _, err := connection.Workspaces().Get(context.Background(), first.ID); !errors.Is(err, client.ErrWorkspaceNotFound) {
 		t.Fatalf("Get closed error = %v, want ErrWorkspaceNotFound", err)
 	}
+
 	items, err = connection.Workspaces().List(context.Background())
 	if err != nil || len(items) != 0 {
 		t.Fatalf("List after close = %#v, %v", items, err)
@@ -214,9 +248,9 @@ func TestServeEndToEnd(t *testing.T) {
 	_ = connection.Close()
 
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("execute serve: %v", err)
+	case <-serveDone:
+		if serveErr != nil {
+			t.Fatalf("execute serve: %v", serveErr)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("serve did not stop after Shutdown RPC")

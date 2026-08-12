@@ -30,6 +30,7 @@ func TestMapCompatibilityError(t *testing.T) {
 	if !errors.As(mapped, &compatibility) {
 		t.Fatalf("mapError type = %T, want IncompatibleAPIError", mapped)
 	}
+
 	if compatibility.Client.Major != 2 || compatibility.Server.Major != 1 {
 		t.Fatalf("compatibility = %#v", compatibility)
 	}
@@ -44,6 +45,52 @@ func TestMapErrorPreservesContextIdentity(t *testing.T) {
 	}
 }
 
+func TestMapErrorClassifiesGenericFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		code codes.Code
+		want error
+	}{
+		{name: "canceled", code: codes.Canceled, want: context.Canceled},
+		{name: "deadline", code: codes.DeadlineExceeded, want: context.DeadlineExceeded},
+		{name: "unavailable", code: codes.Unavailable, want: ErrDaemonUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mapped := mapError(context.Background(), status.Error(tt.code, tt.name))
+			if !errors.Is(mapped, tt.want) {
+				t.Fatalf("mapError = %v, want %v", mapped, tt.want)
+			}
+		})
+	}
+}
+
+func TestMapErrorLeavesAmbiguousCodesUnclassified(t *testing.T) {
+	tests := []struct {
+		name      string
+		code      codes.Code
+		notWanted error
+	}{
+		{name: "invalid argument", code: codes.InvalidArgument, notWanted: ErrInvalidWorkspaceRoot},
+		{name: "not found", code: codes.NotFound, notWanted: ErrWorkspaceNotFound},
+		{name: "failed precondition", code: codes.FailedPrecondition, notWanted: ErrIncompatibleAPI},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mapped := mapError(context.Background(), status.Error(tt.code, tt.name))
+			if errors.Is(mapped, tt.notWanted) {
+				t.Fatalf("mapError = %v, did not want %v", mapped, tt.notWanted)
+			}
+
+			if status.Code(mapped) != tt.code {
+				t.Fatalf("mapError code = %v, want %v", status.Code(mapped), tt.code)
+			}
+		})
+	}
+}
+
 func TestDialPreservesPreCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -52,6 +99,7 @@ func TestDialPreservesPreCanceledContext(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Dial error = %v, want context.Canceled", err)
 	}
+
 	if errors.Is(err, ErrDaemonUnavailable) {
 		t.Fatalf("Dial error = %v, did not attempt a daemon connection", err)
 	}

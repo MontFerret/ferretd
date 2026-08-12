@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,16 +21,26 @@ func testClientEndpoint(t *testing.T) client.Endpoint {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(directory) })
 
-	return client.Endpoint{
-		Network: "unix",
-		Address: filepath.Join(directory, "ferretd.sock"),
+	endpoint, err := client.ParseEndpoint((&url.URL{
+		Scheme: "unix",
+		Path:   filepath.Join(directory, "ferretd.sock"),
+	}).String())
+	if err != nil {
+		t.Fatalf("ParseEndpoint: %v", err)
 	}
+
+	return endpoint
 }
 
 func assertEndpointRemoved(t *testing.T, endpoint client.Endpoint) {
 	t.Helper()
 
-	if _, err := os.Lstat(endpoint.Address); !errors.Is(err, os.ErrNotExist) {
+	parsed, err := url.Parse(endpoint.String())
+	if err != nil {
+		t.Fatalf("parse endpoint URL: %v", err)
+	}
+
+	if _, err := os.Lstat(parsed.Path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("endpoint remains after shutdown: %v", err)
 	}
 }

@@ -8,8 +8,7 @@ import (
 
 // Endpoint identifies a local daemon transport.
 type Endpoint struct {
-	Network string
-	Address string
+	value string
 }
 
 // Discover returns the deterministic endpoint for the current user.
@@ -34,13 +33,18 @@ func ParseEndpoint(value string) (Endpoint, error) {
 
 // String returns the endpoint's URL form.
 func (e Endpoint) String() string {
-	return e.transportEndpoint().String()
+	return e.value
 }
 
-func (e Endpoint) transportEndpoint() transport.Endpoint {
-	return transport.Endpoint{Network: e.Network, Address: e.Address}
+func (e Endpoint) transportEndpoint() (transport.Endpoint, error) {
+	endpoint, err := transport.ParseEndpoint(e.value)
+	if err != nil {
+		return transport.Endpoint{}, fmt.Errorf("%w: %v", ErrInvalidEndpoint, err)
+	}
+
+	return endpoint, nil
 }
 
 func fromTransportEndpoint(endpoint transport.Endpoint) Endpoint {
-	return Endpoint{Network: endpoint.Network, Address: endpoint.Address}
+	return Endpoint{value: endpoint.String()}
 }
