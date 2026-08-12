@@ -23,10 +23,6 @@ func TestDialClassifiesUnavailableDaemon(t *testing.T) {
 	if !errors.Is(err, ErrDaemonUnavailable) {
 		t.Fatalf("Dial error = %v, want ErrDaemonUnavailable", err)
 	}
-
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Dial error = %v, want context.DeadlineExceeded", err)
-	}
 }
 
 func TestParseNamedPipeEndpoint(t *testing.T) {

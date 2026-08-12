@@ -179,11 +179,16 @@ func TestServeEndToEnd(t *testing.T) {
 		t.Fatalf("server info = %#v", info)
 	}
 
-	root := t.TempDir()
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get working directory: %v", err)
 	}
+
+	root, err := os.MkdirTemp(cwd, "ferretd-workspace-")
+	if err != nil {
+		t.Fatalf("create workspace root: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
 
 	relativeRoot, err := filepath.Rel(cwd, root)
 	if err != nil {
