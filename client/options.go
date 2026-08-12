@@ -10,12 +10,11 @@ type dialOptions struct {
 // WithEndpoint selects an explicit endpoint instead of discovery.
 func WithEndpoint(endpoint Endpoint) Option {
 	return func(options *dialOptions) error {
-		parsed, err := ParseEndpoint(endpoint.String())
-		if err != nil {
-			return err
+		if endpoint.value == "" {
+			return ErrInvalidEndpoint
 		}
 
-		options.endpoint = &parsed
+		options.endpoint = &endpoint
 
 		return nil
 	}
