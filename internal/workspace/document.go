@@ -10,7 +10,9 @@ import (
 	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 )
 
-// Document is an immutable daemon source snapshot for a discovered file.
+// Document is a daemon-owned source snapshot for a discovered file. Source and
+// diagnostic accessors return copies; retained parser state is shared and must
+// be treated as read-only by visitors.
 type Document struct {
 	file        File
 	revision    uint64

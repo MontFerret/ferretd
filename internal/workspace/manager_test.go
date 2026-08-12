@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -286,6 +287,135 @@ func TestCanceledWaiterDoesNotCancelOwner(t *testing.T) {
 	close(release)
 	if workspace := <-ownerDone; workspace == nil || workspace.State() != StateReady {
 		t.Fatalf("owner workspace = %#v", workspace)
+	}
+}
+
+func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
+	type openResult struct {
+		workspace *Workspace
+		err       error
+	}
+
+	manager := New()
+	root := t.TempDir()
+	canonical := filepath.Clean(root)
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	var attemptsMu sync.Mutex
+	var roots []string
+
+	manager.load = func(ctx context.Context, root string) (workspaceContent, error) {
+		attemptsMu.Lock()
+		roots = append(roots, root)
+		attempt := len(roots)
+		attemptsMu.Unlock()
+
+		switch attempt {
+		case 1:
+			close(firstStarted)
+			<-ctx.Done()
+
+			return workspaceContent{}, ctx.Err()
+		case 2:
+			close(secondStarted)
+
+			return workspaceContent{documents: make(map[string]Document)}, nil
+		default:
+			return workspaceContent{}, errors.New("unexpected load attempt")
+		}
+	}
+
+	ownerCtx, cancelOwner := context.WithCancel(context.Background())
+	t.Cleanup(cancelOwner)
+	ownerDone := make(chan error, 1)
+	go func() {
+		_, err := manager.Open(ownerCtx, root)
+		ownerDone <- err
+	}()
+	<-firstStarted
+
+	waiterBaseCtx, cancelWaiter := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancelWaiter)
+	waiterCtx := newObservedDoneContext(waiterBaseCtx)
+	waiterDone := make(chan openResult, 1)
+	go func() {
+		workspace, err := manager.Open(waiterCtx, root+string(filepath.Separator))
+		waiterDone <- openResult{workspace: workspace, err: err}
+	}()
+	select {
+	case <-waiterCtx.observed:
+	case result := <-waiterDone:
+		t.Fatalf("waiter Open finished before waiting: %v", result.err)
+	}
+
+	cancelOwner()
+	ownerErr := <-ownerDone
+	if !errors.Is(ownerErr, ErrLoad) || !errors.Is(ownerErr, context.Canceled) {
+		t.Fatalf("owner Open error = %v, want ErrLoad and context.Canceled", ownerErr)
+	}
+
+	var waiterResult openResult
+	select {
+	case waiterResult = <-waiterDone:
+	case <-waiterBaseCtx.Done():
+		t.Fatalf("waiter Open did not finish: %v", waiterBaseCtx.Err())
+	}
+	if waiterResult.err != nil {
+		t.Fatalf("waiter Open: %v", waiterResult.err)
+	}
+	if waiterResult.workspace == nil || waiterResult.workspace.State() != StateReady {
+		t.Fatalf("waiter workspace = %#v", waiterResult.workspace)
+	}
+	select {
+	case <-secondStarted:
+	default:
+		t.Fatal("waiter did not become the second loader")
+	}
+
+	attemptsMu.Lock()
+	loadedRoots := append([]string(nil), roots...)
+	attemptsMu.Unlock()
+	if len(loadedRoots) != 2 {
+		t.Fatalf("workspace loads = %d, want 2", len(loadedRoots))
+	}
+	for index, loadedRoot := range loadedRoots {
+		if loadedRoot != canonical {
+			t.Fatalf("load %d root = %q, want %q", index+1, loadedRoot, canonical)
+		}
+	}
+
+	items, err := manager.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 || items[0] != waiterResult.workspace {
+		t.Fatalf("List = %#v, want only waiter workspace", items)
+	}
+
+	manager.mu.RLock()
+	openingCount := len(manager.opening)
+	workspaceCount := len(manager.byID)
+	rootCount := len(manager.byRoot)
+	retainedID := manager.byRoot[canonical]
+	manager.mu.RUnlock()
+	if openingCount != 0 {
+		t.Fatalf("opening workspaces = %d, want 0", openingCount)
+	}
+	if workspaceCount != 1 || rootCount != 1 || retainedID != waiterResult.workspace.ID() {
+		t.Fatalf(
+			"retained workspace IDs = %d, roots = %d, root ID = %q",
+			workspaceCount,
+			rootCount,
+			retainedID,
+		)
+	}
+
+	got, err := manager.Get(context.Background(), waiterResult.workspace.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != waiterResult.workspace {
+		t.Fatalf("Get = %#v, want %#v", got, waiterResult.workspace)
 	}
 }
 

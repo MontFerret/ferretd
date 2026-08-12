@@ -155,7 +155,7 @@ Begin with the package that owns the requested behavior. Do not move logic into 
     * Owns concurrency-safe, process-local workspace identity, lifecycle, discovery, files, daemon documents, source snapshots, and retained Ferret syntax state.
     * Canonicalizes with `filepath.Abs` at the public client boundary and `filepath.Clean` at the service boundary; it deliberately does not resolve symlinks.
     * Coordinates duplicate in-flight opens without holding manager locks across I/O or parsing and publishes only successfully loaded workspaces.
-    * Returns immutable snapshots, keeps state independent of connections, sorts lists and documents deterministically, and treats repeated open/close operations as convergent.
+    * Returns copies of files, sources, and diagnostics; retained parser state remains shared daemon-owned state that visitors must treat as read-only. State remains independent of connections, lists and documents are sorted deterministically, and repeated open/close operations are convergent.
     * Uses Ferret source/parser/diagnostic APIs for syntax state. It does not compile documents or own Ferret semantic behavior.
 * `internal/exec`
     * Is the future owner of Ferret execution-session coordination.

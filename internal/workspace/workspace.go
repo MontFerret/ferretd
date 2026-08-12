@@ -103,7 +103,7 @@ func (w *Workspace) Files() []File {
 	return result
 }
 
-// Documents returns deterministic immutable document snapshots.
+// Documents returns deterministic daemon-owned document snapshots.
 func (w *Workspace) Documents() []Document {
 	if w == nil {
 		return nil

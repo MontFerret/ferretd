@@ -3,6 +3,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -57,17 +58,30 @@ func (m *Manager) Open(ctx context.Context, root string) (*Workspace, error) {
 	}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		existing, opening := m.find(canonical)
 		if existing != nil {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-
 			return existing, nil
 		}
 
 		if opening != nil {
-			return m.waitForOpen(ctx, opening)
+			workspace, err := m.waitForOpen(ctx, opening)
+			if err == nil {
+				return workspace, nil
+			}
+
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+
+			return nil, err
 		}
 
 		candidateUUID, err := uuid.NewRandom()
