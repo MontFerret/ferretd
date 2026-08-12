@@ -32,11 +32,11 @@ func TestOpenUsesCasePreservingLexicalIdentity(t *testing.T) {
 		t.Fatalf("Open case-variant root: %v", err)
 	}
 
-	if first.ID == second.ID {
-		t.Fatalf("case-variant roots share workspace ID %q", first.ID)
+	if first.ID() == second.ID() {
+		t.Fatalf("case-variant roots share workspace ID %q", first.ID())
 	}
 
-	if first.Root != filepath.Clean(root) || second.Root != filepath.Clean(alternate) {
-		t.Fatalf("workspace roots = %q and %q, want lexical inputs", first.Root, second.Root)
+	if first.Root() != filepath.Clean(root) || second.Root() != filepath.Clean(alternate) {
+		t.Fatalf("workspace roots = %q and %q, want lexical inputs", first.Root(), second.Root())
 	}
 }
