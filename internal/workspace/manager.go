@@ -11,6 +11,16 @@ import (
 )
 
 type (
+	// Manager owns concurrency-safe, process-local workspace state.
+	Manager struct {
+		mu         sync.RWMutex
+		byID       map[ID]*Workspace
+		byRoot     map[string]ID
+		opening    map[string]*openOperation
+		load       loadWorkspaceFunc
+		generation uint64
+	}
+
 	loadWorkspaceFunc func(context.Context, string) (workspaceContent, error)
 
 	openOperation struct {
@@ -20,16 +30,6 @@ type (
 		err        error
 	}
 )
-
-// Manager owns concurrency-safe, process-local workspace state.
-type Manager struct {
-	mu         sync.RWMutex
-	byID       map[ID]*Workspace
-	byRoot     map[string]ID
-	opening    map[string]*openOperation
-	load       loadWorkspaceFunc
-	generation uint64
-}
 
 // New creates a workspace manager.
 func New() *Manager {

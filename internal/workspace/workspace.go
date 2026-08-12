@@ -6,11 +6,26 @@ import (
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
 )
 
-// ID is an opaque workspace identifier.
-type ID string
+type (
+	// ID is an opaque workspace identifier.
+	ID string
 
-// State identifies the current workspace lifecycle state.
-type State uint8
+	// State identifies the current workspace lifecycle state.
+	State uint8
+
+	// Workspace is the daemon-owned source state for a canonical root.
+	Workspace struct {
+		mu sync.RWMutex
+
+		id        ID
+		root      string
+		state     State
+		failure   error
+		files     []File
+		documents map[string]Document
+		order     []string
+	}
+)
 
 const (
 	// StateOpening identifies a workspace whose initial source load is running.
@@ -22,19 +37,6 @@ const (
 	// StateClosed identifies a workspace whose retained source state was released.
 	StateClosed
 )
-
-// Workspace is the daemon-owned source state for a canonical root.
-type Workspace struct {
-	mu sync.RWMutex
-
-	id        ID
-	root      string
-	state     State
-	failure   error
-	files     []File
-	documents map[string]Document
-	order     []string
-}
 
 func newWorkspace(id ID, root string) *Workspace {
 	return &Workspace{
