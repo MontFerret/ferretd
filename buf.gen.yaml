@@ -1,0 +1,24 @@
+version: v2
+clean: true
+
+inputs:
+  - directory: .
+    paths:
+      - proto/ferretd/daemon/v1/daemon.proto
+      - proto/ferretd/workspace/v1/workspace.proto
+
+plugins:
+  - local:
+      - go
+      - run
+      - google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+    out: gen
+    opt:
+      - paths=source_relative
+  - local:
+      - go
+      - run
+      - google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+    out: gen
+    opt:
+      - paths=source_relative

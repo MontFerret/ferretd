@@ -5,11 +5,45 @@ package ferretd.workspace.v1;
 option go_package = "github.com/MontFerret/ferretd/gen/ferretd/workspace/v1;workspacev1";
 
 service WorkspaceService {
-  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+  rpc Open(OpenRequest) returns (OpenResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc Close(CloseRequest) returns (CloseResponse);
 }
 
-message GetVersionRequest {}
-
-message GetVersionResponse {
-  string version = 1;
+message WorkspaceId {
+  string value = 1;
 }
+
+message Workspace {
+  WorkspaceId id = 1;
+  string root = 2;
+}
+
+message OpenRequest {
+  string root = 1;
+}
+
+message OpenResponse {
+  Workspace workspace = 1;
+}
+
+message GetRequest {
+  WorkspaceId id = 1;
+}
+
+message GetResponse {
+  Workspace workspace = 1;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Workspace workspaces = 1;
+}
+
+message CloseRequest {
+  WorkspaceId id = 1;
+}
+
+message CloseResponse {}

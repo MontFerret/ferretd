@@ -3,43 +3,249 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"sync"
+
+	"github.com/google/uuid"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
+	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
 	"github.com/MontFerret/ferretd/internal/language"
 	"github.com/MontFerret/ferretd/internal/lsp"
+	"github.com/MontFerret/ferretd/internal/transport"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// Daemon owns the services that make up ferretd.
-type Daemon struct {
-	workspaces *workspace.Manager
-	language   *language.Service
-	execution  *exec.SessionManager
-	debug      *debug.SessionManager
-	lsp        *lsp.Server
-}
+type (
+	// Options configures a daemon instance.
+	Options struct {
+		Version  string
+		Endpoint transport.Endpoint
+		Logger   *slog.Logger
+	}
+
+	// Daemon owns the services and lifecycle that make up ferretd.
+	Daemon struct {
+		workspaces *workspace.Manager
+		language   *language.Service
+		execution  *exec.SessionManager
+		debug      *debug.SessionManager
+		lsp        *lsp.Server
+		rpc        *grpcadapter.Server
+
+		endpoint transport.Endpoint
+		version  string
+		logger   *slog.Logger
+		shutdown chan struct{}
+		stopDone chan struct{}
+
+		mu           sync.Mutex
+		state        lifecycleState
+		listener     net.Listener
+		stopErr      error
+		shutdownOnce sync.Once
+	}
+)
 
 // New constructs a daemon and its service boundaries.
-func New() (*Daemon, error) {
-	languageService := language.New()
+func New(options Options) (*Daemon, error) {
+	endpoint := options.Endpoint
+	if endpoint == (transport.Endpoint{}) {
+		var err error
+		endpoint, err = transport.DefaultEndpoint()
+		if err != nil {
+			return nil, fmt.Errorf("resolve daemon endpoint: %w", err)
+		}
+	}
 
-	return &Daemon{
+	version := options.Version
+	if version == "" {
+		version = "dev"
+	}
+
+	logger := options.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+
+	languageService := language.New()
+	instanceID, err := uuid.NewRandom()
+	if err != nil {
+		return nil, fmt.Errorf("generate daemon instance ID: %w", err)
+	}
+
+	result := &Daemon{
 		workspaces: workspace.New(),
 		language:   languageService,
 		execution:  exec.New(),
 		debug:      debug.New(),
 		lsp:        lsp.New(languageService),
-	}, nil
+		endpoint:   endpoint,
+		version:    version,
+		logger:     logger,
+		shutdown:   make(chan struct{}),
+		stopDone:   make(chan struct{}),
+		state:      stateNew,
+	}
+	result.rpc = grpcadapter.New(result.workspaces, version, instanceID.String(), result.requestShutdown)
+
+	return result, nil
 }
 
-// Start runs the daemon until the context is canceled.
+// Start serves the daemon until cancellation, RPC shutdown, or transport failure.
 func (d *Daemon) Start(ctx context.Context) error {
-	<-ctx.Done()
-	return nil
+	if ctx.Err() != nil {
+		return nil
+	}
+
+	d.mu.Lock()
+	if d.state != stateNew {
+		d.mu.Unlock()
+
+		return errors.New("daemon has already been started")
+	}
+	d.state = stateStarting
+	d.mu.Unlock()
+
+	listener, err := transport.Listen(d.endpoint)
+	if err != nil {
+		d.finishStartupFailure()
+
+		return fmt.Errorf("listen for daemon connections: %w", err)
+	}
+
+	d.mu.Lock()
+	if d.state == stateStopping {
+		d.mu.Unlock()
+
+		closeErr := listener.Close()
+		d.workspaces.Clear()
+		d.finishStop(closeErr)
+
+		return nil
+	}
+
+	d.listener = listener
+	d.state = stateRunning
+	d.rpc.SetServing()
+	d.mu.Unlock()
+
+	d.logger.Info("ferretd started", "endpoint", d.endpoint.String(), "version", d.version)
+
+	serveDone := make(chan error, 1)
+	go func() {
+		serveDone <- d.rpc.Serve(listener)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-d.shutdown:
+		return nil
+	case serveErr := <-serveDone:
+		if serveErr == nil || grpcadapter.IsStoppedError(serveErr) {
+			return nil
+		}
+
+		return fmt.Errorf("serve gRPC: %w", serveErr)
+	}
 }
 
-// Stop stops the daemon. It is safe to call more than once.
-func (d *Daemon) Stop(context.Context) error {
-	return nil
+// Stop gracefully stops the daemon. It is safe to call more than once.
+func (d *Daemon) Stop(ctx context.Context) error {
+	d.mu.Lock()
+	switch d.state {
+	case stateNew:
+		d.state = stateStopped
+		d.workspaces.Clear()
+		close(d.stopDone)
+		d.mu.Unlock()
+
+		return nil
+	case stateStarting:
+		d.state = stateStopping
+		stopDone := d.stopDone
+		d.mu.Unlock()
+
+		return d.waitForStop(ctx, stopDone)
+	case stateRunning:
+		d.state = stateStopping
+		listener := d.listener
+		d.mu.Unlock()
+
+		d.rpc.SetNotServing()
+		stopErr := d.rpc.Stop(ctx)
+		d.workspaces.Clear()
+		closeErr := listener.Close()
+		d.finishStop(errors.Join(stopErr, closeErr))
+
+		return d.stopResult()
+	case stateStopping:
+		stopDone := d.stopDone
+		d.mu.Unlock()
+
+		return d.waitForStop(ctx, stopDone)
+	case stateStopped:
+		result := d.stopErr
+		d.mu.Unlock()
+
+		return result
+	default:
+		d.mu.Unlock()
+
+		return errors.New("invalid daemon lifecycle state")
+	}
+}
+
+func (d *Daemon) requestShutdown() {
+	d.shutdownOnce.Do(func() {
+		close(d.shutdown)
+	})
+}
+
+func (d *Daemon) finishStartupFailure() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.state = stateStopped
+	close(d.stopDone)
+}
+
+func (d *Daemon) finishStop(err error) {
+	d.mu.Lock()
+	if d.state == stateStopped {
+		d.mu.Unlock()
+
+		return
+	}
+
+	d.stopErr = err
+	d.state = stateStopped
+	close(d.stopDone)
+	d.mu.Unlock()
+
+	if err != nil {
+		d.logger.Error("ferretd shutdown failed", "error", err)
+	}
+}
+
+func (d *Daemon) stopResult() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.stopErr
+}
+
+func (d *Daemon) waitForStop(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return d.stopResult()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

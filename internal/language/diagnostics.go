@@ -12,30 +12,32 @@ import (
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
-// DiagnosticSeverity identifies the importance of a diagnostic.
-type DiagnosticSeverity uint8
+type (
+	// DiagnosticSeverity identifies the importance of a diagnostic.
+	DiagnosticSeverity uint8
+
+	// Diagnostic describes a protocol-neutral source problem.
+	Diagnostic struct {
+		Message            string
+		Severity           DiagnosticSeverity
+		Range              source.Range
+		Source             string
+		Code               string
+		RelatedInformation []RelatedInformation
+	}
+
+	// RelatedInformation describes a source location related to a diagnostic.
+	RelatedInformation struct {
+		URI     string
+		Range   source.Range
+		Message string
+	}
+)
 
 const (
 	// DiagnosticSeverityError identifies a compilation error.
 	DiagnosticSeverityError DiagnosticSeverity = 1
 )
-
-// Diagnostic describes a protocol-neutral source problem.
-type Diagnostic struct {
-	Message            string
-	Severity           DiagnosticSeverity
-	Range              source.Range
-	Source             string
-	Code               string
-	RelatedInformation []RelatedInformation
-}
-
-// RelatedInformation describes a source location related to a diagnostic.
-type RelatedInformation struct {
-	URI     string
-	Range   source.Range
-	Message string
-}
 
 // Diagnostics compiles an open document snapshot and returns its diagnostics.
 func (s *Service) Diagnostics(ctx context.Context, uri string) ([]Diagnostic, error) {
@@ -55,6 +57,7 @@ func (s *Service) Diagnostics(ctx context.Context, uri string) ([]Diagnostic, er
 
 	mapper := source.NewMapper(document.Text)
 	diagnostics := extractFerretDiagnostics(err)
+
 	if len(diagnostics) == 0 {
 		return []Diagnostic{{
 			Message:  err.Error(),
@@ -105,16 +108,20 @@ func convertFerretDiagnostic(uri string, mapper *source.Mapper, diagnostic *ferr
 	}
 
 	var primary *ferretdiagnostics.ErrorSpan
+
 	for i := range diagnostic.Spans {
 		span := &diagnostic.Spans[i]
 		if span.Main {
 			primary = span
+
 			break
 		}
 	}
+
 	if primary == nil && len(diagnostic.Spans) > 0 {
 		primary = &diagnostic.Spans[0]
 	}
+
 	if primary != nil {
 		result.Range = mapper.SpanToRange(toSourceSpan(primary.Span))
 	}
@@ -128,6 +135,7 @@ func convertFerretDiagnostic(uri string, mapper *source.Mapper, diagnostic *ferr
 		if message == "" {
 			message = "Related location"
 		}
+
 		result.RelatedInformation = append(result.RelatedInformation, RelatedInformation{
 			URI:     uri,
 			Range:   mapper.SpanToRange(toSourceSpan(span.Span)),
@@ -143,9 +151,11 @@ func diagnosticMessage(diagnostic *ferretdiagnostics.Diagnostic) string {
 	if diagnostic.Hint != "" {
 		parts = append(parts, "Hint: "+diagnostic.Hint)
 	}
+
 	if diagnostic.Note != "" {
 		parts = append(parts, "Note: "+diagnostic.Note)
 	}
+
 	return strings.Join(parts, "\n\n")
 }
 

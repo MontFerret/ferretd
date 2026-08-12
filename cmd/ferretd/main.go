@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,6 +16,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/daemon"
 	"github.com/MontFerret/ferretd/internal/language"
 	"github.com/MontFerret/ferretd/internal/lsp"
+	"github.com/MontFerret/ferretd/internal/transport"
 )
 
 var version = "dev"
@@ -54,14 +57,7 @@ func newRootCommand(version string) *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 
 	root.AddCommand(
-		&cobra.Command{
-			Use:   "serve",
-			Short: "Start the daemon and wait for an interrupt",
-			Args:  cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, _ []string) error {
-				return serve(cmd.Context())
-			},
-		},
+		newServeCommand(version),
 		&cobra.Command{
 			Use:   "lsp",
 			Short: "Start the language server over stdio",
@@ -75,6 +71,22 @@ func newRootCommand(version string) *cobra.Command {
 	return root
 }
 
+func newServeCommand(version string) *cobra.Command {
+	var endpointValue string
+
+	command := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the local daemon",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return serve(cmd.Context(), version, endpointValue, cmd.ErrOrStderr())
+		},
+	}
+	command.Flags().StringVar(&endpointValue, "endpoint", "", "local endpoint URL")
+
+	return command
+}
+
 func serveLSP(ctx context.Context) error {
 	server := lsp.New(language.New())
 	if err := server.Run(ctx); err != nil {
@@ -83,21 +95,38 @@ func serveLSP(ctx context.Context) error {
 	return nil
 }
 
-func serve(ctx context.Context) error {
-	d, err := daemon.New()
+func serve(ctx context.Context, version, endpointValue string, stderr io.Writer) error {
+	var endpoint transport.Endpoint
+	if endpointValue != "" {
+		var err error
+		endpoint, err = transport.ParseEndpoint(endpointValue)
+		if err != nil {
+			return fmt.Errorf("parse daemon endpoint: %w", err)
+		}
+	}
+
+	logger := slog.New(slog.NewTextHandler(stderr, nil))
+	d, err := daemon.New(daemon.Options{
+		Version:  version,
+		Endpoint: endpoint,
+		Logger:   logger,
+	})
 	if err != nil {
 		return fmt.Errorf("create daemon: %w", err)
 	}
 
-	if err := d.Start(ctx); err != nil {
-		return fmt.Errorf("start daemon: %w", err)
-	}
+	startErr := d.Start(ctx)
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := d.Stop(stopCtx); err != nil {
-		return fmt.Errorf("stop daemon: %w", err)
+	stopErr := d.Stop(stopCtx)
+	if startErr != nil {
+		return fmt.Errorf("start daemon: %w", startErr)
+	}
+
+	if stopErr != nil {
+		return fmt.Errorf("stop daemon: %w", stopErr)
 	}
 
 	return nil

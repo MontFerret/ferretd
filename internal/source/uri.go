@@ -19,12 +19,15 @@ func URIToPath(uri string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse URI: %w", err)
 	}
+
 	if !strings.EqualFold(parsed.Scheme, "file") {
 		return "", fmt.Errorf("unsupported URI scheme %q", parsed.Scheme)
 	}
+
 	if parsed.Host != "" && !strings.EqualFold(parsed.Host, "localhost") {
 		return "", fmt.Errorf("unsupported file URI host %q", parsed.Host)
 	}
+
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", errors.New("file URI must not contain a query or fragment")
 	}
@@ -33,6 +36,7 @@ func URIToPath(uri string) (string, error) {
 	if runtime.GOOS == "windows" && len(path) >= 3 && path[0] == '/' && path[2] == ':' {
 		path = path[1:]
 	}
+
 	if path == "" {
 		return "", errors.New("file URI path is empty")
 	}

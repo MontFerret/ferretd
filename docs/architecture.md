@@ -7,9 +7,9 @@ tooling:
 ferretd
 ├── LSP adapter
 ├── gRPC daemon API
+│   ├── DaemonService
 │   ├── WorkspaceService
-│   ├── ExecutionService
-│   └── DebugService
+│   └── standard health service
 ├── language service
 ├── workspace manager
 ├── execution session manager
@@ -18,20 +18,29 @@ ferretd
 
 ## Responsibilities
 
-The daemon owns lifecycle and coordination. The workspace manager will own
-workspace state, while the protocol-neutral language service will provide
-language features to protocol adapters and other integrations. Execution and
-debug session managers will coordinate sessions backed by the main Ferret
-project.
+The daemon owns local listener, gRPC, service-health, and graceful-shutdown
+lifecycle. It listens on a permission-restricted Unix socket on macOS/Linux or
+a current-user named pipe on Windows. The workspace manager owns
+concurrency-safe, process-local workspace identity and state. The
+protocol-neutral language service provides language features to protocol
+adapters and other integrations. Execution and debug session managers remain
+placeholders for future Ferret-backed sessions.
 
 LSP and future DAP support are protocol adapters. They should translate
 protocol messages and delegate to shared language, workspace, execution, and
 debug services. Protocol adapters must not own core language or debugging
 behavior.
 
-The gRPC daemon API will expose versioned Ferret-specific services. The initial
-contracts under `proto/ferretd/` establish package names only; generation and
-server behavior are intentionally deferred.
+The versioned gRPC API currently exposes daemon information, API-major
+compatibility negotiation, shutdown, and idempotent workspace open/get/list/
+close operations. `internal/grpc` translates these wire contracts and delegates
+workspace behavior to `internal/workspace`; it does not own workspace state.
+The supported top-level `client` package hides generated protobuf clients and
+centralizes discovery, dialing, negotiation, and error classification.
+
+Buf generates only the implemented daemon and workspace v1 contracts into
+`gen/`. Execution and debug protobuf source files remain ungenerated
+placeholders until those capabilities are implemented.
 
 ## Boundaries
 
