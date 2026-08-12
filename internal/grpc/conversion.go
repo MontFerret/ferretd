@@ -17,6 +17,8 @@ func toStatusError(err error) error {
 		return status.FromContextError(err).Err()
 	case errors.Is(err, workspace.ErrInvalidRoot):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, workspace.ErrLoad):
+		return status.Error(codes.Internal, "workspace load failed")
 	case errors.Is(err, workspace.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	default:
@@ -24,9 +26,9 @@ func toStatusError(err error) error {
 	}
 }
 
-func toProtoWorkspace(value workspace.Workspace) *workspacev1.Workspace {
+func toProtoWorkspace(value *workspace.Workspace) *workspacev1.Workspace {
 	return &workspacev1.Workspace{
-		Id:   &workspacev1.WorkspaceId{Value: string(value.ID)},
-		Root: value.Root,
+		Id:   &workspacev1.WorkspaceId{Value: string(value.ID())},
+		Root: value.Root(),
 	}
 }

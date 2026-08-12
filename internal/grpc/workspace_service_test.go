@@ -2,7 +2,10 @@ package grpc
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -16,6 +19,9 @@ func TestWorkspaceServiceDelegatesLifecycle(t *testing.T) {
 	manager := workspace.New()
 	service := newWorkspaceService(manager)
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "query.fql"), []byte("RETURN 1"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	opened, err := service.Open(context.Background(), &workspacev1.OpenRequest{Root: root})
 	if err != nil {
@@ -23,6 +29,13 @@ func TestWorkspaceServiceDelegatesLifecycle(t *testing.T) {
 	}
 	if opened.Workspace.Root != filepath.Clean(root) || opened.Workspace.Id.Value == "" {
 		t.Fatalf("workspace = %#v", opened.Workspace)
+	}
+	domain, err := manager.Get(context.Background(), workspace.ID(opened.Workspace.Id.Value))
+	if err != nil {
+		t.Fatalf("manager Get: %v", err)
+	}
+	if documents := domain.Documents(); len(documents) != 1 || documents[0].Content() != "RETURN 1" {
+		t.Fatalf("retained documents = %#v", documents)
 	}
 
 	got, err := service.Get(context.Background(), &workspacev1.GetRequest{Id: opened.Workspace.Id})
@@ -54,5 +67,18 @@ func TestWorkspaceServiceMapsInvalidRoot(t *testing.T) {
 	_, err := service.Open(context.Background(), &workspacev1.OpenRequest{Root: "relative"})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("Open code = %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestWorkspaceLoadFailureIsSanitized(t *testing.T) {
+	err := toStatusError(fmt.Errorf("%w: private filesystem detail", workspace.ErrLoad))
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("load code = %v, want Internal", status.Code(err))
+	}
+	if status.Convert(err).Message() != "workspace load failed" {
+		t.Fatalf("load message = %q, want sanitized message", status.Convert(err).Message())
+	}
+	if strings.Contains(err.Error(), "private filesystem detail") {
+		t.Fatalf("load error leaked cause: %v", err)
 	}
 }

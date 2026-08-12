@@ -10,7 +10,8 @@ This file is the canonical operating guide for coding agents working in this rep
 * The current executable provides `serve`, `lsp`, and version/help behavior.
 * The current language server tracks open `.fql` documents and publishes Ferret parser and compiler diagnostics over LSP stdio.
 * `serve` exposes daemon information, API negotiation, graceful shutdown, and process-local workspace lifecycle over a local gRPC transport.
-* The workspace manager is implemented; execution-session and debug-session packages remain boundary placeholders.
+* Opening a workspace synchronously discovers `.fql` files and retains daemon-owned source, syntax state, and document diagnostics until explicit close.
+* The real workspace manager is implemented; execution-session and debug-session packages remain boundary placeholders.
 * Buf generates the implemented daemon/workspace protobuf and gRPC packages under `gen/`. Execution/debug protobufs remain ungenerated placeholders.
 * Ferret remains the owner of FQL parsing, compilation, runtime semantics, VM execution, and core debugging behavior.
 
@@ -38,6 +39,7 @@ ferretd serve
     -> internal/transport local listener
     -> internal/grpc DaemonService, WorkspaceService, and health
     -> protocol-neutral workspace manager
+    -> root-confined source discovery and Ferret syntax parsing
     -> signal, RPC, or context-triggered graceful shutdown
 ```
 
@@ -86,6 +88,10 @@ Protocol adapters should translate and delegate. They must not become alternate 
 * The daemon remains local-only: Unix sockets or Windows named pipes, permission-restricted to the current user, with no TCP, TLS, or remote mode.
 * API major mismatch is rejected; minor versions are additive. Workspace state survives client disconnects but not daemon restarts.
 * Workspace roots are existing absolute directories, cleaned without resolving symlinks; repeated opens converge and closes are idempotent.
+* Workspace loading is synchronous and static. It retains lowercase `.fql` regular files recursively, skips nested symlinks, and requires close/reopen to observe disk changes.
+* `.git`, `.hg`, `.svn`, `node_modules`, and `vendor` directories are pruned during discovery. There is no ignore-file or project-manifest contract.
+* Workspace documents retain source and Ferret syntax state only. Compilation, semantic validation, bytecode, execution state, editor overlays, and filesystem watching remain separate future capabilities.
+* Document load and syntax diagnostics do not fail an otherwise coherent workspace; fatal root/discovery failures do not leave manager entries.
 * Execution/debug placeholder protobuf declarations do not imply generated clients, servers, or service behavior.
 * Current package names, protobuf package names, `go_package` values, service versions, CLI behavior, and LSP wire behavior are compatibility-sensitive.
 * Preserve existing behavior unless the task explicitly changes it. Do not implement future architecture as a side effect of an unrelated change.
@@ -146,9 +152,11 @@ Begin with the package that owns the requested behavior. Do not move logic into 
 ### Workspace, execution, and debug services
 
 * `internal/workspace`
-    * Owns concurrency-safe, process-local workspace identity and lifecycle.
+    * Owns concurrency-safe, process-local workspace identity, lifecycle, discovery, files, daemon documents, source snapshots, and retained Ferret syntax state.
     * Canonicalizes with `filepath.Abs` at the public client boundary and `filepath.Clean` at the service boundary; it deliberately does not resolve symlinks.
-    * Returns value snapshots, keeps state independent of connections, sorts lists by root, and treats repeated open/close operations as convergent.
+    * Coordinates duplicate in-flight opens without holding manager locks across I/O or parsing and publishes only successfully loaded workspaces.
+    * Returns immutable snapshots, keeps state independent of connections, sorts lists and documents deterministically, and treats repeated open/close operations as convergent.
+    * Uses Ferret source/parser/diagnostic APIs for syntax state. It does not compile documents or own Ferret semantic behavior.
 * `internal/exec`
     * Is the future owner of Ferret execution-session coordination.
     * Ferret remains the owner of compilation, runtime semantics, and VM execution.
@@ -202,6 +210,8 @@ Currently implemented:
 * API v1.0 negotiation, daemon information, health, and graceful shutdown;
 * supported Go client discovery, dialing, negotiation, and error classification;
 * concurrency-safe, process-local workspace open/get/list/close behavior;
+* deterministic root-confined `.fql` discovery with fixed directory exclusions and nested-symlink avoidance;
+* daemon-owned file and document snapshots with source contents, revision, Ferret parse state, and syntax/load diagnostics;
 * LSP over stdio;
 * open, full-document change, and close notifications;
 * in-memory open-document snapshots and version checks;
@@ -217,7 +227,8 @@ Not currently implemented:
 * debug-session behavior;
 * durable workspace persistence or eviction;
 * module resolution;
-* document loading from disk;
+* LSP document loading from daemon workspaces or disk;
+* filesystem watching, editor overlays, automatic reload, and incremental workspace parsing;
 * incremental document synchronization;
 * completion, hover, formatting, navigation, semantic tokens, or code actions.
 
@@ -248,7 +259,9 @@ Do not claim planned capabilities are supported. When implementing one, update t
     * test platform path rules, escaping, Unicode, UTF-16 width, newline forms, and clamping
 * Add workspace behavior:
     * begin in `internal/workspace`
-    * define workspace identity, ownership, lifecycle, and concurrency before exposing it through an adapter
+    * preserve the distinct filesystem-file and daemon-document models
+    * preserve synchronous static loading, root confinement, deterministic ordering, and recoverable document diagnostics unless the task explicitly changes them
+    * define workspace identity, ownership, lifecycle, and concurrency before exposing new behavior through an adapter
 * Add execution sessions:
     * begin in `internal/exec`
     * use Ferret's public embedding/runtime contracts rather than duplicating execution semantics

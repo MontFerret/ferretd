@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
@@ -27,7 +28,7 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 	if first != second {
 		t.Fatalf("workspaces differ: %#v != %#v", first, second)
 	}
-	if _, err := uuid.Parse(string(first.ID)); err != nil {
+	if _, err := uuid.Parse(string(first.ID())); err != nil {
 		t.Fatalf("workspace ID is not a UUID: %v", err)
 	}
 
@@ -40,7 +41,7 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open symlink: %v", err)
 	}
-	if linked.ID == first.ID {
+	if linked.ID() == first.ID() {
 		t.Fatal("symlink root unexpectedly resolved to target identity")
 	}
 }
@@ -101,22 +102,28 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 		t.Fatalf("List = %#v, want alpha then zeta", items)
 	}
 
-	got, err := manager.Get(context.Background(), zeta.ID)
+	got, err := manager.Get(context.Background(), zeta.ID())
 	if err != nil || got != zeta {
 		t.Fatalf("Get = %#v, %v; want %#v", got, err, zeta)
 	}
 
-	if err := manager.Close(context.Background(), zeta.ID); err != nil {
+	if err := manager.Close(context.Background(), zeta.ID()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if err := manager.Close(context.Background(), zeta.ID); err != nil {
+	if zeta.State() != StateClosed {
+		t.Fatalf("closed workspace state = %v, want StateClosed", zeta.State())
+	}
+	if err := manager.Close(context.Background(), zeta.ID()); err != nil {
 		t.Fatalf("idempotent Close: %v", err)
 	}
-	if _, err := manager.Get(context.Background(), zeta.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := manager.Get(context.Background(), zeta.ID()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get closed error = %v, want ErrNotFound", err)
 	}
 
 	manager.Clear()
+	if alpha.State() != StateClosed {
+		t.Fatalf("cleared workspace state = %v, want StateClosed", alpha.State())
+	}
 	items, err = manager.List(context.Background())
 	if err != nil || len(items) != 0 {
 		t.Fatalf("List after Clear = %#v, %v; want empty", items, err)
@@ -126,7 +133,20 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 func TestConcurrentOpenConverges(t *testing.T) {
 	manager := New()
 	root := t.TempDir()
-	results := make(chan Workspace, 32)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var loads atomic.Int32
+
+	manager.load = func(context.Context, string) (workspaceContent, error) {
+		if loads.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+
+		return workspaceContent{documents: make(map[string]Document)}, nil
+	}
+
+	results := make(chan *Workspace, 32)
 	errors := make(chan error, 32)
 
 	var wait sync.WaitGroup
@@ -140,6 +160,8 @@ func TestConcurrentOpenConverges(t *testing.T) {
 			errors <- err
 		}()
 	}
+	<-started
+	close(release)
 	wait.Wait()
 	close(results)
 	close(errors)
@@ -153,11 +175,149 @@ func TestConcurrentOpenConverges(t *testing.T) {
 	var want ID
 	for result := range results {
 		if want == "" {
-			want = result.ID
+			want = result.ID()
 		}
-		if result.ID != want {
-			t.Fatalf("workspace ID = %q, want %q", result.ID, want)
+		if result.ID() != want {
+			t.Fatalf("workspace ID = %q, want %q", result.ID(), want)
 		}
+	}
+	if loads.Load() != 1 {
+		t.Fatalf("workspace loads = %d, want 1", loads.Load())
+	}
+}
+
+func TestOpenTransitionsFromOpeningToReady(t *testing.T) {
+	manager := New()
+	root := t.TempDir()
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	manager.load = func(context.Context, string) (workspaceContent, error) {
+		close(started)
+		<-release
+
+		return workspaceContent{
+			documents: make(map[string]Document),
+		}, nil
+	}
+
+	done := make(chan *Workspace, 1)
+	go func() {
+		workspace, _ := manager.Open(context.Background(), root)
+		done <- workspace
+	}()
+
+	<-started
+	manager.mu.RLock()
+	opening := manager.opening[filepath.Clean(root)].workspace
+	manager.mu.RUnlock()
+	if opening.State() != StateOpening {
+		t.Fatalf("opening state = %v, want StateOpening", opening.State())
+	}
+
+	close(release)
+	ready := <-done
+	if ready != opening || ready.State() != StateReady {
+		t.Fatalf("ready workspace = %#v state %v", ready, ready.State())
+	}
+}
+
+func TestFailedOpenIsClassifiedRemovedAndRetryable(t *testing.T) {
+	manager := New()
+	root := t.TempDir()
+	wantErr := errors.New("discovery failed")
+	var failed *Workspace
+
+	manager.load = func(_ context.Context, canonical string) (workspaceContent, error) {
+		manager.mu.RLock()
+		failed = manager.opening[canonical].workspace
+		manager.mu.RUnlock()
+
+		return workspaceContent{}, wantErr
+	}
+
+	_, err := manager.Open(context.Background(), root)
+	if !errors.Is(err, ErrLoad) || !errors.Is(err, wantErr) {
+		t.Fatalf("Open error = %v, want ErrLoad and cause", err)
+	}
+	if failed.State() != StateFailed || !errors.Is(failed.Failure(), wantErr) {
+		t.Fatalf("failed workspace state = %v, failure = %v", failed.State(), failed.Failure())
+	}
+	if _, err := manager.Get(context.Background(), failed.ID()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get failed error = %v, want ErrNotFound", err)
+	}
+
+	manager.load = loadWorkspace
+	retried, err := manager.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("retry Open: %v", err)
+	}
+	if retried.State() != StateReady || retried.ID() == failed.ID() {
+		t.Fatalf("retried workspace = %#v state %v", retried, retried.State())
+	}
+}
+
+func TestCanceledWaiterDoesNotCancelOwner(t *testing.T) {
+	manager := New()
+	root := t.TempDir()
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	manager.load = func(context.Context, string) (workspaceContent, error) {
+		close(started)
+		<-release
+
+		return workspaceContent{documents: make(map[string]Document)}, nil
+	}
+
+	ownerDone := make(chan *Workspace, 1)
+	go func() {
+		workspace, _ := manager.Open(context.Background(), root)
+		ownerDone <- workspace
+	}()
+	<-started
+
+	waiterCtx, cancelWaiter := context.WithCancel(context.Background())
+	cancelWaiter()
+	if _, err := manager.Open(waiterCtx, root); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiter Open error = %v, want context.Canceled", err)
+	}
+
+	close(release)
+	if workspace := <-ownerDone; workspace == nil || workspace.State() != StateReady {
+		t.Fatalf("owner workspace = %#v", workspace)
+	}
+}
+
+func TestClearPreventsInFlightOpenFromCommitting(t *testing.T) {
+	manager := New()
+	root := t.TempDir()
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	manager.load = func(context.Context, string) (workspaceContent, error) {
+		close(started)
+		<-release
+
+		return workspaceContent{documents: make(map[string]Document)}, nil
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := manager.Open(context.Background(), root)
+		done <- err
+	}()
+	<-started
+
+	manager.Clear()
+	close(release)
+
+	if err := <-done; !errors.Is(err, ErrLoad) {
+		t.Fatalf("in-flight Open error = %v, want ErrLoad", err)
+	}
+	items, err := manager.List(context.Background())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("List after Clear = %#v, %v; want empty", items, err)
 	}
 }
 

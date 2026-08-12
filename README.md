@@ -5,10 +5,10 @@
 language tooling, workspaces, execution sessions, and debug sessions for CLI,
 Lab, and editor integrations.
 
-The repository contains a local gRPC daemon with process-local workspace state,
-a supported Go client, and an experimental language server that publishes
-Ferret compiler diagnostics. The Ferret VM, compiler, runtime, and language
-semantics remain owned by the main Ferret project.
+The repository contains a local gRPC daemon with process-local Ferret source
+workspaces, a supported Go client, and an experimental language server that
+publishes Ferret compiler diagnostics. The Ferret VM, compiler, runtime, and
+language semantics remain owned by the main Ferret project.
 
 ## Build
 
@@ -63,9 +63,16 @@ info, err := c.Info(ctx)
 workspace, err := c.Workspaces().Open(ctx, projectRoot)
 ```
 
+Opening a workspace recursively discovers lowercase `.fql` files, loads their
+contents, and retains daemon-owned documents with Ferret syntax state and
+diagnostics. No Ferret project manifest is required. The initial snapshot is
+static; disk changes require closing and reopening the workspace.
+
 Workspace state is in memory for the daemon process. Reopening the same cleaned
 absolute root returns the same workspace ID, closing a client connection does
-not close its workspaces, and `Close` is explicit and idempotent.
+not close its workspaces, and `Close` is explicit and idempotent. The current
+workspace RPC continues to expose identity and lifecycle operations rather than
+documents or parser internals.
 
 `lsp` continues to start the experimental language server over stdin and
 stdout independently of the daemon.
@@ -78,11 +85,15 @@ The checked-in Go code under `gen/` is generated from `proto/` with pinned Buf
 and protobuf tools. Execution and debug protobufs remain ungenerated
 placeholders.
 
-The language server supports opening, changing, and closing `.fql` documents
-with full-document synchronization and publishes parser and compiler
-diagnostics. Execution sessions, debug sessions, DAP, module resolution,
-workspace persistence, remote daemon operation, and LSP-over-gRPC are not
-implemented.
+Daemon workspaces retain deterministically discovered source files, source
+contents, Ferret parse trees, and syntax diagnostics. The separate language
+server supports opening, changing, and closing `.fql` documents with
+full-document synchronization and publishes parser and compiler diagnostics.
+The language server does not yet consume daemon workspaces.
+
+Execution sessions, debug sessions, DAP, filesystem watching, editor overlays,
+module resolution, workspace persistence, remote daemon operation, and
+LSP-over-gRPC are not implemented.
 
 See [docs/architecture.md](docs/architecture.md) for the intended architecture
 and [docs/lsp.md](docs/lsp.md) for experimental editor setup.
