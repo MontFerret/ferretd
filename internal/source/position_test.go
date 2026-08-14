@@ -12,8 +12,10 @@ func TestMapperOffsetToPosition(t *testing.T) {
 		{name: "ascii", text: "RETURN 1", offset: 7, want: Position{Character: 7}},
 		{name: "multiline", text: "LET x = 1\nRETURN x", offset: 10, want: Position{Line: 1}},
 		{name: "crlf", text: "LET x = 1\r\nRETURN x", offset: 11, want: Position{Line: 1}},
-		{name: "accented", text: "éx", offset: 1, want: Position{Character: 1}},
-		{name: "astral", text: "😀x", offset: 1, want: Position{Character: 2}},
+		{name: "accented boundary", text: "éx", offset: 2, want: Position{Character: 1}},
+		{name: "accented interior clamp", text: "éx", offset: 1, want: Position{}},
+		{name: "astral boundary", text: "😀x", offset: 4, want: Position{Character: 2}},
+		{name: "astral interior clamp", text: "😀x", offset: 2, want: Position{}},
 		{name: "negative clamp", text: "abc", offset: -1, want: Position{}},
 		{name: "upper clamp", text: "abc", offset: 9, want: Position{Character: 3}},
 	}
@@ -30,7 +32,7 @@ func TestMapperOffsetToPosition(t *testing.T) {
 func TestMapperSpanToRange(t *testing.T) {
 	mapper := NewMapper("😀a\nbé")
 
-	got := mapper.SpanToRange(Span{Start: 1, End: 5})
+	got := mapper.SpanToRange(Span{Start: 4, End: 9})
 	want := Range{
 		Start: Position{Character: 2},
 		End:   Position{Line: 1, Character: 2},
@@ -46,5 +48,38 @@ func TestMapperSpanToRange(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("clamped SpanToRange = %#v, want %#v", got, want)
+	}
+}
+
+func TestMapperPositionToOffset(t *testing.T) {
+	mapper := NewMapper("😀a\r\nbé\u2028last")
+	tests := []struct {
+		position Position
+		want     int
+	}{
+		{position: Position{}, want: 0},
+		{position: Position{Character: 1}, want: 0},
+		{position: Position{Character: 2}, want: 4},
+		{position: Position{Character: 99}, want: 5},
+		{position: Position{Line: 1, Character: 1}, want: 8},
+		{position: Position{Line: 2}, want: 13},
+		{position: Position{Line: 99}, want: len(mapper.Text())},
+		{position: Position{Line: ^uint32(0)}, want: len(mapper.Text())},
+	}
+
+	for _, tt := range tests {
+		if got := mapper.PositionToOffset(tt.position); got != tt.want {
+			t.Errorf("PositionToOffset(%#v) = %d, want %d", tt.position, got, tt.want)
+		}
+	}
+}
+
+func TestMapperRoundTripSafeBoundaries(t *testing.T) {
+	mapper := NewMapper("é😀\r\nvalue")
+	for _, offset := range []int{0, 2, 6, 8, 13} {
+		position := mapper.OffsetToPosition(offset)
+		if got := mapper.PositionToOffset(position); got != offset {
+			t.Errorf("offset %d round trip = %d through %#v", offset, got, position)
+		}
 	}
 }

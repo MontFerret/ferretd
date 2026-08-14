@@ -23,16 +23,19 @@ lifecycle. It listens on a permission-restricted Unix socket on macOS/Linux or
 a current-user named pipe on Windows. The workspace manager owns
 concurrency-safe, process-local workspace identity, source discovery, files,
 daemon document snapshots, and retained Ferret syntax state. The
-protocol-neutral language service provides language features to protocol
-adapters and other integrations. Execution and debug session managers remain
-placeholders for future Ferret-backed sessions.
+protocol-neutral language service owns versioned editor overlays, per-document
+analysis scheduling and caching, and Ferret-backed language features for
+protocol adapters and other integrations. Execution and debug session managers
+remain placeholders for future Ferret-backed sessions.
 
 Workspace opening is synchronous. It scans lowercase `.fql` regular files under
 the root, prunes a small fixed set of VCS and dependency directories, skips
 symlinks below the root, and retains per-document source, parse state, and
 syntax diagnostics. A malformed or unreadable document does not prevent other
-documents from loading. The snapshot remains unchanged until explicit close;
-watching, overlays, incremental parsing, and automatic reload are future work.
+documents from loading. The workspace snapshot remains unchanged until explicit
+close. Editor overlays exist separately in the language service and take
+precedence for the same URI; watching, incremental parsing, and automatic reload
+remain future work.
 
 LSP and future DAP support are protocol adapters. They should translate
 protocol messages and delegate to shared language, workspace, execution, and
@@ -48,9 +51,11 @@ centralizes discovery, dialing, negotiation, and error classification. The v1
 wire contract continues to expose workspace identity and lifecycle only; syntax
 trees and document state stay inside the daemon for shared future services.
 
-The stdio LSP server remains independent of daemon workspaces. It continues to
-use the protocol-neutral language service's client-supplied open-document state
-until an explicit integration milestone connects those services.
+The stdio LSP server constructs a shared workspace manager and language service.
+Initialization roots populate static workspace baselines, while client-supplied
+open-document text is retained as an overlay. The LSP adapter owns protocol
+translation, lifecycle ordering, request cancellation, diagnostic publication,
+and stdio framing rather than language semantics.
 
 Buf generates only the implemented daemon and workspace v1 contracts into
 `gen/`. Execution and debug protobuf source files remain ungenerated

@@ -11,7 +11,7 @@ import (
 
 func TestDocumentLifecycle(t *testing.T) {
 	ctx := context.Background()
-	service := New()
+	service := New(Options{})
 	uri := documentURI(t, "query.fql")
 
 	if err := service.OpenDocument(ctx, uri, "ferret", 1, "RETURN 1"); err != nil {
@@ -61,7 +61,7 @@ func TestDocumentLifecycle(t *testing.T) {
 
 func TestChangeDocumentErrors(t *testing.T) {
 	ctx := context.Background()
-	service := New()
+	service := New(Options{})
 	uri := documentURI(t, "query.fql")
 
 	if err := service.ChangeDocument(ctx, uri, 1, []TextChange{{Text: "RETURN 1"}}); !errors.Is(err, ErrDocumentNotOpen) {
@@ -79,7 +79,7 @@ func TestChangeDocumentErrors(t *testing.T) {
 }
 
 func TestOpenDocumentRejectsNonFileURI(t *testing.T) {
-	err := New().OpenDocument(context.Background(), "https://example.com/query.fql", "ferret", 1, "RETURN 1")
+	err := New(Options{}).OpenDocument(context.Background(), "https://example.com/query.fql", "ferret", 1, "RETURN 1")
 	if err == nil {
 		t.Fatal("OpenDocument returned nil error")
 	}
