@@ -25,7 +25,7 @@ install:
 compile:
 	go build -v -o ${DIR_BIN}/${NAME} \
 	-ldflags "-X main.version=${VERSION} -X github.com/MontFerret/cli/v2/pkg/runtime.version=${FERRET_VERSION}" \
-	./cmd/ferretd/main.go
+	./cmd/ferretd
 
 test:
 	go test ./...
