@@ -23,21 +23,7 @@ const (
 	completionStatement
 )
 
-var (
-	completionKeywords = []string{
-		"AGGREGATE", "ALL", "AND", "ANY", "AS", "ASC", "AT", "BACKOFF", "COLLECT", "COUNT", "DELETE",
-		"DESC", "DISPATCH", "DISTINCT", "DO", "EVENT", "EVERY", "EXISTS", "FALSE", "FILTER", "FOR",
-		"FUNC", "IN", "INTO", "JITTER", "KEEP", "LEAST", "LET", "LIKE", "LIMIT", "MATCH", "NONE",
-		"NOT", "NULL", "ONE", "OPTIONS", "OR", "QUERY", "RETURN", "SORT", "TIMEOUT", "TRIGGER", "TRUE",
-		"USE", "USING", "VALUE", "VAR", "WAITFOR", "WHEN", "WHILE", "WITH",
-	}
-
-	statementCompletionKeywords = []string{
-		"FOR", "FUNC", "LET", "RETURN", "USE", "VAR", "WAITFOR", "WHILE",
-	}
-)
-
-// Completion returns lexical compiler symbols, runtime environment names, and FQL keywords.
+// Completion returns lexical compiler symbols, runtime environment names, and FQL language words.
 func (s *Service) Completion(ctx context.Context, uri string, position source.Position) ([]CompletionItem, error) {
 	document, err := s.analyzedDocument(ctx, uri)
 	if err != nil {
@@ -72,13 +58,12 @@ func (s *Service) Completion(ctx context.Context, uri string, position source.Po
 		prefix := namespacePrefixAt(document.snapshot.text, offset)
 		normalizedPrefix := runtime.NormalizeRegisteredName(prefix)
 
-		for _, function := range s.registeredFunctions() {
-			identity := runtime.NormalizeRegisteredName(function.name)
-			if normalizedPrefix != "" && !strings.HasPrefix(identity, normalizedPrefix+runtime.NamespaceSeparator) {
+		for _, function := range s.functionIndex.ordered {
+			if normalizedPrefix != "" && !strings.HasPrefix(function.identity, normalizedPrefix+runtime.NamespaceSeparator) {
 				continue
 			}
 
-			add("registered\x00"+identity, CompletionItem{Label: function.name, InsertText: terminalName(function.name), Detail: "registered function", Kind: CompletionKindFunction})
+			add("registered\x00"+function.identity, CompletionItem{Label: function.name, InsertText: terminalName(function.name), Detail: "registered function", Kind: CompletionKindFunction})
 		}
 
 		return sortedCompletionItems(items), nil
@@ -89,8 +74,8 @@ func (s *Service) Completion(ctx context.Context, uri string, position source.Po
 	}
 
 	if contextKind == completionStatement {
-		for _, keyword := range statementCompletionKeywords {
-			add("keyword\x00"+keyword, CompletionItem{Label: keyword, InsertText: keyword, Detail: "keyword", Kind: CompletionKindKeyword})
+		for _, item := range statementCompletionItems {
+			add("word\x00"+item.Label, item)
 		}
 
 		return sortedCompletionItems(items), nil
@@ -117,13 +102,12 @@ func (s *Service) Completion(ctx context.Context, uri string, position source.Po
 		add("visible\x00"+label, CompletionItem{Label: label, InsertText: label, Detail: detail, Kind: kind})
 	}
 
-	for _, function := range s.registeredFunctions() {
-		identity := runtime.NormalizeRegisteredName(function.name)
-		add("registered\x00"+identity, CompletionItem{Label: function.name, InsertText: function.name, Detail: "registered function", Kind: CompletionKindFunction})
+	for _, function := range s.functionIndex.ordered {
+		add("registered\x00"+function.identity, CompletionItem{Label: function.name, InsertText: function.name, Detail: "registered function", Kind: CompletionKindFunction})
 	}
 
-	for _, keyword := range completionKeywords {
-		add("keyword\x00"+keyword, CompletionItem{Label: keyword, InsertText: keyword, Detail: "keyword", Kind: CompletionKindKeyword})
+	for _, item := range languageCompletionItems {
+		add("word\x00"+item.Label, item)
 	}
 
 	return sortedCompletionItems(items), nil
@@ -151,7 +135,8 @@ func completionContextAt(text string, tokens []compiler.SyntaxToken, offset int)
 		return completionBindParameter
 	}
 
-	if start >= 2 && text[start-2:start] == "::" {
+	separatorLength := len(runtime.NamespaceSeparator)
+	if start >= separatorLength && text[start-separatorLength:start] == runtime.NamespaceSeparator {
 		return completionNamespace
 	}
 
@@ -164,14 +149,17 @@ func completionContextAt(text string, tokens []compiler.SyntaxToken, offset int)
 	}
 
 	if previous.Span.End > previous.Span.Start {
-		value := strings.ToUpper(text[previous.Span.Start:previous.Span.End])
-		switch value {
-		case "LET", "VAR", "FUNC", "AS":
+		switch previous.Word {
+		case compiler.SyntaxWordLet, compiler.SyntaxWordVar, compiler.SyntaxWordFunc, compiler.SyntaxWordAs:
 			return completionDeclaration
-		case "RETURN", "FILTER", "SORT", "LIMIT", "COLLECT", "FOR", "WHILE":
+		case compiler.SyntaxWordReturn, compiler.SyntaxWordFilter, compiler.SyntaxWordSort,
+			compiler.SyntaxWordLimit, compiler.SyntaxWordCollect, compiler.SyntaxWordFor, compiler.SyntaxWordWhile:
 			return completionExpression
-		case "{", ";":
-			return completionStatement
+		default:
+			value := text[previous.Span.Start:previous.Span.End]
+			if value == "{" || value == ";" {
+				return completionStatement
+			}
 		}
 	}
 
@@ -195,7 +183,7 @@ func namespacePrefixAt(text string, offset int) string {
 	start := offset
 	for start > 0 {
 		r, size := utf8.DecodeLastRuneInString(text[:start])
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != ':' {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && !strings.ContainsRune(runtime.NamespaceSeparator, r) {
 			break
 		}
 

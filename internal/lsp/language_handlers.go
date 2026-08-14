@@ -250,7 +250,7 @@ func formattingTabSize(options protocol.FormattingOptions) uint32 {
 
 	value, ok := options[protocol.FormattingOptionTabSize]
 	if !ok {
-		return 4
+		return language.DefaultTabSize
 	}
 
 	switch typed := value.(type) {
@@ -268,7 +268,7 @@ func formattingTabSize(options protocol.FormattingOptions) uint32 {
 		}
 	}
 
-	return 4
+	return language.DefaultTabSize
 }
 
 func toProtocolCompletionItem(value language.CompletionItem) protocol.CompletionItem {
@@ -282,6 +282,10 @@ func toProtocolCompletionItem(value language.CompletionItem) protocol.Completion
 		kind = protocol.CompletionItemKindModule
 	case language.CompletionKindKeyword:
 		kind = protocol.CompletionItemKindKeyword
+	case language.CompletionKindLiteral:
+		kind = protocol.CompletionItemKindValue
+	case language.CompletionKindOperator:
+		kind = protocol.CompletionItemKindOperator
 	}
 
 	return protocol.CompletionItem{

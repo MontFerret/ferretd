@@ -54,9 +54,12 @@ func TestInitializeAdvertisesFullDocumentSync(t *testing.T) {
 		t.Fatalf("signature provider = %#v", result.Capabilities.SignatureHelpProvider)
 	}
 	semantic, ok := result.Capabilities.SemanticTokensProvider.(*protocol.SemanticTokensOptions)
+	wantLegend := protocol.SemanticTokensLegend{
+		TokenTypes:     []string{"namespace", "function", "variable", "parameter", "keyword", "string", "number", "comment", "operator"},
+		TokenModifiers: []string{"declaration", "readonly"},
+	}
 	if !ok || semantic.Full != true || semantic.Range != nil ||
-		!reflect.DeepEqual(semantic.Legend.TokenTypes, semanticTokenTypes) ||
-		!reflect.DeepEqual(semantic.Legend.TokenModifiers, semanticTokenModifiers) {
+		!reflect.DeepEqual(semantic.Legend, wantLegend) {
 		t.Fatalf("semantic provider = %#v", result.Capabilities.SemanticTokensProvider)
 	}
 }

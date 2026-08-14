@@ -7,6 +7,7 @@ import (
 
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
+	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 	"github.com/MontFerret/ferretd/internal/source"
 )
@@ -103,7 +104,7 @@ func buildSemanticSpans(analysis *compiler.Analysis, text string) []semanticSpan
 			span:      symbol.SelectionSpan,
 			kind:      semanticKindForSymbol(symbol.Kind),
 			modifiers: modifiers,
-			priority:  3,
+			priority:  semanticPriorityDeclaration,
 		})
 	}
 
@@ -122,21 +123,21 @@ func buildSemanticSpans(analysis *compiler.Analysis, text string) []semanticSpan
 			span:      reference.Span,
 			kind:      semanticKindForSymbol(symbol.Kind),
 			modifiers: modifiers,
-			priority:  2,
+			priority:  semanticPriorityReference,
 		})
 	}
 
 	for _, call := range analysis.Calls() {
 		span := call.CalleeSpan
 		if span.Start >= 0 && span.End <= len(text) && span.End > span.Start {
-			if separator := strings.LastIndex(text[span.Start:span.End], "::"); separator >= 0 {
-				span.Start += separator + len("::")
+			if separator := strings.LastIndex(text[span.Start:span.End], runtime.NamespaceSeparator); separator >= 0 {
+				span.Start += separator + len(runtime.NamespaceSeparator)
 			}
 		}
 		result = append(result, semanticSpan{
 			span:     span,
 			kind:     SemanticTokenFunction,
-			priority: 1,
+			priority: semanticPriorityCall,
 		})
 	}
 

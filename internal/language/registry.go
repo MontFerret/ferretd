@@ -1,83 +1,73 @@
 package language
 
-import (
-	"sort"
-	"strings"
+import "github.com/MontFerret/ferret/v2/pkg/runtime"
 
-	"github.com/MontFerret/ferret/v2/pkg/runtime"
+type (
+	registeredFunction struct {
+		name     string
+		identity string
+		arities  []int
+		variadic bool
+	}
+
+	functionIndex struct {
+		ordered []registeredFunction
+		byName  map[string]int
+	}
 )
 
-type registeredFunction struct {
-	name     string
-	arities  []int
-	variadic bool
-}
+func newFunctionIndex(functions *runtime.Functions) functionIndex {
+	if functions == nil {
+		functions = runtime.NewFunctions()
+	}
 
-func (s *Service) registeredFunctions() []registeredFunction {
-	byIdentity := make(map[string]*registeredFunction)
+	names := functions.List()
+	result := functionIndex{
+		ordered: make([]registeredFunction, 0, len(names)),
+		byName:  make(map[string]int, len(names)),
+	}
 
-	for _, name := range s.functions.List() {
+	for _, name := range names {
 		identity := runtime.NormalizeRegisteredName(name)
-		entry := byIdentity[identity]
-
-		if entry == nil {
-			entry = &registeredFunction{name: name}
-			byIdentity[identity] = entry
+		if _, ok := result.byName[identity]; ok {
+			continue
 		}
 
-		if s.functions.A0().Has(name) {
+		entry := registeredFunction{name: name, identity: identity}
+		if functions.A0().Has(name) {
 			entry.arities = append(entry.arities, 0)
 		}
 
-		if s.functions.A1().Has(name) {
+		if functions.A1().Has(name) {
 			entry.arities = append(entry.arities, 1)
 		}
 
-		if s.functions.A2().Has(name) {
+		if functions.A2().Has(name) {
 			entry.arities = append(entry.arities, 2)
 		}
 
-		if s.functions.A3().Has(name) {
+		if functions.A3().Has(name) {
 			entry.arities = append(entry.arities, 3)
 		}
 
-		if s.functions.A4().Has(name) {
+		if functions.A4().Has(name) {
 			entry.arities = append(entry.arities, 4)
 		}
 
-		entry.variadic = s.functions.Var().Has(name)
+		entry.variadic = functions.Var().Has(name)
+		result.byName[identity] = len(result.ordered)
+		result.ordered = append(result.ordered, entry)
 	}
-
-	result := make([]registeredFunction, 0, len(byIdentity))
-
-	for _, function := range byIdentity {
-		sort.Ints(function.arities)
-		result = append(result, *function)
-	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return runtime.NormalizeRegisteredName(result[i].name) < runtime.NormalizeRegisteredName(result[j].name)
-	})
 
 	return result
 }
 
-func (s *Service) registeredFunction(name string) (registeredFunction, bool) {
+func (i functionIndex) lookup(name string) (registeredFunction, bool) {
 	identity := runtime.NormalizeRegisteredName(name)
-
-	for _, function := range s.registeredFunctions() {
-		if runtime.NormalizeRegisteredName(function.name) == identity {
-			return function, true
-		}
+	index, ok := i.byName[identity]
+	if !ok {
+		return registeredFunction{}, false
 	}
 
-	return registeredFunction{}, false
-}
-
-func terminalName(name string) string {
-	if index := strings.LastIndex(name, runtime.NamespaceSeparator); index >= 0 {
-		return name[index+len(runtime.NamespaceSeparator):]
-	}
-
-	return name
+	return i.ordered[index], true
 }

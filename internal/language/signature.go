@@ -46,7 +46,7 @@ func (s *Service) SignatureHelp(ctx context.Context, uri string, position source
 		return result, nil
 	}
 
-	function, ok := s.registeredFunction(call.Identity)
+	function, ok := s.functionIndex.lookup(call.Identity)
 	if !ok {
 		return nil, nil
 	}

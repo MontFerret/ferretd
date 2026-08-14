@@ -15,14 +15,6 @@ import (
 
 const serverName = "ferretd"
 
-var (
-	semanticTokenTypes = []string{
-		"namespace", "function", "variable", "parameter", "keyword", "string", "number", "comment", "operator",
-	}
-
-	semanticTokenModifiers = []string{"declaration", "readonly"}
-)
-
 // Server is a thin LSP adapter around the shared language service.
 type Server struct {
 	language *language.Service
@@ -85,11 +77,8 @@ func (s *Server) initialize(glspContext *glsp.Context, params *protocol.Initiali
 		CompletionProvider:         &protocol.CompletionOptions{TriggerCharacters: []string{"@", ":"}},
 		SignatureHelpProvider:      &protocol.SignatureHelpOptions{TriggerCharacters: []string{"(", ","}},
 		SemanticTokensProvider: &protocol.SemanticTokensOptions{
-			Legend: protocol.SemanticTokensLegend{
-				TokenTypes:     append([]string(nil), semanticTokenTypes...),
-				TokenModifiers: append([]string(nil), semanticTokenModifiers...),
-			},
-			Full: true,
+			Legend: semanticTokenLegend(),
+			Full:   true,
 		},
 		Workspace: &protocol.ServerCapabilitiesWorkspace{
 			WorkspaceFolders: &protocol.WorkspaceFoldersServerCapabilities{Supported: &protocol.True},

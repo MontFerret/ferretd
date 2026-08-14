@@ -86,6 +86,11 @@ func encodeSemanticTokens(values []language.SemanticToken) []protocol.UInteger {
 	var previousStart uint32
 
 	for _, value := range values {
+		tokenType, ok := semanticTokenType(value.Kind)
+		if !ok {
+			continue
+		}
+
 		line := value.Range.Start.Line
 		start := value.Range.Start.Character
 		deltaLine := line - previousLine
@@ -99,8 +104,8 @@ func encodeSemanticTokens(values []language.SemanticToken) []protocol.UInteger {
 			protocol.UInteger(deltaLine),
 			protocol.UInteger(deltaStart),
 			protocol.UInteger(length),
-			protocol.UInteger(value.Kind),
-			protocol.UInteger(value.Modifiers),
+			tokenType,
+			semanticTokenModifierBits(value.Modifiers),
 		)
 		previousLine = line
 		previousStart = start

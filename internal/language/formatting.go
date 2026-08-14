@@ -13,6 +13,9 @@ import (
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
+// DefaultTabSize is the canonical formatting width used when callers omit one.
+const DefaultTabSize uint32 = 4
+
 // Format formats the current document using Ferret's canonical formatter.
 func (s *Service) Format(ctx context.Context, uri string, tabSize uint32) (*FormattingResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -25,7 +28,7 @@ func (s *Service) Format(ctx context.Context, uri string, tabSize uint32) (*Form
 	}
 
 	if tabSize == 0 {
-		tabSize = 4
+		tabSize = DefaultTabSize
 	}
 
 	var output bytes.Buffer

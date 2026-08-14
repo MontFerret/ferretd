@@ -110,7 +110,8 @@ func TestInitializationRootsPrecedenceAndDeduplication(t *testing.T) {
 func TestEncodeSemanticTokensUsesRelativePositions(t *testing.T) {
 	values := []language.SemanticToken{
 		{Range: source.Range{Start: source.Position{Line: 1, Character: 3}, End: source.Position{Line: 1, Character: 5}}, Kind: language.SemanticTokenVariable},
-		{Range: source.Range{Start: source.Position{Line: 1, Character: 8}, End: source.Position{Line: 1, Character: 9}}, Kind: language.SemanticTokenNumber, Modifiers: language.SemanticTokenReadonly},
+		{Range: source.Range{Start: source.Position{Line: 1, Character: 8}, End: source.Position{Line: 1, Character: 9}}, Kind: language.SemanticTokenNumber, Modifiers: language.SemanticTokenReadonly | language.SemanticTokenModifiers(1<<7)},
+		{Range: source.Range{Start: source.Position{Line: 2}, End: source.Position{Line: 2, Character: 1}}, Kind: language.SemanticTokenUnknown},
 		{Range: source.Range{Start: source.Position{Line: 3, Character: 1}, End: source.Position{Line: 3, Character: 4}}, Kind: language.SemanticTokenFunction},
 	}
 
@@ -121,26 +122,100 @@ func TestEncodeSemanticTokensUsesRelativePositions(t *testing.T) {
 	}
 }
 
+func TestSemanticTokenMappingIsExplicitAndMatchesLegend(t *testing.T) {
+	legend := semanticTokenLegend()
+	want := []struct {
+		kind language.SemanticTokenKind
+		name string
+	}{
+		{kind: language.SemanticTokenNamespace, name: "namespace"},
+		{kind: language.SemanticTokenFunction, name: "function"},
+		{kind: language.SemanticTokenVariable, name: "variable"},
+		{kind: language.SemanticTokenParameter, name: "parameter"},
+		{kind: language.SemanticTokenKeyword, name: "keyword"},
+		{kind: language.SemanticTokenString, name: "string"},
+		{kind: language.SemanticTokenNumber, name: "number"},
+		{kind: language.SemanticTokenComment, name: "comment"},
+		{kind: language.SemanticTokenOperator, name: "operator"},
+	}
+
+	if len(legend.TokenTypes) != len(want) {
+		t.Fatalf("semantic token legend = %#v", legend.TokenTypes)
+	}
+
+	for index, test := range want {
+		got, ok := semanticTokenType(test.kind)
+		if !ok || got != protocol.UInteger(index) || legend.TokenTypes[index] != test.name {
+			t.Errorf("semantic token mapping for %d = %d, %t, legend %q", test.kind, got, ok, legend.TokenTypes[index])
+		}
+
+		if protocol.UInteger(test.kind) == got {
+			t.Errorf("semantic token mapping for %q still matches the language ordinal %d", test.name, test.kind)
+		}
+	}
+
+	for _, unknown := range []language.SemanticTokenKind{language.SemanticTokenUnknown, 255} {
+		if got, ok := semanticTokenType(unknown); ok {
+			t.Errorf("unknown semantic token kind %d mapped to %d", unknown, got)
+		}
+	}
+
+	if got := semanticTokenModifierBits(language.SemanticTokenDeclaration | language.SemanticTokenReadonly | language.SemanticTokenModifiers(1<<7)); got != 3 {
+		t.Fatalf("semantic modifier bits = %d, want 3", got)
+	}
+
+	legend.TokenTypes[0] = "changed"
+	legend.TokenModifiers[0] = "changed"
+	fresh := semanticTokenLegend()
+	if fresh.TokenTypes[0] != "namespace" || fresh.TokenModifiers[0] != "declaration" {
+		t.Fatalf("semantic legend exposed mutable definitions: %+v", fresh)
+	}
+}
+
 func TestFormattingTabSizeClampsMalformedValues(t *testing.T) {
 	tests := []struct {
 		name  string
 		value any
+		set   bool
 		want  uint32
 	}{
-		{name: "integer", value: protocol.Integer(2), want: 2},
-		{name: "float", value: float64(3), want: 3},
-		{name: "zero", value: 0, want: 4},
-		{name: "negative", value: -1, want: 4},
-		{name: "overflow", value: float64(^uint32(0)) + 1, want: 4},
+		{name: "missing", want: language.DefaultTabSize},
+		{name: "integer", value: protocol.Integer(2), set: true, want: 2},
+		{name: "float", value: float64(3), set: true, want: 3},
+		{name: "zero", value: 0, set: true, want: language.DefaultTabSize},
+		{name: "negative", value: -1, set: true, want: language.DefaultTabSize},
+		{name: "overflow", value: float64(^uint32(0)) + 1, set: true, want: language.DefaultTabSize},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			options := protocol.FormattingOptions{protocol.FormattingOptionTabSize: test.value}
+			options := protocol.FormattingOptions{}
+			if test.set {
+				options[protocol.FormattingOptionTabSize] = test.value
+			}
+
 			if got := formattingTabSize(options); got != test.want {
 				t.Fatalf("formattingTabSize() = %d, want %d", got, test.want)
 			}
 		})
+	}
+}
+
+func TestCompletionWordKindMapping(t *testing.T) {
+	tests := []struct {
+		kind language.CompletionKind
+		want protocol.CompletionItemKind
+	}{
+		{kind: language.CompletionKindKeyword, want: protocol.CompletionItemKindKeyword},
+		{kind: language.CompletionKindLiteral, want: protocol.CompletionItemKindValue},
+		{kind: language.CompletionKindOperator, want: protocol.CompletionItemKindOperator},
+	}
+
+	for _, test := range tests {
+		item := toProtocolCompletionItem(language.CompletionItem{Kind: test.kind})
+		if item.Kind == nil || *item.Kind != test.want {
+			t.Errorf("completion kind %d = %#v, want %d", test.kind, item.Kind, test.want)
+		}
 	}
 }
 

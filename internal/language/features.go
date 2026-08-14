@@ -84,10 +84,13 @@ const (
 	CompletionKindParameter
 	CompletionKindNamespace
 	CompletionKindKeyword
+	CompletionKindLiteral
+	CompletionKindOperator
 )
 
 const (
-	SemanticTokenNamespace SemanticTokenKind = iota
+	SemanticTokenUnknown SemanticTokenKind = iota
+	SemanticTokenNamespace
 	SemanticTokenFunction
 	SemanticTokenVariable
 	SemanticTokenParameter

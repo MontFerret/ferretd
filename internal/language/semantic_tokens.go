@@ -7,12 +7,23 @@ import (
 	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 )
 
-type semanticSpan struct {
-	span      ferretsource.Span
-	kind      SemanticTokenKind
-	modifiers SemanticTokenModifiers
-	priority  uint8
-}
+type (
+	semanticPriority uint8
+
+	semanticSpan struct {
+		span      ferretsource.Span
+		kind      SemanticTokenKind
+		modifiers SemanticTokenModifiers
+		priority  semanticPriority
+	}
+)
+
+const (
+	semanticPrioritySyntax semanticPriority = iota
+	semanticPriorityCall
+	semanticPriorityReference
+	semanticPriorityDeclaration
+)
 
 // SemanticTokens returns full-document syntax tokens overlaid with compiler identity.
 func (s *Service) SemanticTokens(ctx context.Context, uri string) ([]SemanticToken, error) {
@@ -30,7 +41,7 @@ func (s *Service) SemanticTokens(ctx context.Context, uri string) ([]SemanticTok
 			continue
 		}
 
-		spans = append(spans, semanticSpan{span: token.Span, kind: kind})
+		spans = append(spans, semanticSpan{span: token.Span, kind: kind, priority: semanticPrioritySyntax})
 	}
 
 	spans = append(spans, semantic...)

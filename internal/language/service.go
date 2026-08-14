@@ -16,15 +16,15 @@ import (
 
 // Service provides protocol-neutral Ferret language behavior.
 type Service struct {
-	mu         sync.RWMutex
-	overlays   map[string]Document
-	cache      map[string]*analysisEntry
-	compiler   *compiler.Compiler
-	workspaces *workspace.Manager
-	functions  *runtime.Functions
-	params     runtime.Params
-	generation uint64
-	analyze    analyzeFunc
+	mu            sync.RWMutex
+	overlays      map[string]Document
+	cache         map[string]*analysisEntry
+	compiler      *compiler.Compiler
+	workspaces    *workspace.Manager
+	functionIndex functionIndex
+	params        runtime.Params
+	generation    uint64
+	analyze       analyzeFunc
 }
 
 // New creates a language service with immutable compiler and runtime environments.
@@ -50,12 +50,12 @@ func New(options Options) *Service {
 
 	compilerInstance := compiler.New()
 	result := &Service{
-		overlays:   make(map[string]Document),
-		cache:      make(map[string]*analysisEntry),
-		compiler:   compilerInstance,
-		workspaces: workspaces,
-		functions:  functions,
-		params:     options.Params.Clone(),
+		overlays:      make(map[string]Document),
+		cache:         make(map[string]*analysisEntry),
+		compiler:      compilerInstance,
+		workspaces:    workspaces,
+		functionIndex: newFunctionIndex(functions),
+		params:        options.Params.Clone(),
 	}
 	result.analyze = compilerInstance.Analyze
 

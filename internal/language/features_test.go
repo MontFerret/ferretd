@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MontFerret/ferret/v2/pkg/compiler"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
 
 	"github.com/MontFerret/ferretd/internal/source"
@@ -243,7 +244,7 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		Params:    configuredParams,
 	})
 	configuredParams["AddedLater"] = runtime.Int(2)
-	query := "RETURN CuStOm::DoThing(@Known)"
+	query := "RETURN CuStOm" + runtime.NamespaceSeparator + "DoThing(@Known)"
 	uri := documentURI(t, "registry.fql")
 	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, query); err != nil {
 		t.Fatal(err)
@@ -278,6 +279,14 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		t.Fatalf("registered signature = %+v, %v", signature, err)
 	}
 
+	hover, err := service.Hover(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "DoThing")))
+	if err != nil || hover == nil || len(hover.RegisteredSignatures) != 3 ||
+		hover.RegisteredSignatures[0].Label != "CuStOm::DoThing(arg1)" ||
+		hover.RegisteredSignatures[1].Label != "CuStOm::DoThing(arg1, arg2)" ||
+		!hover.RegisteredSignatures[2].Variadic {
+		t.Fatalf("registered hover = %+v, %v", hover, err)
+	}
+
 	paramService := New(Options{Functions: functions, Params: runtime.Params{"Configured": runtime.Int(1)}})
 	paramURI := documentURI(t, "params.fql")
 	if err := paramService.OpenDocument(context.Background(), paramURI, "ferret", 1, "RETURN @"); err != nil {
@@ -308,22 +317,61 @@ func TestCompletionDistinguishesStatementExpressionAndDeclarationContexts(t *tes
 		t.Fatalf("statement completion = %+v, %v", statement, err)
 	}
 
-	expressionService, expressionURI := openLanguageDocument(t, "RETURN ")
+	expressionService, expressionURI := openLanguageDocument(t, "return ")
 	expression, err := expressionService.Completion(context.Background(), expressionURI, source.Position{Character: 7})
 	if err != nil || !hasCompletion(expression, "print") {
 		t.Fatalf("expression completion = %+v, %v", expression, err)
 	}
 
-	declarationService, declarationURI := openLanguageDocument(t, "LET ")
+	declarationService, declarationURI := openLanguageDocument(t, "let ")
 	declaration, err := declarationService.Completion(context.Background(), declarationURI, source.Position{Character: 4})
 	if err != nil || len(declaration) != 0 {
 		t.Fatalf("declaration completion = %+v, %v", declaration, err)
 	}
 }
 
+func TestCompletionUsesFerretSyntaxWordMetadata(t *testing.T) {
+	service, uri := openLanguageDocument(t, "RETURN ")
+	items, err := service.Completion(context.Background(), uri, source.Position{Character: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, word := range compiler.SyntaxWords() {
+		if word.Category == compiler.SyntaxWordCategoryContextual {
+			if hasCompletion(items, word.Spelling) {
+				t.Errorf("contextual word %q escaped into general completion", word.Spelling)
+			}
+
+			continue
+		}
+
+		item, ok := completionByLabel(items, word.Spelling)
+		if !ok {
+			t.Errorf("completion omits Ferret word %q", word.Spelling)
+
+			continue
+		}
+
+		wantKind := CompletionKindKeyword
+		wantDetail := "keyword"
+		switch word.Category {
+		case compiler.SyntaxWordCategoryLiteral:
+			wantKind = CompletionKindLiteral
+			wantDetail = "literal"
+		case compiler.SyntaxWordCategoryOperator:
+			wantKind = CompletionKindOperator
+			wantDetail = "operator"
+		}
+
+		if item.Kind != wantKind || item.Detail != wantDetail || item.InsertText != word.Spelling {
+			t.Errorf("completion for %q = %+v, want kind %d and detail %q", word.Spelling, item, wantKind, wantDetail)
+		}
+	}
+}
+
 func TestSemanticTokensSplitQualifiedCallsIntoNamespaceAndFunction(t *testing.T) {
-	query := `USE WEB::HTML AS html
-RETURN html::PARSE("<p/>")`
+	query := "USE WEB" + runtime.NamespaceSeparator + "HTML AS html\nRETURN html" + runtime.NamespaceSeparator + `PARSE("<p/>")`
 	service, uri := openLanguageDocument(t, query)
 	tokens, err := service.SemanticTokens(context.Background(), uri)
 	if err != nil {
@@ -347,6 +395,58 @@ RETURN html::PARSE("<p/>")`
 	}
 	if namespaceText == "" || functionText == "" {
 		t.Fatalf("qualified semantic tokens = %+v", tokens)
+	}
+}
+
+func TestSemanticTokenConflictPriority(t *testing.T) {
+	if !(semanticPriorityDeclaration > semanticPriorityReference &&
+		semanticPriorityReference > semanticPriorityCall &&
+		semanticPriorityCall > semanticPrioritySyntax) {
+		t.Fatalf("semantic priorities do not preserve declaration > reference > call > syntax")
+	}
+
+	query := "FUNC run() => 1\nRETURN run()"
+	service, uri := openLanguageDocument(t, query)
+	tokens, err := service.SemanticTokens(context.Background(), uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mapper := source.NewMapper(query)
+	callStart := strings.LastIndex(query, "run")
+	for _, token := range tokens {
+		span := mapper.RangeToSpan(token.Range)
+		if span.Start == callStart && span.End == callStart+len("run") {
+			if token.Kind != SemanticTokenFunction || token.Modifiers&SemanticTokenReadonly == 0 {
+				t.Fatalf("overlapping UDF reference/call token = %+v", token)
+			}
+
+			return
+		}
+	}
+
+	t.Fatal("UDF call semantic token not found")
+}
+
+func TestFormattingUsesLanguageDefaultTabSize(t *testing.T) {
+	if DefaultTabSize != 4 {
+		t.Fatalf("DefaultTabSize = %d, want 4", DefaultTabSize)
+	}
+
+	query := "RETURN {outer:{inner:1}}"
+	service, uri := openLanguageDocument(t, query)
+	implicit, err := service.Format(context.Background(), uri, 0)
+	if err != nil || implicit == nil {
+		t.Fatalf("implicit formatting = %+v, %v", implicit, err)
+	}
+
+	explicit, err := service.Format(context.Background(), uri, DefaultTabSize)
+	if err != nil || explicit == nil {
+		t.Fatalf("explicit formatting = %+v, %v", explicit, err)
+	}
+
+	if implicit.Text != explicit.Text {
+		t.Fatalf("implicit formatting differs from language default:\nimplicit:\n%s\nexplicit:\n%s", implicit.Text, explicit.Text)
 	}
 }
 
@@ -403,6 +503,16 @@ func hasCompletion(values []CompletionItem, label string) bool {
 	}
 
 	return false
+}
+
+func completionByLabel(values []CompletionItem, label string) (CompletionItem, bool) {
+	for _, value := range values {
+		if value.Label == label {
+			return value, true
+		}
+	}
+
+	return CompletionItem{}, false
 }
 
 func hasSemanticKind(values []SemanticToken, kind SemanticTokenKind) bool {
