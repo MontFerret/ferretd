@@ -73,14 +73,15 @@ func New(options Options) (*Daemon, error) {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	languageService := language.New()
+	workspaceManager := workspace.New()
+	languageService := language.New(language.Options{Workspaces: workspaceManager})
 	instanceID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, fmt.Errorf("generate daemon instance ID: %w", err)
 	}
 
 	result := &Daemon{
-		workspaces: workspace.New(),
+		workspaces: workspaceManager,
 		language:   languageService,
 		execution:  exec.New(),
 		debug:      debug.New(),

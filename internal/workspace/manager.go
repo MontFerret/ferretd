@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"sync"
 
@@ -40,6 +41,73 @@ func New() *Manager {
 		opening: make(map[string]*openOperation),
 		load:    loadWorkspace,
 	}
+}
+
+// LookupDocument resolves an absolute path to the deepest matching open workspace.
+// Paths are cleaned but symlinks are deliberately not resolved.
+func (m *Manager) LookupDocument(ctx context.Context, absolutePath string) (DocumentLookup, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return DocumentLookup{}, false, err
+	}
+
+	if absolutePath == "" || !filepath.IsAbs(absolutePath) {
+		return DocumentLookup{}, false, fmt.Errorf("%w: document path must be absolute", ErrInvalidRoot)
+	}
+
+	path := filepath.Clean(absolutePath)
+	m.mu.RLock()
+	workspaces := make([]*Workspace, 0, len(m.byID))
+	for _, item := range m.byID {
+		workspaces = append(workspaces, item)
+	}
+	m.mu.RUnlock()
+
+	sort.Slice(workspaces, func(i, j int) bool {
+		left, right := workspaces[i].Root(), workspaces[j].Root()
+		if len(left) != len(right) {
+			return len(left) > len(right)
+		}
+
+		return left < right
+	})
+
+	for _, item := range workspaces {
+		if err := ctx.Err(); err != nil {
+			return DocumentLookup{}, false, err
+		}
+
+		relative, ok := pathWithinRoot(item.Root(), path)
+		if !ok {
+			continue
+		}
+
+		document, found := item.Document(relative)
+		if !found {
+			return DocumentLookup{}, false, nil
+		}
+
+		return DocumentLookup{
+			Document:  document,
+			Workspace: item.ID(),
+			Revision:  document.Revision(),
+		}, true, nil
+	}
+
+	return DocumentLookup{}, false, nil
+}
+
+func pathWithinRoot(root, candidate string) (string, bool) {
+	relative, err := filepath.Rel(root, candidate)
+	if err != nil || relative == "." || relative == ".." || filepath.IsAbs(relative) {
+		return "", false
+	}
+
+	prefix := ".." + string(filepath.Separator)
+	if len(relative) >= len(prefix) && relative[:len(prefix)] == prefix {
+		return "", false
+	}
+
+	return filepath.ToSlash(relative), true
 }
 
 // Open validates and synchronously loads a root, returning its shared workspace.

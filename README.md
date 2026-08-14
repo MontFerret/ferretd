@@ -6,9 +6,10 @@ language tooling, workspaces, execution sessions, and debug sessions for CLI,
 Lab, and editor integrations.
 
 The repository contains a local gRPC daemon with process-local Ferret source
-workspaces, a supported Go client, and an experimental language server that
-publishes Ferret compiler diagnostics. The Ferret VM, compiler, runtime, and
-language semantics remain owned by the main Ferret project.
+workspaces, a supported Go client, and an experimental language server with
+diagnostics, document navigation, symbols, hover, completion, signature help,
+semantic tokens, and formatting. The Ferret VM, compiler, runtime, and language
+semantics remain owned by the main Ferret project.
 
 ## Build
 
@@ -74,8 +75,10 @@ not close its workspaces, and `Close` is explicit and idempotent. The current
 workspace RPC continues to expose identity and lifecycle operations rather than
 documents or parser internals.
 
-`lsp` continues to start the experimental language server over stdin and
-stdout independently of the daemon.
+`lsp` starts the experimental language server over stdin and stdout. It opens
+the local roots supplied by LSP initialization, uses their static workspace
+documents as a baseline, and gives versioned editor overlays precedence while
+documents are open. Analysis snapshots are coalesced and cached per URI.
 
 ## Current Status
 
@@ -86,14 +89,14 @@ and protobuf tools. Execution and debug protobufs remain ungenerated
 placeholders.
 
 Daemon workspaces retain deterministically discovered source files, source
-contents, Ferret parse trees, and syntax diagnostics. The separate language
-server supports opening, changing, and closing `.fql` documents with
-full-document synchronization and publishes parser and compiler diagnostics.
-The language server does not yet consume daemon workspaces.
+contents, Ferret parse trees, and syntax diagnostics. The language server uses
+the shared workspace manager for static source baselines and supports opening,
+changing, and closing `.fql` editor overlays with full-document synchronization.
+Its navigation and references are document-local.
 
-Execution sessions, debug sessions, DAP, filesystem watching, editor overlays,
-module resolution, workspace persistence, remote daemon operation, and
-LSP-over-gRPC are not implemented.
+Execution sessions, debug sessions, DAP, filesystem watching, incremental
+synchronization, cross-file indexing, module resolution, workspace persistence,
+remote daemon operation, and LSP-over-gRPC are not implemented.
 
 See [docs/architecture.md](docs/architecture.md) for the intended architecture
 and [docs/lsp.md](docs/lsp.md) for experimental editor setup.

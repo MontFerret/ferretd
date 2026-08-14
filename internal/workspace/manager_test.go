@@ -47,6 +47,70 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 	}
 }
 
+func TestManagerLookupDocumentUsesDeepestWorkspace(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	nested := filepath.Join(root, "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(nested, "query.fql")
+	if err := os.WriteFile(path, []byte("RETURN 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := New()
+	parentWorkspace, err := manager.Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nestedWorkspace, err := manager.Open(ctx, nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lookup, ok, err := manager.LookupDocument(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || lookup.Workspace != nestedWorkspace.ID() || lookup.Workspace == parentWorkspace.ID() {
+		t.Fatalf("lookup = %+v, %t", lookup, ok)
+	}
+	if lookup.Revision != 1 || lookup.Document.Content() != "RETURN 1" {
+		t.Fatalf("lookup document = %+v", lookup)
+	}
+}
+
+func TestManagerLookupDocumentDoesNotFallBackPastDeepestWorkspace(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	nested := filepath.Join(root, "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(nested, "query.fql")
+	if err := os.WriteFile(path, []byte("RETURN 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := New()
+	if _, err := manager.Open(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Open(ctx, nested); err != nil {
+		t.Fatal(err)
+	}
+
+	if lookup, ok, err := manager.LookupDocument(ctx, path); err != nil || ok {
+		t.Fatalf("lookup = %+v, %t, %v", lookup, ok, err)
+	}
+}
+
 func TestOpenValidatesRoot(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "file.fql")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {

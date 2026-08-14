@@ -1,12 +1,13 @@
 package language
 
 type (
-	// Document is an open source document snapshot.
+	// Document is a versioned editor-overlay snapshot.
 	Document struct {
-		URI     string
-		Path    string
-		Version int32
-		Text    string
+		URI        string
+		Path       string
+		Version    int32
+		Text       string
+		generation uint64
 	}
 
 	// TextChange replaces the complete text of an open document.

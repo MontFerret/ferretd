@@ -17,6 +17,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/language"
 	"github.com/MontFerret/ferretd/internal/lsp"
 	"github.com/MontFerret/ferretd/internal/transport"
+	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 var version = "dev"
@@ -88,7 +89,7 @@ func newServeCommand(version string) *cobra.Command {
 }
 
 func serveLSP(ctx context.Context) error {
-	server := lsp.New(language.New())
+	server := lsp.New(language.New(language.Options{Workspaces: workspace.New()}))
 	if err := server.Run(ctx); err != nil {
 		return fmt.Errorf("run LSP server: %w", err)
 	}

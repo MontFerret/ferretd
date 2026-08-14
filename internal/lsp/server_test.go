@@ -3,7 +3,9 @@ package lsp
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -13,7 +15,7 @@ import (
 )
 
 func TestInitializeAdvertisesFullDocumentSync(t *testing.T) {
-	server := New(language.New())
+	server := New(language.New(language.Options{}))
 
 	value, err := server.initialize(nil, &protocol.InitializeParams{})
 	if err != nil {
@@ -30,19 +32,48 @@ func TestInitializeAdvertisesFullDocumentSync(t *testing.T) {
 	if options.Change == nil || *options.Change != protocol.TextDocumentSyncKindFull {
 		t.Fatalf("Change = %#v", options.Change)
 	}
+	if result.Capabilities.DocumentSymbolProvider != true || result.Capabilities.HoverProvider != true ||
+		result.Capabilities.DefinitionProvider != true || result.Capabilities.ReferencesProvider != true ||
+		result.Capabilities.DocumentFormattingProvider != true {
+		t.Fatalf("language capabilities = %#v", result.Capabilities)
+	}
+	if result.Capabilities.RenameProvider != nil || result.Capabilities.CodeActionProvider != nil ||
+		result.Capabilities.WorkspaceSymbolProvider != nil || result.Capabilities.DocumentRangeFormattingProvider != nil {
+		t.Fatalf("future capabilities advertised = %#v", result.Capabilities)
+	}
+	if result.Capabilities.Workspace == nil || result.Capabilities.Workspace.WorkspaceFolders == nil ||
+		result.Capabilities.Workspace.WorkspaceFolders.Supported == nil ||
+		!*result.Capabilities.Workspace.WorkspaceFolders.Supported ||
+		result.Capabilities.Workspace.WorkspaceFolders.ChangeNotifications != nil {
+		t.Fatalf("workspace folder capabilities = %#v", result.Capabilities.Workspace)
+	}
+	if result.Capabilities.CompletionProvider == nil || !reflect.DeepEqual(result.Capabilities.CompletionProvider.TriggerCharacters, []string{"@", ":"}) {
+		t.Fatalf("completion provider = %#v", result.Capabilities.CompletionProvider)
+	}
+	if result.Capabilities.SignatureHelpProvider == nil || !reflect.DeepEqual(result.Capabilities.SignatureHelpProvider.TriggerCharacters, []string{"(", ","}) {
+		t.Fatalf("signature provider = %#v", result.Capabilities.SignatureHelpProvider)
+	}
+	semantic, ok := result.Capabilities.SemanticTokensProvider.(*protocol.SemanticTokensOptions)
+	if !ok || semantic.Full != true || semantic.Range != nil ||
+		!reflect.DeepEqual(semantic.Legend.TokenTypes, semanticTokenTypes) ||
+		!reflect.DeepEqual(semantic.Legend.TokenModifiers, semanticTokenModifiers) {
+		t.Fatalf("semantic provider = %#v", result.Capabilities.SemanticTokensProvider)
+	}
 }
 
 func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
-	service := language.New()
+	service := language.New(language.Options{})
 	server := New(service)
 	uri := documentURI(t, "query.fql")
 
 	var published []protocol.PublishDiagnosticsParams
+	publishedSignal := make(chan struct{}, 3)
 	glspContext := &glsp.Context{Notify: func(method string, params any) {
 		if method != protocol.ServerTextDocumentPublishDiagnostics {
 			t.Fatalf("notification method = %q", method)
 		}
 		published = append(published, params.(protocol.PublishDiagnosticsParams))
+		publishedSignal <- struct{}{}
 	}}
 
 	if err := server.didOpen(glspContext, &protocol.DidOpenTextDocumentParams{
@@ -55,6 +86,7 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("didOpen: %v", err)
 	}
+	waitForNotification(t, publishedSignal)
 	if len(published) != 1 || len(published[0].Diagnostics) != 0 || published[0].Version == nil || *published[0].Version != 1 {
 		t.Fatalf("didOpen published = %#v", published)
 	}
@@ -68,6 +100,7 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("didChange: %v", err)
 	}
+	waitForNotification(t, publishedSignal)
 	if len(published) != 2 || len(published[1].Diagnostics) == 0 || published[1].Version == nil || *published[1].Version != 2 {
 		t.Fatalf("didChange published = %#v", published)
 	}
@@ -85,8 +118,18 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	}
 }
 
+func waitForNotification(t *testing.T, signal <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for LSP notification")
+	}
+}
+
 func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
-	service := language.New()
+	service := language.New(language.Options{})
 	server := New(service)
 	uri := documentURI(t, "query.fql")
 	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "RETURN 1"); err != nil {
