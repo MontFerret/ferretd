@@ -33,7 +33,7 @@ type (
 	Daemon struct {
 		workspaces *workspace.Manager
 		language   *language.Service
-		execution  *exec.SessionManager
+		execution  *exec.Manager
 		debug      *debug.SessionManager
 		lsp        *lsp.Server
 		rpc        *grpcadapter.Server
@@ -75,7 +75,9 @@ func New(options Options) (*Daemon, error) {
 
 	workspaceManager := workspace.New()
 	languageService := language.New(language.Options{Workspaces: workspaceManager})
+	executionManager := exec.New(workspaceManager)
 	instanceID, err := uuid.NewRandom()
+
 	if err != nil {
 		return nil, fmt.Errorf("generate daemon instance ID: %w", err)
 	}
@@ -83,7 +85,7 @@ func New(options Options) (*Daemon, error) {
 	result := &Daemon{
 		workspaces: workspaceManager,
 		language:   languageService,
-		execution:  exec.New(),
+		execution:  executionManager,
 		debug:      debug.New(),
 		lsp:        lsp.New(languageService),
 		endpoint:   endpoint,
@@ -93,7 +95,13 @@ func New(options Options) (*Daemon, error) {
 		stopDone:   make(chan struct{}),
 		state:      stateNew,
 	}
-	result.rpc = grpcadapter.New(result.workspaces, version, instanceID.String(), result.requestShutdown)
+	result.rpc = grpcadapter.New(
+		result.workspaces,
+		result.execution,
+		version,
+		instanceID.String(),
+		result.requestShutdown,
+	)
 
 	return result, nil
 }
@@ -125,8 +133,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.mu.Unlock()
 
 		closeErr := listener.Close()
-		d.workspaces.Clear()
-		d.finishStop(closeErr)
+		executionErr := d.execution.Close(context.Background())
+		workspaceErr := d.workspaces.Clear(context.Background())
+		d.finishStop(errors.Join(executionErr, workspaceErr, closeErr))
 
 		return nil
 	}
@@ -163,11 +172,13 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	switch d.state {
 	case stateNew:
 		d.state = stateStopped
-		d.workspaces.Clear()
+		executionErr := d.execution.Close(ctx)
+		workspaceErr := d.workspaces.Clear(ctx)
+		d.stopErr = errors.Join(executionErr, workspaceErr)
 		close(d.stopDone)
 		d.mu.Unlock()
 
-		return nil
+		return d.stopErr
 	case stateStarting:
 		d.state = stateStopping
 		stopDone := d.stopDone
@@ -180,10 +191,11 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		d.mu.Unlock()
 
 		d.rpc.SetNotServing()
+		executionErr := d.execution.Close(ctx)
+		workspaceErr := d.workspaces.Clear(ctx)
 		stopErr := d.rpc.Stop(ctx)
-		d.workspaces.Clear()
 		closeErr := listener.Close()
-		d.finishStop(errors.Join(stopErr, closeErr))
+		d.finishStop(errors.Join(executionErr, workspaceErr, stopErr, closeErr))
 
 		return d.stopResult()
 	case stateStopping:

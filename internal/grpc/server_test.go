@@ -13,13 +13,16 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	daemonv1 "github.com/MontFerret/ferretd/gen/ferretd/daemon/v1"
+	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 	workspacev1 "github.com/MontFerret/ferretd/gen/ferretd/workspace/v1"
+	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 func TestServerHealthTransitions(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
-	server := New(workspace.New(), "dev", "instance", nil)
+	workspaces := workspace.New()
+	server := New(workspaces, exec.New(workspaces), "dev", "instance", nil)
 	done := make(chan error, 1)
 	go func() {
 		done <- server.Serve(listener)
@@ -45,6 +48,7 @@ func TestServerHealthTransitions(t *testing.T) {
 		"",
 		daemonv1.DaemonService_ServiceDesc.ServiceName,
 		workspacev1.WorkspaceService_ServiceDesc.ServiceName,
+		executionv1.ExecutionService_ServiceDesc.ServiceName,
 	}
 	assertHealthStatus(t, ctx, healthClient, serviceNames, healthv1.HealthCheckResponse_NOT_SERVING)
 
@@ -64,7 +68,8 @@ func TestServerHealthTransitions(t *testing.T) {
 
 func TestServerStopForcesAfterDeadline(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
-	server := New(workspace.New(), "dev", "instance", nil)
+	workspaces := workspace.New()
+	server := New(workspaces, exec.New(workspaces), "dev", "instance", nil)
 	server.SetServing()
 	done := make(chan error, 1)
 	go func() {

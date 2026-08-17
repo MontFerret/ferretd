@@ -3,29 +3,18 @@ package language
 import (
 	"context"
 
-	"github.com/MontFerret/ferretd/internal/source"
+	"github.com/MontFerret/ferretd/internal/diagnostic"
 )
 
 type (
 	// DiagnosticSeverity identifies the importance of a diagnostic.
-	DiagnosticSeverity uint8
+	DiagnosticSeverity = diagnostic.Severity
 
 	// Diagnostic describes a protocol-neutral source problem.
-	Diagnostic struct {
-		Message            string
-		Severity           DiagnosticSeverity
-		Range              source.Range
-		Source             string
-		Code               string
-		RelatedInformation []RelatedInformation
-	}
+	Diagnostic = diagnostic.Diagnostic
 
 	// RelatedInformation describes a source location related to a diagnostic.
-	RelatedInformation struct {
-		URI     string
-		Range   source.Range
-		Message string
-	}
+	RelatedInformation = diagnostic.RelatedInformation
 
 	// DiagnosticReport identifies diagnostics and the exact source snapshot used.
 	DiagnosticReport struct {
@@ -37,7 +26,7 @@ type (
 
 const (
 	// DiagnosticSeverityError identifies a compilation error.
-	DiagnosticSeverityError DiagnosticSeverity = 1
+	DiagnosticSeverityError = diagnostic.SeverityError
 )
 
 // Diagnostics returns diagnostics from the immutable compiler analysis snapshot.

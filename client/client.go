@@ -10,17 +10,19 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	daemonv1 "github.com/MontFerret/ferretd/gen/ferretd/daemon/v1"
+	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 	workspacev1 "github.com/MontFerret/ferretd/gen/ferretd/workspace/v1"
 	"github.com/MontFerret/ferretd/internal/transport"
 )
 
-var currentAPIVersion = APIVersion{Major: 1, Minor: 0}
+var currentAPIVersion = APIVersion{Major: 1, Minor: 1}
 
 // Client owns a negotiated connection to a local daemon.
 type Client struct {
 	connection *grpc.ClientConn
 	daemon     daemonv1.DaemonServiceClient
 	workspaces *WorkspaceClient
+	executions *ExecutionClient
 }
 
 // Dial discovers or selects an endpoint, connects, and negotiates API compatibility.
@@ -68,6 +70,9 @@ func Dial(ctx context.Context, options ...Option) (*Client, error) {
 	result.workspaces = &WorkspaceClient{
 		client: workspacev1.NewWorkspaceServiceClient(connection),
 	}
+	result.executions = &ExecutionClient{
+		client: executionv1.NewExecutionServiceClient(connection),
+	}
 
 	if _, err := result.Info(ctx); err != nil {
 		_ = result.Close()
@@ -110,6 +115,11 @@ func (c *Client) Shutdown(ctx context.Context) error {
 // Workspaces returns the workspace operations for this connection.
 func (c *Client) Workspaces() *WorkspaceClient {
 	return c.workspaces
+}
+
+// Executions returns the Session and Execution operations for this connection.
+func (c *Client) Executions() *ExecutionClient {
+	return c.executions
 }
 
 // Close releases the client connection without changing daemon state.

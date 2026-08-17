@@ -1,9 +1,15 @@
 package workspace
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 
+	ferret "github.com/MontFerret/ferret/v2"
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
+	localsource "github.com/MontFerret/ferretd/internal/source"
 )
 
 type (
@@ -24,6 +30,22 @@ type (
 		files     []File
 		documents map[string]Document
 		order     []string
+		engine    *ferret.Engine
+		closing   atomic.Bool
+	}
+
+	// SourceSnapshot identifies the immutable workspace document compiled into a Plan.
+	SourceSnapshot struct {
+		Workspace    ID
+		RelativePath string
+		URI          localsource.URI
+		Revision     uint64
+	}
+
+	// Compilation owns a Ferret Plan and the source snapshot that produced it.
+	Compilation struct {
+		Plan   *ferret.Plan
+		Source SourceSnapshot
 	}
 )
 
@@ -34,6 +56,8 @@ const (
 	StateReady
 	// StateFailed identifies a workspace whose initial source load failed.
 	StateFailed
+	// StateClosing identifies a workspace whose child resources are being released.
+	StateClosing
 	// StateClosed identifies a workspace whose retained source state was released.
 	StateClosed
 )
@@ -71,9 +95,13 @@ func (w *Workspace) State() State {
 	}
 
 	w.mu.RLock()
-	defer w.mu.RUnlock()
+	state := w.state
+	w.mu.RUnlock()
+	if w.closing.Load() && state != StateClosed && state != StateFailed {
+		return StateClosing
+	}
 
-	return w.state
+	return state
 }
 
 // Failure returns the retained cause of a failed initial load.
@@ -155,13 +183,64 @@ func (w *Workspace) Diagnostics() []*ferretdiagnostics.Diagnostic {
 	return result
 }
 
-func (w *Workspace) setReady(content workspaceContent) {
+// Compile compiles one retained document through the workspace-owned Ferret engine.
+func (w *Workspace) Compile(ctx context.Context, relativePath string) (Compilation, error) {
+	if err := ctx.Err(); err != nil {
+		return Compilation{}, err
+	}
+
+	if w.closing.Load() {
+		return Compilation{}, ErrClosed
+	}
+
+	key, ok := documentKey(relativePath)
+	if !ok {
+		return Compilation{}, ErrDocumentNotFound
+	}
+
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if w.closing.Load() || w.state != StateReady || w.engine == nil {
+		return Compilation{}, ErrClosed
+	}
+
+	document, ok := w.documents[key]
+	if !ok {
+		return Compilation{}, ErrDocumentNotFound
+	}
+
+	snapshot := SourceSnapshot{
+		Workspace:    w.id,
+		RelativePath: document.File().RelativePath,
+		URI:          document.File().URI,
+		Revision:     document.Revision(),
+	}
+
+	if !document.Loaded() {
+		return Compilation{Source: snapshot}, fmt.Errorf("%w: %s", ErrDocumentUnavailable, key)
+	}
+
+	plan, err := w.engine.Compile(ctx, document.Source())
+	if err != nil {
+		return Compilation{Source: snapshot}, err
+	}
+
+	if err := ctx.Err(); err != nil {
+		return Compilation{Source: snapshot, Plan: plan}, err
+	}
+
+	return Compilation{Source: snapshot, Plan: plan}, nil
+}
+
+func (w *Workspace) setReady(content workspaceContent, engine *ferret.Engine) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	w.files = content.files
 	w.documents = content.documents
 	w.order = content.order
+	w.engine = engine
 	w.failure = nil
 	w.state = StateReady
 }
@@ -173,17 +252,43 @@ func (w *Workspace) setFailed(err error) {
 	w.files = nil
 	w.documents = nil
 	w.order = nil
+	w.engine = nil
 	w.failure = err
 	w.state = StateFailed
 }
 
-func (w *Workspace) close() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func (w *Workspace) markClosing() {
+	w.closing.Store(true)
+}
 
+func (w *Workspace) close() error {
+	w.mu.Lock()
+
+	if w.state == StateClosed {
+		w.mu.Unlock()
+
+		return nil
+	}
+
+	engine := w.engine
+	w.engine = nil
+	w.state = StateClosing
+	w.mu.Unlock()
+
+	var result error
+	if engine != nil {
+		if err := engine.Close(); err != nil {
+			result = errors.Join(ErrLoad, fmt.Errorf("close workspace engine: %w", err))
+		}
+	}
+
+	w.mu.Lock()
 	w.files = nil
 	w.documents = nil
 	w.order = nil
 	w.failure = nil
 	w.state = StateClosed
+	w.mu.Unlock()
+
+	return result
 }

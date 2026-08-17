@@ -59,4 +59,4 @@ jobs:
         run: make check-generate
 
       - name: Race test shared state
-        run: go test -race ./client ./internal/daemon ./internal/grpc ./internal/language ./internal/lsp ./internal/transport ./internal/workspace
+        run: go test -race ./client ./internal/daemon ./internal/exec ./internal/grpc ./internal/language ./internal/lsp ./internal/transport ./internal/workspace

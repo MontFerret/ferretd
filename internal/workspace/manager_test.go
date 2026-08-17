@@ -185,7 +185,9 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 		t.Fatalf("Get closed error = %v, want ErrNotFound", err)
 	}
 
-	manager.Clear()
+	if err := manager.Clear(context.Background()); err != nil {
+		t.Fatalf("clear manager: %v", err)
+	}
 	if alpha.State() != StateClosed {
 		t.Fatalf("cleared workspace state = %v, want StateClosed", alpha.State())
 	}
@@ -503,7 +505,9 @@ func TestClearPreventsInFlightOpenFromCommitting(t *testing.T) {
 	}()
 	<-started
 
-	manager.Clear()
+	if err := manager.Clear(context.Background()); err != nil {
+		t.Fatalf("clear manager: %v", err)
+	}
 	close(release)
 
 	if err := <-done; !errors.Is(err, ErrLoad) {
@@ -529,7 +533,7 @@ func TestOperationsRespectCancellation(t *testing.T) {
 	if _, err := manager.List(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("List error = %v, want context.Canceled", err)
 	}
-	if err := manager.Close(ctx, "unknown"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("Close error = %v, want context.Canceled", err)
+	if err := manager.Close(ctx, "unknown"); err != nil {
+		t.Fatalf("idempotent Close error = %v, want nil", err)
 	}
 }

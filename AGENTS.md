@@ -9,10 +9,10 @@ This file is the canonical operating guide for coding agents working in this rep
 * `ferretd` is the experimental long-running developer service for Ferret.
 * The current executable provides `serve`, `lsp`, and version/help behavior.
 * The current language server tracks open `.fql` documents and publishes Ferret parser and compiler diagnostics over LSP stdio.
-* `serve` exposes daemon information, API negotiation, graceful shutdown, and process-local workspace lifecycle over a local gRPC transport.
-* Opening a workspace synchronously discovers `.fql` files and retains daemon-owned source, syntax state, and document diagnostics until explicit close.
-* The real workspace manager is implemented; execution-session and debug-session packages remain boundary placeholders.
-* Buf generates the implemented daemon/workspace protobuf and gRPC packages under `gen/`. Execution/debug protobufs remain ungenerated placeholders.
+* `serve` exposes daemon information, API negotiation, graceful shutdown, workspace lifecycle, and execution sessions over a local gRPC transport.
+* Opening a workspace synchronously discovers `.fql` files, retains daemon-owned source, syntax state, and document diagnostics, and constructs one rooted read-write Ferret engine until explicit close.
+* The workspace and execution-session managers are implemented; the debug-session package remains a boundary placeholder.
+* Buf generates the implemented daemon/workspace/execution protobuf and gRPC packages under `gen/`. Debug protobufs remain ungenerated placeholders.
 * Ferret remains the owner of FQL parsing, compilation, runtime semantics, VM execution, and core debugging behavior.
 
 Do not infer implemented behavior from architecture diagrams, placeholder service definitions, future-facing type names, or historical discussion. Current source, tests, dependency contracts, and build configuration are authoritative.
@@ -37,9 +37,9 @@ The current daemon flow is:
 ferretd serve
     -> internal/daemon
     -> internal/transport local listener
-    -> internal/grpc DaemonService, WorkspaceService, and health
-    -> protocol-neutral workspace manager
-    -> root-confined source discovery and Ferret syntax parsing
+    -> internal/grpc DaemonService, WorkspaceService, ExecutionService, and health
+    -> protocol-neutral workspace and execution managers
+    -> root-confined source discovery, Ferret compilation, and one-shot execution
     -> signal, RPC, or context-triggered graceful shutdown
 ```
 
@@ -86,13 +86,14 @@ Protocol adapters should translate and delegate. They must not become alternate 
 * Context cancellation must remain effective at process and service boundaries. Long-running operations must not outlive their owning context without an explicit lifecycle reason.
 * Daemon shutdown must remain safe after cancellation and `Stop` must remain idempotent.
 * The daemon remains local-only: Unix sockets or Windows named pipes, permission-restricted to the current user, with no TCP, TLS, or remote mode.
-* API major mismatch is rejected; minor versions are additive. Workspace state survives client disconnects but not daemon restarts.
+* API major mismatch is rejected; minor versions are additive. Workspace, Session, and Execution state survive client disconnects but not daemon restarts.
 * Workspace roots are existing absolute directories, cleaned without resolving symlinks; repeated opens converge and closes are idempotent.
 * Workspace loading is synchronous and static. It retains lowercase `.fql` regular files recursively, skips nested symlinks, and requires close/reopen to observe disk changes.
 * `.git`, `.hg`, `.svn`, `node_modules`, and `vendor` directories are pruned during discovery. There is no ignore-file or project-manifest contract.
-* Workspace documents retain source and Ferret syntax state only. Compilation, semantic validation, bytecode, execution state, editor overlays, and filesystem watching remain separate future capabilities.
+* Workspace documents retain source and Ferret syntax state only. Compilation into immutable Plans and one-shot runtime state belong to execution Sessions and Executions; editor overlays and filesystem watching remain separate capabilities.
 * Document load and syntax diagnostics do not fail an otherwise coherent workspace; fatal root/discovery failures do not leave manager entries.
-* Execution/debug placeholder protobuf declarations do not imply generated clients, servers, or service behavior.
+* A Session owns one immutable compiled Ferret Plan. An Execution owns one fresh runtime Session, one run attempt, isolated parameters, terminal output or failure, and bounded lifecycle observation.
+* Debug placeholder protobuf declarations do not imply generated clients, servers, or service behavior.
 * Current package names, protobuf package names, `go_package` values, service versions, CLI behavior, and LSP wire behavior are compatibility-sensitive.
 * Preserve existing behavior unless the task explicitly changes it. Do not implement future architecture as a side effect of an unrelated change.
 
@@ -116,7 +117,7 @@ Begin with the package that owns the requested behavior. Do not move logic into 
     * Owns construction and lifecycle coordination for the services that make up `ferretd`.
     * Keep orchestration thin and delegate behavior to the owning service.
     * `Start` listens and serves until context cancellation, RPC shutdown, explicit stop, or transport failure.
-    * `Stop` marks health unavailable, drains or force-stops RPCs, clears workspaces, closes the listener, and remains idempotent.
+    * `Stop` marks health unavailable, closes execution resources, clears workspace engines, drains or force-stops RPCs, closes the listener, and remains idempotent.
 
 ### Protocol-neutral language service
 
@@ -152,15 +153,15 @@ Begin with the package that owns the requested behavior. Do not move logic into 
 ### Workspace, execution, and debug services
 
 * `internal/workspace`
-    * Owns concurrency-safe, process-local workspace identity, lifecycle, discovery, files, daemon documents, source snapshots, and retained Ferret syntax state.
+    * Owns concurrency-safe, process-local workspace identity, lifecycle, discovery, files, daemon documents, source snapshots, retained Ferret syntax state, and one rooted read-write Ferret engine per open workspace.
     * Canonicalizes with `filepath.Abs` at the public client boundary and `filepath.Clean` at the service boundary; it deliberately does not resolve symlinks.
     * Coordinates duplicate in-flight opens without holding manager locks across I/O or parsing and publishes only successfully loaded workspaces.
     * Returns copies of files, sources, and diagnostics; retained parser state remains shared daemon-owned state that visitors must treat as read-only. State remains independent of connections, lists and documents are sorted deterministically, and repeated open/close operations are convergent.
-    * Uses Ferret source/parser/diagnostic APIs for syntax state. It does not compile documents or own Ferret semantic behavior.
+    * Uses Ferret source/parser/diagnostic APIs for syntax state and exposes the compile boundary consumed by `internal/exec`. It does not own Ferret semantic behavior.
 * `internal/exec`
-    * Is the future owner of Ferret execution-session coordination.
+    * Owns concurrency-safe compiled Session and one-shot Execution coordination, cancellation, terminal state, bounded watchers, and parent-child cleanup.
     * Ferret remains the owner of compilation, runtime semantics, and VM execution.
-    * The current session manager is a boundary placeholder and does not create or execute sessions.
+    * Sessions retain immutable Plans; each Execution creates and closes a fresh Ferret runtime Session and runs it at most once.
 * `internal/debug`
     * Is the future owner of debug-session coordination and protocol-neutral daemon state.
     * Ferret remains the owner of core debugging and execution behavior.
@@ -175,11 +176,11 @@ Do not add speculative abstractions to placeholder packages. Add state, interfac
 * `proto/ferretd/daemon/v1`
     * Contains the implemented `DaemonService` v1 source contract and compatibility detail.
 * `proto/ferretd/execution/v1`
-    * Contains the placeholder `ExecutionService` v1 source contract.
+    * Contains the implemented `ExecutionService` v1 source contract.
 * `proto/ferretd/debug/v1`
     * Contains the placeholder `DebugService` v1 source contract.
 
-Buf v2 configuration at the repository root pins generation through `make generate`; checked-in output belongs under `gen/` and must never be edited manually. `make proto-lint` validates all source contracts, while generation intentionally targets only daemon/workspace v1. Keep execution/debug ungenerated until their services are implemented.
+Buf v2 configuration at the repository root pins generation through `make generate`; checked-in output belongs under `gen/` and must never be edited manually. `make proto-lint` validates all source contracts, while generation intentionally targets daemon/workspace/execution v1. Keep debug ungenerated until its service is implemented.
 
 ### Documentation, tooling, and release scripts
 
@@ -207,23 +208,26 @@ Currently implemented:
 * Cobra-based `serve`, `lsp`, help, and version behavior;
 * signal-aware process cancellation;
 * local Unix-socket and Windows named-pipe gRPC serving;
-* API v1.0 negotiation, daemon information, health, and graceful shutdown;
+* API v1.1 negotiation, daemon information, health, and graceful shutdown;
 * supported Go client discovery, dialing, negotiation, and error classification;
 * concurrency-safe, process-local workspace open/get/list/close behavior;
 * deterministic root-confined `.fql` discovery with fixed directory exclusions and nested-symlink avoidance;
 * daemon-owned file and document snapshots with source contents, revision, Ferret parse state, and syntax/load diagnostics;
+* one rooted read-write Ferret engine per open workspace;
+* immutable compiled Sessions and isolated one-shot Executions with JSON-shaped parameters and encoded output;
+* asynchronous run, cancellation, terminal retention, and latest-plus-future bounded lifecycle watches;
+* workspace-to-Session-to-Execution close cascades and daemon-owned cleanup;
 * LSP over stdio;
 * open, full-document change, and close notifications;
 * in-memory open-document snapshots and version checks;
 * Ferret parser/compiler diagnostics for open documents;
 * source-span to UTF-16 range conversion;
-* pinned protobuf generation for daemon/workspace v1;
-* placeholder execution/debug protobuf source contracts.
+* pinned protobuf generation for daemon/workspace/execution v1;
+* placeholder debug protobuf source contract.
 
 Not currently implemented:
 
 * DAP transport;
-* execution-session behavior;
 * debug-session behavior;
 * durable workspace persistence or eviction;
 * module resolution;
@@ -262,7 +266,7 @@ Do not claim planned capabilities are supported. When implementing one, update t
     * preserve the distinct filesystem-file and daemon-document models
     * preserve synchronous static loading, root confinement, deterministic ordering, and recoverable document diagnostics unless the task explicitly changes them
     * define workspace identity, ownership, lifecycle, and concurrency before exposing new behavior through an adapter
-* Add execution sessions:
+* Add or change execution sessions:
     * begin in `internal/exec`
     * use Ferret's public embedding/runtime contracts rather than duplicating execution semantics
     * define cancellation, result ownership, cleanup, and session lifetime explicitly
@@ -694,13 +698,13 @@ Run commands from the repository root.
 * Format Go code: `make fmt`
 * Run the broad local build gate: `make build`
 * Install lint and formatting tools: `make install-tools`
-* Generate daemon/workspace protobuf code: `make generate`
+* Generate daemon/workspace/execution protobuf code: `make generate`
 * Lint all protobuf sources: `make proto-lint`
 * Verify checked-in generated code: `make check-generate`
 
 `make build` runs vet, lint, tests, and compilation. It therefore requires `staticcheck`, `revive`, and the normal Go toolchain in addition to project dependencies.
 
-`make generate` uses the pinned Buf CLI and pinned Go protobuf plugins declared by the repository. It intentionally generates only implemented daemon/workspace contracts. Always inspect generated diffs and run `make check-generate` when contracts or generation configuration change.
+`make generate` uses the pinned Buf CLI and pinned Go protobuf plugins declared by the repository. It intentionally generates only implemented daemon/workspace/execution contracts. Always inspect generated diffs and run `make check-generate` when contracts or generation configuration change.
 
 `make fmt` mutates Go files. Use it only when formatting changes are within task scope, and inspect the resulting diff for unrelated churn.
 
@@ -752,7 +756,7 @@ Update repository documentation when a change affects user-visible or integratio
 * Update `docs/lsp.md` for editor setup, LSP capabilities, synchronization, or language features.
 * Update `docs/architecture.md` for ownership boundaries or intended service relationships.
 * Keep implemented behavior and future plans clearly separated.
-* Do not document execution/debug placeholder protobuf services as running endpoints.
+* Do not document the debug placeholder protobuf service as a running endpoint.
 * Keep examples consistent with actual command names, arguments, and transport behavior.
 
 Documentation synchronization is part of a behavior change when existing documentation would otherwise become incorrect. It does not authorize unrelated documentation cleanup.
