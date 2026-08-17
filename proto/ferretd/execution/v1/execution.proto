@@ -2,14 +2,239 @@ syntax = "proto3";
 
 package ferretd.execution.v1;
 
+import "ferretd/workspace/v1/workspace.proto";
+import "google/protobuf/struct.proto";
+
 option go_package = "github.com/MontFerret/ferretd/gen/ferretd/execution/v1;executionv1";
 
 service ExecutionService {
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse);
+  rpc CreateExecution(CreateExecutionRequest) returns (CreateExecutionResponse);
+  rpc RunExecution(RunExecutionRequest) returns (RunExecutionResponse);
+  rpc GetExecution(GetExecutionRequest) returns (GetExecutionResponse);
+  rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
+  rpc CloseExecution(CloseExecutionRequest) returns (CloseExecutionResponse);
+  rpc WatchExecution(WatchExecutionRequest) returns (stream WatchExecutionResponse);
 }
 
-message CreateSessionRequest {}
+message SessionId {
+  string value = 1;
+}
+
+message ExecutionId {
+  string value = 1;
+}
+
+message SourceSnapshot {
+  ferretd.workspace.v1.WorkspaceId workspace_id = 1;
+  string relative_path = 2;
+  string uri = 3;
+  uint64 revision = 4;
+}
+
+message Session {
+  SessionId id = 1;
+  SourceSnapshot source = 2;
+  repeated string parameters = 3;
+}
+
+enum ExecutionState {
+  EXECUTION_STATE_UNSPECIFIED = 0;
+  EXECUTION_STATE_CREATED = 1;
+  EXECUTION_STATE_RUNNING = 2;
+  EXECUTION_STATE_COMPLETED = 3;
+  EXECUTION_STATE_FAILED = 4;
+  EXECUTION_STATE_CANCELLED = 5;
+}
+
+message ExecutionOptions {
+  string output_content_type = 1;
+}
+
+message Output {
+  string content_type = 1;
+  bytes data = 2;
+}
+
+enum FailureCategory {
+  FAILURE_CATEGORY_UNSPECIFIED = 0;
+  FAILURE_CATEGORY_SESSION_CREATION = 1;
+  FAILURE_CATEGORY_RUNTIME = 2;
+  FAILURE_CATEGORY_CLEANUP = 3;
+}
+
+enum DiagnosticSeverity {
+  DIAGNOSTIC_SEVERITY_UNSPECIFIED = 0;
+  DIAGNOSTIC_SEVERITY_ERROR = 1;
+}
+
+message Position {
+  uint32 line = 1;
+  uint32 character = 2;
+}
+
+message Range {
+  Position start = 1;
+  Position end = 2;
+}
+
+message RelatedInformation {
+  string uri = 1;
+  Range range = 2;
+  string message = 3;
+}
+
+message Diagnostic {
+  string uri = 1;
+  Range range = 2;
+  DiagnosticSeverity severity = 3;
+  string code = 4;
+  string source = 5;
+  string message = 6;
+  repeated RelatedInformation related_information = 7;
+}
+
+message Failure {
+  FailureCategory category = 1;
+  string message = 2;
+  repeated Diagnostic diagnostics = 3;
+}
+
+message Execution {
+  ExecutionId id = 1;
+  SessionId session_id = 2;
+  ExecutionState state = 3;
+  google.protobuf.Struct parameters = 4;
+  ExecutionOptions options = 5;
+  Output output = 6;
+  Failure failure = 7;
+}
+
+message CompilationFailure {
+  SourceSnapshot source = 1;
+  repeated Diagnostic diagnostics = 2;
+}
+
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  RESOURCE_KIND_WORKSPACE = 1;
+  RESOURCE_KIND_SOURCE = 2;
+  RESOURCE_KIND_SESSION = 3;
+  RESOURCE_KIND_EXECUTION = 4;
+  RESOURCE_KIND_WATCHER = 5;
+}
+
+enum ResourceCondition {
+  RESOURCE_CONDITION_UNSPECIFIED = 0;
+  RESOURCE_CONDITION_NOT_FOUND = 1;
+  RESOURCE_CONDITION_CLOSED = 2;
+  RESOURCE_CONDITION_INVALID_STATE = 3;
+  RESOURCE_CONDITION_INVALID_PARAMETERS = 4;
+  RESOURCE_CONDITION_LAGGED = 5;
+}
+
+message ResourceErrorDetail {
+  ResourceKind resource = 1;
+  ResourceCondition condition = 2;
+}
+
+message ExecutionCreated {
+  Execution execution = 1;
+}
+
+message ExecutionStarted {
+  Execution execution = 1;
+}
+
+message ExecutionCompleted {
+  Execution execution = 1;
+}
+
+message ExecutionFailed {
+  Execution execution = 1;
+}
+
+message ExecutionCancelled {
+  Execution execution = 1;
+}
+
+message WatchExecutionResponse {
+  ExecutionId execution_id = 1;
+  uint64 sequence = 2;
+  oneof payload {
+    ExecutionCreated created = 3;
+    ExecutionStarted started = 4;
+    ExecutionCompleted completed = 5;
+    ExecutionFailed failed = 6;
+    ExecutionCancelled cancelled = 7;
+  }
+}
+
+message CreateSessionRequest {
+  ferretd.workspace.v1.WorkspaceId workspace_id = 1;
+  string relative_path = 2;
+}
 
 message CreateSessionResponse {
-  string session_id = 1;
+  Session session = 1;
+}
+
+message GetSessionRequest {
+  SessionId id = 1;
+}
+
+message GetSessionResponse {
+  Session session = 1;
+}
+
+message CloseSessionRequest {
+  SessionId id = 1;
+}
+
+message CloseSessionResponse {}
+
+message CreateExecutionRequest {
+  SessionId session_id = 1;
+  google.protobuf.Struct parameters = 2;
+  ExecutionOptions options = 3;
+}
+
+message CreateExecutionResponse {
+  Execution execution = 1;
+}
+
+message RunExecutionRequest {
+  ExecutionId id = 1;
+}
+
+message RunExecutionResponse {
+  Execution execution = 1;
+}
+
+message GetExecutionRequest {
+  ExecutionId id = 1;
+}
+
+message GetExecutionResponse {
+  Execution execution = 1;
+}
+
+message CancelExecutionRequest {
+  ExecutionId id = 1;
+}
+
+message CancelExecutionResponse {
+  Execution execution = 1;
+}
+
+message CloseExecutionRequest {
+  ExecutionId id = 1;
+}
+
+message CloseExecutionResponse {}
+
+message WatchExecutionRequest {
+  ExecutionId id = 1;
 }

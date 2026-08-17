@@ -14,8 +14,9 @@ import (
 )
 
 func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
-	manager := New()
 	root := t.TempDir()
+	linkParent := t.TempDir()
+	manager := newTestManager(t)
 
 	first, err := manager.Open(context.Background(), root)
 	if err != nil {
@@ -33,7 +34,7 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 		t.Fatalf("workspace ID is not a UUID: %v", err)
 	}
 
-	link := filepath.Join(t.TempDir(), "linked-root")
+	link := filepath.Join(linkParent, "linked-root")
 	if err := os.Symlink(root, link); err != nil {
 		t.Skipf("create symlink: %v", err)
 	}
@@ -60,7 +61,7 @@ func TestManagerLookupDocumentUsesDeepestWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	manager := New()
+	manager := newTestManager(t)
 	parentWorkspace, err := manager.Open(ctx, root)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +96,7 @@ func TestManagerLookupDocumentDoesNotFallBackPastDeepestWorkspace(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	manager := New()
+	manager := newTestManager(t)
 	if _, err := manager.Open(ctx, root); err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +186,9 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 		t.Fatalf("Get closed error = %v, want ErrNotFound", err)
 	}
 
-	manager.Clear()
+	if err := manager.Clear(context.Background()); err != nil {
+		t.Fatalf("clear manager: %v", err)
+	}
 	if alpha.State() != StateClosed {
 		t.Fatalf("cleared workspace state = %v, want StateClosed", alpha.State())
 	}
@@ -196,8 +199,8 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 }
 
 func TestConcurrentOpenConverges(t *testing.T) {
-	manager := New()
 	root := t.TempDir()
+	manager := newTestManager(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var loads atomic.Int32
@@ -252,8 +255,8 @@ func TestConcurrentOpenConverges(t *testing.T) {
 }
 
 func TestOpenTransitionsFromOpeningToReady(t *testing.T) {
-	manager := New()
 	root := t.TempDir()
+	manager := newTestManager(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
 
@@ -288,8 +291,8 @@ func TestOpenTransitionsFromOpeningToReady(t *testing.T) {
 }
 
 func TestFailedOpenIsClassifiedRemovedAndRetryable(t *testing.T) {
-	manager := New()
 	root := t.TempDir()
+	manager := newTestManager(t)
 	wantErr := errors.New("discovery failed")
 	var failed *Workspace
 
@@ -323,8 +326,8 @@ func TestFailedOpenIsClassifiedRemovedAndRetryable(t *testing.T) {
 }
 
 func TestCanceledWaiterDoesNotCancelOwner(t *testing.T) {
-	manager := New()
 	root := t.TempDir()
+	manager := newTestManager(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
 
@@ -360,8 +363,8 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 		err       error
 	}
 
-	manager := New()
 	root := t.TempDir()
+	manager := newTestManager(t)
 	canonical := filepath.Clean(root)
 	firstStarted := make(chan struct{})
 	secondStarted := make(chan struct{})
@@ -503,7 +506,9 @@ func TestClearPreventsInFlightOpenFromCommitting(t *testing.T) {
 	}()
 	<-started
 
-	manager.Clear()
+	if err := manager.Clear(context.Background()); err != nil {
+		t.Fatalf("clear manager: %v", err)
+	}
 	close(release)
 
 	if err := <-done; !errors.Is(err, ErrLoad) {
@@ -529,7 +534,7 @@ func TestOperationsRespectCancellation(t *testing.T) {
 	if _, err := manager.List(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("List error = %v, want context.Canceled", err)
 	}
-	if err := manager.Close(ctx, "unknown"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("Close error = %v, want context.Canceled", err)
+	if err := manager.Close(ctx, "unknown"); err != nil {
+		t.Fatalf("idempotent Close error = %v, want nil", err)
 	}
 }

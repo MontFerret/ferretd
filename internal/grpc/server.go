@@ -10,7 +10,9 @@ import (
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 
 	daemonv1 "github.com/MontFerret/ferretd/gen/ferretd/daemon/v1"
+	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 	workspacev1 "github.com/MontFerret/ferretd/gen/ferretd/workspace/v1"
+	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -21,12 +23,27 @@ type Server struct {
 }
 
 // New constructs the daemon's gRPC adapter.
-func New(workspaces *workspace.Manager, version, instanceID string, shutdown func()) *Server {
+func New(
+	workspaces *workspace.Manager,
+	executions *exec.Manager,
+	version string,
+	instanceID string,
+	shutdown func(),
+) *Server {
+	if workspaces == nil {
+		workspaces = workspace.New()
+	}
+
+	if executions == nil {
+		executions = exec.New(workspaces)
+	}
+
 	server := grpcgo.NewServer()
 	healthServer := health.NewServer()
 
 	daemonv1.RegisterDaemonServiceServer(server, newDaemonService(version, instanceID, shutdown))
 	workspacev1.RegisterWorkspaceServiceServer(server, newWorkspaceService(workspaces))
+	executionv1.RegisterExecutionServiceServer(server, newExecutionService(executions))
 	healthv1.RegisterHealthServer(server, healthServer)
 
 	result := &Server{
@@ -43,12 +60,12 @@ func (s *Server) Serve(listener net.Listener) error {
 	return s.server.Serve(listener)
 }
 
-// SetServing marks the daemon and its M1 services healthy.
+// SetServing marks the daemon and all registered services healthy.
 func (s *Server) SetServing() {
 	s.setHealth(healthv1.HealthCheckResponse_SERVING)
 }
 
-// SetNotServing marks the daemon and its M1 services unavailable.
+// SetNotServing marks the daemon and all registered services unavailable.
 func (s *Server) SetNotServing() {
 	s.setHealth(healthv1.HealthCheckResponse_NOT_SERVING)
 }
@@ -76,4 +93,5 @@ func (s *Server) setHealth(value healthv1.HealthCheckResponse_ServingStatus) {
 	s.health.SetServingStatus("", value)
 	s.health.SetServingStatus(daemonv1.DaemonService_ServiceDesc.ServiceName, value)
 	s.health.SetServingStatus(workspacev1.WorkspaceService_ServiceDesc.ServiceName, value)
+	s.health.SetServingStatus(executionv1.ExecutionService_ServiceDesc.ServiceName, value)
 }

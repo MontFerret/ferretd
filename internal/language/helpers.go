@@ -9,6 +9,7 @@ import (
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
+	diagnosticprojection "github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -17,62 +18,7 @@ func fmtDocumentNotOpen(uri string) error {
 }
 
 func convertFerretDiagnostic(uri string, mapper *source.Mapper, diagnostic *ferretdiagnostics.Diagnostic) Diagnostic {
-	result := Diagnostic{
-		Message:  diagnosticMessage(diagnostic),
-		Severity: DiagnosticSeverityError,
-		Source:   "ferret",
-		Code:     diagnostic.Kind.String(),
-	}
-
-	primaryIndex := -1
-
-	for i := range diagnostic.Spans {
-		if diagnostic.Spans[i].Main {
-			primaryIndex = i
-
-			break
-		}
-	}
-
-	if primaryIndex < 0 && len(diagnostic.Spans) > 0 {
-		primaryIndex = 0
-	}
-
-	if primaryIndex >= 0 {
-		result.Range = mapper.SpanToRange(toSourceSpan(diagnostic.Spans[primaryIndex].Span))
-	}
-
-	for i, span := range diagnostic.Spans {
-		if i == primaryIndex {
-			continue
-		}
-
-		message := span.Label
-		if message == "" {
-			message = "Related location"
-		}
-
-		result.RelatedInformation = append(result.RelatedInformation, RelatedInformation{
-			URI:     uri,
-			Range:   mapper.SpanToRange(toSourceSpan(span.Span)),
-			Message: message,
-		})
-	}
-
-	return result
-}
-
-func diagnosticMessage(diagnostic *ferretdiagnostics.Diagnostic) string {
-	parts := []string{diagnostic.Message}
-	if diagnostic.Hint != "" {
-		parts = append(parts, "Hint: "+diagnostic.Hint)
-	}
-
-	if diagnostic.Note != "" {
-		parts = append(parts, "Note: "+diagnostic.Note)
-	}
-
-	return strings.Join(parts, "\n\n")
+	return diagnosticprojection.Convert(uri, mapper, diagnostic)
 }
 
 func toSourceSpan(span ferretsource.Span) source.Span {

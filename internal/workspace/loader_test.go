@@ -147,7 +147,8 @@ func TestOpenPreservesRootSymlinkAndSkipsNestedSymlinks(t *testing.T) {
 		t.Skipf("create file symlink: %v", err)
 	}
 
-	workspace, err := New().Open(context.Background(), rootLink)
+	manager := newTestManager(t)
+	workspace, err := manager.Open(context.Background(), rootLink)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

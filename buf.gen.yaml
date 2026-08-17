@@ -5,6 +5,7 @@ inputs:
   - directory: .
     paths:
       - proto/ferretd/daemon/v1/daemon.proto
+      - proto/ferretd/execution/v1/execution.proto
       - proto/ferretd/workspace/v1/workspace.proto
 
 plugins:
