@@ -21,7 +21,7 @@ func TestOpenUsesCasePreservingLexicalIdentity(t *testing.T) {
 		t.Skipf("filesystem does not resolve case-variant path: %v", err)
 	}
 
-	manager := New()
+	manager := newTestManager(t)
 	first, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Open original root: %v", err)
@@ -38,5 +38,30 @@ func TestOpenUsesCasePreservingLexicalIdentity(t *testing.T) {
 
 	if first.Root() != filepath.Clean(root) || second.Root() != filepath.Clean(alternate) {
 		t.Fatalf("workspace roots = %q and %q, want lexical inputs", first.Root(), second.Root())
+	}
+}
+
+func TestManagerCloseReleasesCanonicalWorkspaceDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspace")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	manager := New()
+	opened, err := manager.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	if opened.Root() != filepath.Clean(root) {
+		t.Fatalf("workspace root = %q, want %q", opened.Root(), filepath.Clean(root))
+	}
+
+	if err := manager.Close(context.Background(), opened.ID()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatalf("RemoveAll after Close: %v", err)
 	}
 }

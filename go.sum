@@ -1,7 +1,7 @@
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/MontFerret/ferret/v2 v2.0.0-alpha.46.0.20260814015540-a94ce5f37644 h1:6apIDJdlnvo72fKjFKf5qUjmhC9PDdNdGgG3v0veGXQ=
-github.com/MontFerret/ferret/v2 v2.0.0-alpha.46.0.20260814015540-a94ce5f37644/go.mod h1:Q6JfAgOzRi9KNLqgQtPIQ9BNsXeAar2ITmcQ0HI4zgM=
+github.com/MontFerret/ferret/v2 v2.0.0-alpha.47.0.20260817190048-a76bef7fcccb h1:VrYgvqnX+EeIAq/td5qsNPaStPZOdBBpfUuQy92P3zE=
+github.com/MontFerret/ferret/v2 v2.0.0-alpha.47.0.20260817190048-a76bef7fcccb/go.mod h1:Q6JfAgOzRi9KNLqgQtPIQ9BNsXeAar2ITmcQ0HI4zgM=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
 github.com/antlr4-go/antlr/v4 v4.13.1/go.mod h1:GKmUxMtwp6ZgGwZSva4eWPC5mS6vUAmOABFgjdkM7Nw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

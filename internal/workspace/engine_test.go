@@ -21,7 +21,7 @@ RETURN TO_STRING(data)
 		t.Fatal(err)
 	}
 
-	manager := New()
+	manager := newTestManager(t)
 	opened, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -222,7 +222,7 @@ func TestWorkspaceCloseWaitsForConcurrentCompilation(t *testing.T) {
 func TestWorkspaceCompilationUsesStaticSourceSnapshot(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspaceSource(t, root, "query.fql", "RETURN 1")
-	manager := New()
+	manager := newTestManager(t)
 	opened, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
