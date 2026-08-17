@@ -63,6 +63,15 @@ func (s *Session) addExecution(execution *Execution) error {
 	return nil
 }
 
+func (s *Session) removeExecution(execution *Execution) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.executions[execution.id] == execution {
+		delete(s.executions, execution.id)
+	}
+}
+
 func (s *Session) beginClose() ([]*Execution, *ferret.Plan, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -74,11 +83,11 @@ func (s *Session) beginClose() ([]*Execution, *ferret.Plan, bool) {
 	s.closing = true
 	executions := make([]*Execution, 0, len(s.executions))
 
+	// Keep the children registered until their runtime cleanup releases ownership.
 	for _, execution := range s.executions {
 		executions = append(executions, execution)
 	}
 
-	s.executions = make(map[ExecutionID]*Execution)
 	plan := s.plan
 	s.plan = nil
 

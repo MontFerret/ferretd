@@ -247,7 +247,7 @@ func (e *Execution) beginClose() bool {
 	return true
 }
 
-func (e *Execution) finishClose() {
+func (e *Execution) settleClose() {
 	e.Cancel()
 	<-e.runDone
 
@@ -255,8 +255,12 @@ func (e *Execution) finishClose() {
 	for id, watcher := range e.watchers {
 		e.closeWatcherLocked(id, watcher, nil)
 	}
-	close(e.closeDone)
+
 	e.mu.Unlock()
+}
+
+func (e *Execution) completeClose() {
+	close(e.closeDone)
 }
 
 func (e *Execution) snapshotLocked() ExecutionSnapshot {

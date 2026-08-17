@@ -253,12 +253,12 @@ func (m *Manager) CancelExecution(ctx context.Context, id ExecutionID) (Executio
 
 // CloseExecution idempotently removes and settles an Execution.
 func (m *Manager) CloseExecution(ctx context.Context, id ExecutionID) error {
-	execution, owner := m.detachExecution(id)
+	execution := m.detachExecution(id)
 	if execution == nil {
 		return nil
 	}
 
-	if owner {
+	if execution.beginClose() {
 		go m.finishExecutionClose(execution)
 	}
 
@@ -474,22 +474,22 @@ func (m *Manager) execution(ctx context.Context, id ExecutionID) (*Execution, er
 	return execution, nil
 }
 
-func (m *Manager) detachExecution(id ExecutionID) (*Execution, bool) {
+func (m *Manager) detachExecution(id ExecutionID) *Execution {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if execution, ok := m.closingExecutions[id]; ok {
-		return execution, false
+		return execution
 	}
 
 	execution, ok := m.executions[id]
 	if !ok {
-		return nil, false
+		return nil
 	}
 
 	m.detachKnownExecutionLocked(execution)
 
-	return execution, true
+	return execution
 }
 
 func (m *Manager) detachKnownExecution(execution *Execution) {
@@ -501,18 +501,27 @@ func (m *Manager) detachKnownExecution(execution *Execution) {
 }
 
 func (m *Manager) detachKnownExecutionLocked(execution *Execution) {
+	// Public visibility ends immediately, while Session ownership lasts through cleanup.
 	delete(m.executions, execution.id)
 	m.closingExecutions[execution.id] = execution
-
-	if session := m.sessions[execution.session]; session != nil {
-		session.mu.Lock()
-		delete(session.executions, execution.id)
-		session.mu.Unlock()
-	}
 }
 
 func (m *Manager) finishExecutionClose(execution *Execution) {
-	execution.finishClose()
+	execution.settleClose()
+
+	m.mu.Lock()
+	session := m.sessions[execution.session]
+	if session == nil {
+		session = m.closingSessions[execution.session]
+	}
+
+	if session != nil {
+		session.removeExecution(execution)
+	}
+
+	m.mu.Unlock()
+
+	execution.completeClose()
 
 	m.mu.Lock()
 	delete(m.closingExecutions, execution.id)
