@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	ferret "github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2"
 )
 
 func TestWorkspaceEngineIsRootedAndReadWrite(t *testing.T) {
@@ -250,6 +250,39 @@ func TestWorkspaceCompilationUsesStaticSourceSnapshot(t *testing.T) {
 	}
 	if got := string(output.Content); got != "1" {
 		t.Fatalf("output = %q, want retained source result", got)
+	}
+}
+
+func TestWorkspaceCompileDebugPreservesSourceSnapshotAndDebuggerMetadata(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceSource(t, root, "query.fql", "LET x = 1\nRETURN x")
+	manager := newTestManager(t)
+	opened, err := manager.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	compilation, err := opened.CompileDebug(context.Background(), "query.fql")
+	if err != nil {
+		t.Fatalf("CompileDebug: %v", err)
+	}
+	defer func() { _ = compilation.Plan.Close() }()
+	if compilation.Source.Workspace != opened.ID() || compilation.Source.RelativePath != "query.fql" ||
+		compilation.Source.Revision != 1 || compilation.Source.URI == "" {
+		t.Fatalf("source snapshot = %+v", compilation.Source)
+	}
+
+	session, err := compilation.Plan.NewDebugSession(context.Background())
+	if err != nil {
+		t.Fatalf("NewDebugSession: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+	event, err := session.Start(context.Background())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if event.Reason != ferret.DebugReasonEntry || event.Location.Line != 1 {
+		t.Fatalf("entry event = %+v", event)
 	}
 }
 

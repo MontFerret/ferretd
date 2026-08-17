@@ -14,7 +14,7 @@ import (
 )
 
 type (
-	// Manager owns all process-local daemon Sessions and Executions.
+	// Manager owns all process-local daemon Sessions, Executions, and DebugSessions.
 	Manager struct {
 		mu sync.RWMutex
 
@@ -23,6 +23,8 @@ type (
 		closingSessions   map[SessionID]*Session
 		executions        map[ExecutionID]*Execution
 		closingExecutions map[ExecutionID]*Execution
+		debugSessions     map[DebugSessionID]*DebugSession
+		closingDebugs     map[DebugSessionID]*DebugSession
 		groups            map[workspace.ID]*workspaceGroup
 		closed            bool
 	}
@@ -50,6 +52,8 @@ func New(workspaces *workspace.Manager) *Manager {
 		closingSessions:   make(map[SessionID]*Session),
 		executions:        make(map[ExecutionID]*Execution),
 		closingExecutions: make(map[ExecutionID]*Execution),
+		debugSessions:     make(map[DebugSessionID]*DebugSession),
+		closingDebugs:     make(map[DebugSessionID]*DebugSession),
 		groups:            make(map[workspace.ID]*workspaceGroup),
 	}
 	workspaces.RegisterCloseHook(result.CloseWorkspace)
@@ -115,7 +119,7 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, errors.Join(err, compilation.Plan.Close())
 	}
 
-	created := newSession(id, compilation, document.Content())
+	created := newSession(id, parent, compilation, document.Content())
 	m.mu.Lock()
 	group := m.groups[workspaceID]
 
@@ -154,7 +158,7 @@ func (m *Manager) GetSession(ctx context.Context, id SessionID) (SessionSnapshot
 	return session.Snapshot(), nil
 }
 
-// CloseSession idempotently removes a Session and all child Executions.
+// CloseSession idempotently removes a Session and all child Executions and DebugSessions.
 func (m *Manager) CloseSession(ctx context.Context, id SessionID) error {
 	session, owner := m.detachSession(id)
 	if session == nil {
@@ -302,7 +306,7 @@ func (m *Manager) CloseWorkspace(ctx context.Context, id workspace.ID) error {
 	return waitForDone(ctx, done, func() error { return group.closeErr })
 }
 
-// Close prevents new resources and settles all current Sessions and Executions.
+// Close prevents new resources and settles all current Sessions, Executions, and DebugSessions.
 func (m *Manager) Close(ctx context.Context) error {
 	m.mu.Lock()
 	if !m.closed {
@@ -430,7 +434,7 @@ func (m *Manager) detachSession(id SessionID) (*Session, bool) {
 }
 
 func (m *Manager) finishSessionClose(session *Session) {
-	executions, plan, owner := session.beginClose()
+	executions, debugSessions, plan, debugPlan, owner := session.beginClose()
 	if !owner {
 		return
 	}
@@ -447,9 +451,23 @@ func (m *Manager) finishSessionClose(session *Session) {
 			result = errors.Join(result, err)
 		}
 	}
+	for _, debugSession := range debugSessions {
+		m.detachKnownDebugSession(debugSession)
+
+		if debugSession.beginClose() {
+			go m.finishDebugSessionClose(debugSession)
+		}
+
+		if err := waitForDone(context.Background(), debugSession.closeDone, debugSession.closeResult); err != nil {
+			result = errors.Join(result, err)
+		}
+	}
 
 	if plan != nil {
 		result = errors.Join(result, plan.Close())
+	}
+	if debugPlan != nil {
+		result = errors.Join(result, debugPlan.Close())
 	}
 
 	session.finishClose(result)

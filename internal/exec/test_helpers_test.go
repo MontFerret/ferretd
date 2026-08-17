@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	ferret "github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2"
 	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 	localsource "github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
@@ -76,6 +76,7 @@ func newHookedManager(
 	}
 	session := newSession(
 		SessionID("session"),
+		nil,
 		workspace.Compilation{Plan: plan, Source: snapshot},
 		query,
 	)

@@ -88,6 +88,52 @@ func BenchmarkManagerExecutionSameSessionConcurrent(b *testing.B) {
 	_ = workspaces.Clear(ctx)
 }
 
+func BenchmarkManagerDebugSessionSameSession(b *testing.B) {
+	manager, session, workspaces := benchmarkExecutionManager(b)
+	ctx := context.Background()
+
+	warm, err := manager.CreateDebugSession(ctx, session.ID, map[string]any{"value": 1}, DebugSessionOptions{})
+	if err != nil {
+		b.Fatalf("warm CreateDebugSession: %v", err)
+	}
+	if err := manager.CloseDebugSession(ctx, warm.ID); err != nil {
+		b.Fatalf("warm CloseDebugSession: %v", err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		created, err := manager.CreateDebugSession(ctx, session.ID, map[string]any{"value": 1}, DebugSessionOptions{})
+		if err != nil {
+			b.Fatalf("CreateDebugSession: %v", err)
+		}
+		subscription, err := manager.WatchDebugSession(ctx, created.ID)
+		if err != nil {
+			b.Fatalf("WatchDebugSession: %v", err)
+		}
+		if _, err := manager.StartDebugSession(ctx, created.ID); err != nil {
+			b.Fatalf("StartDebugSession: %v", err)
+		}
+
+		for event := range subscription.Events {
+			if event.Snapshot.State == DebugStateStopped {
+				if _, err := manager.ContinueDebugSession(ctx, created.ID); err != nil {
+					b.Fatalf("ContinueDebugSession: %v", err)
+				}
+			}
+		}
+		subscription.Cancel()
+		if err := manager.CloseDebugSession(ctx, created.ID); err != nil {
+			b.Fatalf("CloseDebugSession: %v", err)
+		}
+	}
+
+	b.StopTimer()
+	_ = manager.Close(ctx)
+	_ = workspaces.Clear(ctx)
+}
+
 func benchmarkExecutionManager(b *testing.B) (*Manager, SessionSnapshot, *workspace.Manager) {
 	b.Helper()
 

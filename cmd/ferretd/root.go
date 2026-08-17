@@ -34,6 +34,7 @@ func newRootCommand(version string) *cobra.Command {
 	root.AddCommand(
 		newServeCommand(version),
 		newLSPCommand(),
+		newDAPCommand(),
 	)
 
 	return root

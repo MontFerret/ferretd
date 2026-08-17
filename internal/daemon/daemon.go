@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
 	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
 	"github.com/MontFerret/ferretd/internal/language"
@@ -34,7 +33,6 @@ type (
 		workspaces *workspace.Manager
 		language   *language.Service
 		execution  *exec.Manager
-		debug      *debug.SessionManager
 		lsp        *lsp.Server
 		rpc        *grpcadapter.Server
 
@@ -86,7 +84,6 @@ func New(options Options) (*Daemon, error) {
 		workspaces: workspaceManager,
 		language:   languageService,
 		execution:  executionManager,
-		debug:      debug.New(),
 		lsp:        lsp.New(languageService),
 		endpoint:   endpoint,
 		version:    version,

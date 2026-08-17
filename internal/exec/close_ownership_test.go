@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	ferret "github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2"
 )
 
 type closeOwnershipFixture struct {

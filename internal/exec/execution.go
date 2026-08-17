@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	ferret "github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 )

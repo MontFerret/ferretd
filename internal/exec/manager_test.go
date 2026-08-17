@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	ferret "github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 

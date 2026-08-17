@@ -6,11 +6,10 @@ language tooling, workspaces, execution sessions, and debug sessions for CLI,
 Lab, and editor integrations.
 
 The repository contains a local gRPC daemon with process-local Ferret source
-workspaces and execution sessions, a supported Go client, and an experimental
-language server with diagnostics, document navigation, symbols, hover,
-completion, signature help, semantic tokens, and formatting. The Ferret VM,
-compiler, runtime, and language semantics remain owned by the main Ferret
-project.
+workspaces and execution sessions, a supported Go client, an experimental
+language server, and a single-session Debug Adapter Protocol (DAP) server over
+stdio. The Ferret VM, compiler, runtime, debugger semantics, and language
+semantics remain owned by the main Ferret project.
 
 ## Build
 
@@ -43,6 +42,7 @@ make proto-lint
 ./bin/ferretd serve
 ./bin/ferretd serve --endpoint unix:///tmp/ferretd.sock
 ./bin/ferretd lsp
+./bin/ferretd dap
 ```
 
 `serve` starts the local daemon and waits for an interrupt or a `Shutdown` RPC.
@@ -103,6 +103,13 @@ the local roots supplied by LSP initialization, uses their static workspace
 documents as a baseline, and gives versioned editor overlays precedence while
 documents are open. Analysis snapshots are coalesced and cached per URI.
 
+`dap` starts a protocol-pure, single-session debug adapter over stdin and
+stdout. It launches one local `.fql` program, opens its workspace in-process,
+and delegates breakpoints, stepping, frame inspection, variables, and
+evaluation to Ferret through the transport-neutral execution manager. It does
+not connect to `ferretd serve` or expose debugging through gRPC. See
+[docs/dap.md](docs/dap.md) for launch arguments and supported requests.
+
 ## Current Status
 
 The daemon exposes API v1.1 `DaemonService`, `WorkspaceService`, and
@@ -117,10 +124,11 @@ the shared workspace manager for static source baselines and supports opening,
 changing, and closing `.fql` editor overlays with full-document synchronization.
 Its navigation and references are document-local.
 
-Debug sessions, DAP, filesystem watching, incremental synchronization,
-cross-file indexing, module resolution, workspace persistence, remote daemon
-operation, and LSP-over-gRPC are not implemented. Execution sessions do not add
-queues, durable replay, persistence, automatic recompilation, or REPL state.
+Debug protobuf generation, debug gRPC/client APIs, filesystem watching,
+incremental synchronization, cross-file indexing, module resolution, workspace
+persistence, remote daemon operation, and LSP-over-gRPC are not implemented.
+DAP remains single-session stdio only. Execution sessions do not add queues,
+durable replay, persistence, automatic recompilation, or REPL state.
 
 See [docs/architecture.md](docs/architecture.md) for the intended architecture
 and [docs/lsp.md](docs/lsp.md) for experimental editor setup.
