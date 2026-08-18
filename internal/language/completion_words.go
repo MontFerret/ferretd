@@ -1,6 +1,10 @@
 package language
 
-import "github.com/MontFerret/ferret/v2/pkg/compiler"
+import (
+	"strings"
+
+	"github.com/MontFerret/ferret/v2/pkg/compiler"
+)
 
 var (
 	statementCompletionWords = map[compiler.SyntaxWord]struct{}{
@@ -28,9 +32,10 @@ func buildLanguageCompletionItems() ([]CompletionItem, []CompletionItem) {
 			continue
 		}
 
+		spelling := strings.ToLower(word.Spelling)
 		item := CompletionItem{
-			Label:      word.Spelling,
-			InsertText: word.Spelling,
+			Label:      spelling,
+			InsertText: spelling,
 			Detail:     detail,
 			Kind:       kind,
 		}

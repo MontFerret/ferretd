@@ -169,7 +169,7 @@ RETURN add(value, 2)`
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, label := range []string{"value", "add", "RETURN", "print"} {
+	for _, label := range []string{"value", "add", "return", "print"} {
 		if !hasCompletion(items, label) {
 			t.Errorf("completion does not contain %q", label)
 		}
@@ -318,7 +318,7 @@ func TestCompletionPreservesCaseSensitiveSourceNames(t *testing.T) {
 func TestCompletionDistinguishesStatementExpressionAndDeclarationContexts(t *testing.T) {
 	statementService, statementURI := openLanguageDocument(t, "")
 	statement, err := statementService.Completion(context.Background(), statementURI, source.Position{})
-	if err != nil || !hasCompletion(statement, "LET") || hasCompletion(statement, "print") {
+	if err != nil || !hasCompletion(statement, "let") || hasCompletion(statement, "print") {
 		t.Fatalf("statement completion = %+v, %v", statement, err)
 	}
 
@@ -335,6 +335,23 @@ func TestCompletionDistinguishesStatementExpressionAndDeclarationContexts(t *tes
 	}
 }
 
+func TestCompletionUsesCanonicalLowercaseForLowercasePrefix(t *testing.T) {
+	service, uri := openLanguageDocument(t, "re")
+	items, err := service.Completion(context.Background(), uri, source.Position{Character: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, ok := completionByLabel(items, "return")
+	if !ok || item.InsertText != "return" {
+		t.Fatalf("lowercase return completion = %+v, found %t", item, ok)
+	}
+
+	if hasCompletion(items, "RETURN") {
+		t.Fatalf("completion contains uppercase RETURN: %+v", items)
+	}
+}
+
 func TestCompletionUsesFerretSyntaxWordMetadata(t *testing.T) {
 	service, uri := openLanguageDocument(t, "RETURN ")
 	items, err := service.Completion(context.Background(), uri, source.Position{Character: 7})
@@ -343,15 +360,16 @@ func TestCompletionUsesFerretSyntaxWordMetadata(t *testing.T) {
 	}
 
 	for _, word := range compiler.SyntaxWords() {
+		spelling := strings.ToLower(word.Spelling)
 		if word.Category == compiler.SyntaxWordCategoryContextual {
-			if hasCompletion(items, word.Spelling) {
+			if hasCompletion(items, spelling) {
 				t.Errorf("contextual word %q escaped into general completion", word.Spelling)
 			}
 
 			continue
 		}
 
-		item, ok := completionByLabel(items, word.Spelling)
+		item, ok := completionByLabel(items, spelling)
 		if !ok {
 			t.Errorf("completion omits Ferret word %q", word.Spelling)
 
@@ -369,8 +387,19 @@ func TestCompletionUsesFerretSyntaxWordMetadata(t *testing.T) {
 			wantDetail = "operator"
 		}
 
-		if item.Kind != wantKind || item.Detail != wantDetail || item.InsertText != word.Spelling {
-			t.Errorf("completion for %q = %+v, want kind %d and detail %q", word.Spelling, item, wantKind, wantDetail)
+		if item.Kind != wantKind || item.Detail != wantDetail || item.InsertText != spelling {
+			t.Errorf(
+				"completion for %q = %+v, want label and insertion %q, kind %d, and detail %q",
+				word.Spelling,
+				item,
+				spelling,
+				wantKind,
+				wantDetail,
+			)
+		}
+
+		if word.Spelling != spelling && hasCompletion(items, word.Spelling) {
+			t.Errorf("completion retains non-canonical spelling %q", word.Spelling)
 		}
 	}
 }

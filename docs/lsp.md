@@ -28,6 +28,10 @@ is retained as an overlay and takes precedence until `didClose`, when language
 requests fall back to the unchanged workspace snapshot. Disk changes are not
 watched; close and reopen the workspace to reload them.
 
+Language-word completions use canonical lowercase labels and insertion text.
+Source-defined names, namespace aliases, bind parameters, and registered
+functions retain their declared spelling.
+
 Formatting delegates to Ferret's canonical formatter. `tabSize` selects its
 indent width, but canonical output remains space-indented even when the client
 sets `insertSpaces` to false. Invalid source receives no formatting edit.

@@ -219,6 +219,48 @@ func TestCompletionWordKindMapping(t *testing.T) {
 	}
 }
 
+func TestCompletionPreservesCanonicalLowercaseText(t *testing.T) {
+	service := language.New(language.Options{})
+	server := New(service)
+	uri := documentURI(t, "completion.fql")
+	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "re"); err != nil {
+		t.Fatal(err)
+	}
+
+	value, err := server.completion(nil, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position:     protocol.Position{Character: 2},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, ok := value.([]protocol.CompletionItem)
+	if !ok {
+		t.Fatalf("completion response type = %T", value)
+	}
+
+	found := false
+	for _, item := range items {
+		if item.Label == "RETURN" {
+			t.Fatalf("completion response contains uppercase RETURN: %+v", items)
+		}
+
+		if item.Label == "return" {
+			found = true
+			if item.InsertText == nil || *item.InsertText != "return" {
+				t.Fatalf("return insertion text = %#v", item.InsertText)
+			}
+		}
+	}
+
+	if !found {
+		t.Fatalf("completion response omits lowercase return: %+v", items)
+	}
+}
+
 func toProtocolPosition(value source.Position) protocol.Position {
 	return protocol.Position{Line: value.Line, Character: value.Character}
 }
