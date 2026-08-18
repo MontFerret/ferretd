@@ -3,14 +3,15 @@ set -e
 
 if [ -z "$1" ]; then
   echo "Usage: $0 <version>"
-  echo "  e.g. $0 v2.0.0"
+  echo "  e.g. $0 v0.1.0"
   exit 1
 fi
 
 VERSION="$1"
+SEMVER_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
 
-if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-  echo "Error: version must start with 'v' followed by semver (e.g. v2.0.0)"
+if [[ ! "$VERSION" =~ $SEMVER_PATTERN ]]; then
+  echo "Error: version must be 'v' followed by SemVer (e.g. v0.1.0 or v0.1.0-alpha.1)"
   exit 1
 fi
 

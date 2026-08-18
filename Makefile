@@ -1,5 +1,4 @@
-VERSION ?= $(shell sh scripts/versions.sh cli)
-FERRET_VERSION = $(shell sh scripts/versions.sh ferret)
+VERSION ?= $(shell sh scripts/versions.sh)
 DIR_BIN = ./bin
 NAME = ferretd
 BUF = go run github.com/bufbuild/buf/cmd/buf@v1.72.0
@@ -24,7 +23,7 @@ install:
 
 compile:
 	go build -v -o ${DIR_BIN}/${NAME} \
-	-ldflags "-X main.version=${VERSION} -X github.com/MontFerret/cli/v2/pkg/runtime.version=${FERRET_VERSION}" \
+	-ldflags "-X main.version=${VERSION}" \
 	./cmd/ferretd
 
 test:

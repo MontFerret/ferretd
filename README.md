@@ -26,6 +26,18 @@ development version:
 make build VERSION=v0.1.0
 ```
 
+## Release
+
+Create and push a SemVer release tag from a clean working tree:
+
+```sh
+make release TAG=v0.1.0
+```
+
+The tag triggers the GoReleaser workflow, which builds the supported platform
+archives and creates a draft GitHub release. Review its artifacts and release
+notes before publishing it manually.
+
 ## Test
 
 ```sh
