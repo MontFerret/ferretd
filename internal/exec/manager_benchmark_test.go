@@ -9,6 +9,38 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
+func BenchmarkManagerCreateSessionUnchanged(b *testing.B) {
+	root := b.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "query.fql"), []byte("RETURN @value"), 0o600); err != nil {
+		b.Fatalf("WriteFile: %v", err)
+	}
+
+	ctx := context.Background()
+	workspaces := workspace.New()
+	opened, err := workspaces.Open(ctx, root)
+	if err != nil {
+		b.Fatalf("workspace Open: %v", err)
+	}
+	manager := New(workspaces)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
+		if err != nil {
+			b.Fatalf("CreateSession: %v", err)
+		}
+		if err := manager.CloseSession(ctx, session.ID); err != nil {
+			b.Fatalf("CloseSession: %v", err)
+		}
+	}
+
+	b.StopTimer()
+	_ = manager.Close(ctx)
+	_ = workspaces.Clear(ctx)
+}
+
 func BenchmarkManagerExecutionSameSession(b *testing.B) {
 	manager, session, workspaces := benchmarkExecutionManager(b)
 	ctx := context.Background()

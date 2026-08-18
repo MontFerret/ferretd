@@ -45,10 +45,14 @@ Workspace opening is synchronous. It scans lowercase `.fql` regular files under
 the root, prunes a small fixed set of VCS and dependency directories, skips
 symlinks below the root, and retains per-document source, parse state, and
 syntax diagnostics. A malformed or unreadable document does not prevent other
-documents from loading. The workspace snapshot remains unchanged until explicit
-close. Editor overlays exist separately in the language service and take
-precedence for the same URI; watching, incremental parsing, and automatic reload
-remain future work.
+documents from loading. File discovery remains unchanged until explicit close,
+but execution Session creation rereads its already-discovered target and
+atomically publishes changed source, syntax, diagnostics, and revision before
+compilation. Missing and invalid replacements remain retained as unavailable
+documents. Existing Sessions keep their original source text, revision, and
+normal or lazy debug Plans. Editor overlays exist separately in the language
+service and take precedence for the same URI; watching, incremental parsing,
+background reload, and create/delete/rename discovery remain future work.
 
 LSP and DAP support are protocol adapters. They translate
 protocol messages and delegate to shared language, workspace, execution, and

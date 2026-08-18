@@ -15,7 +15,8 @@ type ExecutionClient struct {
 	client executionv1.ExecutionServiceClient
 }
 
-// CreateSession compiles one immutable retained workspace document.
+// CreateSession refreshes and compiles the latest saved contents of one
+// already-discovered workspace document into an immutable Session.
 func (c *ExecutionClient) CreateSession(ctx context.Context, request CreateSessionRequest) (Session, error) {
 	response, err := c.client.CreateSession(ctx, &executionv1.CreateSessionRequest{
 		WorkspaceId:  &workspacev1.WorkspaceId{Value: request.WorkspaceID},

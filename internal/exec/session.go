@@ -17,7 +17,7 @@ type Session struct {
 	source       workspace.SourceSnapshot
 	parameters   []string
 	text         string
-	compileDebug func(context.Context, string) (workspace.Compilation, error)
+	compileDebug func(context.Context) (workspace.Compilation, error)
 	plan         *ferret.Plan
 	executions   map[ExecutionID]*Execution
 	debugPlan    *ferret.Plan
@@ -50,7 +50,9 @@ func newSession(
 	}
 
 	if parent != nil {
-		result.compileDebug = parent.CompileDebug
+		result.compileDebug = func(ctx context.Context) (workspace.Compilation, error) {
+			return parent.CompileDebugSnapshot(ctx, compilation.Source, text)
+		}
 	}
 
 	return result
@@ -145,7 +147,7 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 			return nil, compileErr
 		}
 
-		compilation, err := compileDebug(ctx, source.RelativePath)
+		compilation, err := compileDebug(ctx)
 		if err == nil && compilation.Plan == nil {
 			err = errors.New("debug compilation returned no plan")
 		}

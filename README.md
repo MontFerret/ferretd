@@ -91,7 +91,11 @@ running, err := c.Executions().RunExecution(ctx, execution.ID)
 Opening a workspace recursively discovers lowercase `.fql` files, loads their
 contents, and retains daemon-owned documents with Ferret syntax state and
 diagnostics. No Ferret project manifest is required. The initial snapshot is
-static; disk changes require closing and reopening the workspace.
+used for static file discovery. Creating a Session rereads its already-discovered
+target from disk, retaining the revision when its saved contents are unchanged
+and advancing the revision when its retained source changes. Files created,
+deleted, or renamed after opening are not rediscovered; close and reopen the
+workspace to update that file set.
 
 Workspace state is in memory for the daemon process. Reopening the same cleaned
 absolute root returns the same workspace ID, closing a client connection does
@@ -100,9 +104,11 @@ workspace RPC continues to expose identity and lifecycle operations rather than
 documents or parser internals.
 
 Each open workspace owns a Ferret engine with a read-write filesystem rooted at
-the workspace directory. `CreateSession` compiles one retained workspace-relative
-`.fql` document into an immutable reusable plan. Each `Execution` owns isolated
-JSON-shaped parameter bindings and a fresh, one-shot Ferret runtime session.
+the workspace directory. `CreateSession` refreshes and compiles the latest saved
+contents of one already-discovered workspace-relative `.fql` document into an
+immutable reusable plan. Existing Sessions keep their original source revision
+and normal and lazy debug Plans. Each `Execution` owns isolated JSON-shaped
+parameter bindings and a fresh, one-shot Ferret runtime session.
 `RunExecution` returns the `RUNNING` snapshot immediately; execution then
 continues independently of the triggering RPC context. Clients can observe the
 latest lifecycle event and subsequent events with `WatchExecution`, cancel an
@@ -133,16 +139,18 @@ generated from `proto/` with pinned Buf and protobuf tools. The debug protobuf
 remains an ungenerated placeholder.
 
 Daemon workspaces retain deterministically discovered source files, source
-contents, Ferret parse trees, and syntax diagnostics. The language server uses
-the shared workspace manager for static source baselines and supports opening,
-changing, and closing `.fql` editor overlays with full-document synchronization.
-Its navigation and references are document-local.
+contents, Ferret parse trees, and syntax diagnostics. Session creation refreshes
+an existing target from disk, but file discovery remains static. The language
+server uses the shared workspace manager for static source baselines and supports
+opening, changing, and closing `.fql` editor overlays with full-document
+synchronization. Its navigation and references are document-local.
 
 Debug protobuf generation, debug gRPC/client APIs, filesystem watching,
-incremental synchronization, cross-file indexing, module resolution, workspace
-persistence, remote daemon operation, and LSP-over-gRPC are not implemented.
-DAP remains single-session stdio only. Execution sessions do not add queues,
-durable replay, persistence, automatic recompilation, or REPL state.
+create/delete/rename discovery, incremental synchronization, cross-file indexing,
+module resolution, workspace persistence, remote daemon operation, and
+LSP-over-gRPC are not implemented. DAP remains single-session stdio only.
+Execution sessions do not add queues, durable replay, persistence, background
+automatic recompilation, or REPL state.
 
 See [docs/architecture.md](docs/architecture.md) for the intended architecture
 and [docs/lsp.md](docs/lsp.md) for experimental editor setup.

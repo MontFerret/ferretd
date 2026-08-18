@@ -22,7 +22,8 @@ type (
 		Parameters []string
 	}
 
-	// CreateSessionRequest selects one retained workspace document for compilation.
+	// CreateSessionRequest selects one already-discovered workspace document to
+	// refresh from disk and compile.
 	CreateSessionRequest struct {
 		WorkspaceID  string
 		RelativePath string

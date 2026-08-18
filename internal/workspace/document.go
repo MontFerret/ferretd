@@ -75,6 +75,12 @@ func newUnreadableDocument(file File, err error) Document {
 	}
 }
 
+func (d Document) withRevision(revision uint64) Document {
+	d.revision = revision
+
+	return d
+}
+
 // File returns the filesystem identity associated with this document.
 func (d Document) File() File {
 	return d.file

@@ -247,6 +247,57 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 	})
 }
 
+func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
+	fixture := newExecutionFixture(t, "RETURN WAITFOR FALSE TIMEOUT 30s EVERY 10ms")
+	created, err := fixture.manager.CreateExecution(
+		context.Background(),
+		fixture.session.ID,
+		nil,
+		ExecutionOptions{},
+	)
+	if err != nil {
+		t.Fatalf("CreateExecution: %v", err)
+	}
+	subscription, err := fixture.manager.WatchExecution(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("WatchExecution: %v", err)
+	}
+	defer subscription.Cancel()
+	if _, err := fixture.manager.RunExecution(context.Background(), created.ID); err != nil {
+		t.Fatalf("RunExecution: %v", err)
+	}
+	if started := <-subscription.Events; started.Kind != EventStarted {
+		t.Fatalf("event = %+v, want started", started)
+	}
+
+	writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 2")
+	refreshed, err := fixture.manager.CreateSession(
+		context.Background(),
+		fixture.workspace.ID(),
+		"query.fql",
+	)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if refreshed.Source.Revision != 2 || runSessionOutput(t, fixture.manager, refreshed.ID) != "2" {
+		t.Fatalf("refreshed Session = %+v", refreshed)
+	}
+	active, err := fixture.manager.GetExecution(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("GetExecution: %v", err)
+	}
+	if active.State != StateRunning {
+		t.Fatalf("original execution state = %v, want running", active.State)
+	}
+
+	if _, err := fixture.manager.CancelExecution(context.Background(), created.ID); err != nil {
+		t.Fatalf("CancelExecution: %v", err)
+	}
+	if terminal := <-subscription.Events; terminal.Kind != EventCancelled {
+		t.Fatalf("terminal event = %+v, want cancelled", terminal)
+	}
+}
+
 func TestCancellationRacingSuccessNeverOverwritesTerminalState(t *testing.T) {
 	for range 20 {
 		fixture := newExecutionFixture(t, "RETURN 1")

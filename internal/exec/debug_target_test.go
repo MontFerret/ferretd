@@ -19,7 +19,7 @@ func TestAcquireDebugTargetCoordinatesCachesAndRetries(t *testing.T) {
 		var calls atomic.Int32
 		started := make(chan struct{})
 		release := make(chan struct{})
-		parent.compileDebug = func(context.Context, string) (workspace.Compilation, error) {
+		parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
 			if calls.Add(1) == 1 {
 				close(started)
 			}
@@ -68,7 +68,7 @@ func TestAcquireDebugTargetCoordinatesCachesAndRetries(t *testing.T) {
 		compileErr := errors.New("deterministic compile failure")
 		var calls atomic.Int32
 		started := make(chan struct{})
-		parent.compileDebug = func(ctx context.Context, _ string) (workspace.Compilation, error) {
+		parent.compileDebug = func(ctx context.Context) (workspace.Compilation, error) {
 			switch calls.Add(1) {
 			case 1:
 				close(started)
@@ -116,7 +116,7 @@ func TestAcquireDebugTargetRejectsChangedSourceAndCachesFailure(t *testing.T) {
 	}))
 	parent := manager.sessions[snapshot.ID]
 	var calls atomic.Int32
-	parent.compileDebug = func(context.Context, string) (workspace.Compilation, error) {
+	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
 		calls.Add(1)
 		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
 		source := parent.source
@@ -151,7 +151,7 @@ func TestSessionCloseWaitsForDebugCompilationWithoutPublishingTarget(t *testing.
 	parent := manager.sessions[snapshot.ID]
 	compileStarted := make(chan struct{})
 	releaseCompile := make(chan struct{})
-	parent.compileDebug = func(context.Context, string) (workspace.Compilation, error) {
+	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
 		close(compileStarted)
 		<-releaseCompile
 		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
@@ -200,7 +200,7 @@ func TestDebugTargetLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 		return nil
 	}))
 	parent := manager.sessions[snapshot.ID]
-	parent.compileDebug = func(context.Context, string) (workspace.Compilation, error) {
+	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
 		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
 
 		return workspace.Compilation{Plan: plan, Source: parent.source}, err

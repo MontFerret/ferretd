@@ -89,9 +89,9 @@ Protocol adapters should translate and delegate. They must not become alternate 
 * The daemon remains local-only: Unix sockets or Windows named pipes, permission-restricted to the current user, with no TCP, TLS, or remote mode.
 * API major mismatch is rejected; minor versions are additive. Workspace, Session, and Execution state survive client disconnects but not daemon restarts.
 * Workspace roots are existing absolute directories, cleaned without resolving symlinks; repeated opens converge and closes are idempotent.
-* Workspace loading is synchronous and static. It retains lowercase `.fql` regular files recursively, skips nested symlinks, and requires close/reopen to observe disk changes.
+* Workspace loading is synchronous with static discovery. It retains lowercase `.fql` regular files recursively and skips nested symlinks. `CreateSession` refreshes only its already-discovered target; close/reopen is required to discover creates, deletes, and renames.
 * `.git`, `.hg`, `.svn`, `node_modules`, and `vendor` directories are pruned during discovery. There is no ignore-file or project-manifest contract.
-* Workspace documents retain source and Ferret syntax state only. Compilation into immutable Plans and one-shot runtime state belong to execution Sessions and Executions; editor overlays and filesystem watching remain separate capabilities.
+* Workspace documents retain source and Ferret syntax state only. A refresh atomically advances changed retained state, while compilation into immutable Plans and one-shot runtime state belong to execution Sessions and Executions; editor overlays and filesystem watching remain separate capabilities.
 * Document load and syntax diagnostics do not fail an otherwise coherent workspace; fatal root/discovery failures do not leave manager entries.
 * A Session owns one immutable compiled Ferret Plan. An Execution owns one fresh runtime Session, one run attempt, isolated parameters, terminal output or failure, and bounded lifecycle observation.
 * A Session lazily compiles and caches one matching debug Plan. `internal/exec` leases immutable debug targets while independent retained DebugSessions in `internal/debug` own exactly one Ferret debugger session, asynchronous commands, paused-state inspection, terminal retention, and bounded lifecycle observation.
@@ -218,7 +218,7 @@ Currently implemented:
 * supported Go client discovery, dialing, negotiation, and error classification;
 * concurrency-safe, process-local workspace open/get/list/close behavior;
 * deterministic root-confined `.fql` discovery with fixed directory exclusions and nested-symlink avoidance;
-* daemon-owned file and document snapshots with source contents, revision, Ferret parse state, and syntax/load diagnostics;
+* daemon-owned file and document snapshots with source contents, revision, Ferret parse state, syntax/load diagnostics, and per-Session refresh of already-discovered targets;
 * one rooted read-write Ferret engine per open workspace;
 * immutable compiled Sessions and isolated one-shot Executions with JSON-shaped parameters and encoded output;
 * asynchronous run, cancellation, terminal retention, and latest-plus-future bounded lifecycle watches;
@@ -240,7 +240,7 @@ Not currently implemented:
 * durable workspace persistence or eviction;
 * module resolution;
 * LSP document loading from daemon workspaces or disk;
-* filesystem watching, editor overlays, automatic reload, and incremental workspace parsing;
+* filesystem watching, editor overlays, background reload, create/delete/rename discovery, and incremental workspace parsing;
 * incremental document synchronization;
 * completion, hover, formatting, navigation, semantic tokens, or code actions.
 
@@ -272,7 +272,7 @@ Do not claim planned capabilities are supported. When implementing one, update t
 * Add workspace behavior:
     * begin in `internal/workspace`
     * preserve the distinct filesystem-file and daemon-document models
-    * preserve synchronous static loading, root confinement, deterministic ordering, and recoverable document diagnostics unless the task explicitly changes them
+    * preserve synchronous static discovery, root confinement, deterministic ordering, per-Session existing-target refresh, and recoverable document diagnostics unless the task explicitly changes them
     * define workspace identity, ownership, lifecycle, and concurrency before exposing new behavior through an adapter
 * Add or change execution sessions:
     * begin in `internal/exec`

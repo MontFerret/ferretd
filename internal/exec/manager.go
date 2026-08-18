@@ -93,8 +93,12 @@ func (m *Manager) CreateSession(
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
+	document, err := parent.RefreshDocument(ctx, relativePath)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
 
-	compilation, err := parent.Compile(ctx, relativePath)
+	compilation, err := parent.CompileDocument(ctx, document)
 	if err != nil {
 		if compilation.Plan != nil {
 			err = errors.Join(err, compilation.Plan.Close())
@@ -105,7 +109,6 @@ func (m *Manager) CreateSession(
 			return SessionSnapshot{}, err
 		}
 
-		document, _ := parent.Document(relativePath)
 		diagnostics := diagnostic.FromError(string(compilation.Source.URI), document.Content(), err)
 		if errors.Is(err, workspace.ErrDocumentUnavailable) {
 			mapper := source.NewMapper(document.Content())
@@ -119,11 +122,6 @@ func (m *Manager) CreateSession(
 			Diagnostics: diagnostics,
 			Cause:       err,
 		}
-	}
-
-	document, ok := parent.Document(relativePath)
-	if !ok {
-		return SessionSnapshot{}, errors.Join(workspace.ErrDocumentNotFound, compilation.Plan.Close())
 	}
 
 	id, err := newSessionID()

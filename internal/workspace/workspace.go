@@ -9,6 +9,7 @@ import (
 
 	"github.com/MontFerret/ferret/v2"
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
+	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 	localsource "github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -21,7 +22,8 @@ type (
 
 	// Workspace is the daemon-owned source state for a canonical root.
 	Workspace struct {
-		mu sync.RWMutex
+		mu          sync.RWMutex
+		refreshGate chan struct{}
 
 		id        ID
 		root      string
@@ -39,7 +41,9 @@ type (
 		Workspace    ID
 		RelativePath string
 		URI          localsource.URI
-		Revision     uint64
+		// Revision advances monotonically when the workspace retains changed
+		// source state for this already-discovered document.
+		Revision uint64
 	}
 
 	// Compilation owns a Ferret Plan and the source snapshot that produced it.
@@ -63,11 +67,15 @@ const (
 )
 
 func newWorkspace(id ID, root string) *Workspace {
-	return &Workspace{
-		id:    id,
-		root:  root,
-		state: StateOpening,
+	result := &Workspace{
+		id:          id,
+		root:        root,
+		state:       StateOpening,
+		refreshGate: make(chan struct{}, 1),
 	}
+	result.refreshGate <- struct{}{}
+
+	return result
 }
 
 // ID returns the workspace's opaque identifier.
@@ -193,6 +201,82 @@ func (w *Workspace) CompileDebug(ctx context.Context, relativePath string) (Comp
 	return w.compile(ctx, relativePath, true)
 }
 
+// CompileDocument compiles an immutable document returned by RefreshDocument.
+// A later workspace refresh cannot change the source selected for this compile.
+func (w *Workspace) CompileDocument(ctx context.Context, document Document) (Compilation, error) {
+	if err := ctx.Err(); err != nil {
+		return Compilation{}, err
+	}
+
+	if w == nil || w.closing.Load() {
+		return Compilation{}, ErrClosed
+	}
+
+	key, ok := documentKey(document.File().RelativePath)
+	if !ok {
+		return Compilation{}, ErrDocumentNotFound
+	}
+
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if w.closing.Load() || w.state != StateReady || w.engine == nil {
+		return Compilation{}, ErrClosed
+	}
+
+	known, ok := w.documents[key]
+	if !ok || known.File() != document.File() {
+		return Compilation{}, ErrDocumentNotFound
+	}
+
+	return w.compileDocumentLocked(ctx, document, false)
+}
+
+// CompileDebugSnapshot compiles retained Session source with Ferret debug metadata.
+// The source text and revision are owned by the Session and need not match the
+// workspace's current document revision.
+func (w *Workspace) CompileDebugSnapshot(
+	ctx context.Context,
+	snapshot SourceSnapshot,
+	content string,
+) (Compilation, error) {
+	if err := ctx.Err(); err != nil {
+		return Compilation{}, err
+	}
+
+	if w == nil || w.closing.Load() || snapshot.Workspace != w.id {
+		return Compilation{}, ErrClosed
+	}
+
+	key, ok := documentKey(snapshot.RelativePath)
+	if !ok {
+		return Compilation{}, ErrDocumentNotFound
+	}
+
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if w.closing.Load() || w.state != StateReady || w.engine == nil {
+		return Compilation{}, ErrClosed
+	}
+
+	document, ok := w.documents[key]
+	if !ok || document.File().URI != snapshot.URI {
+		return Compilation{}, ErrDocumentNotFound
+	}
+
+	plan, err := w.engine.CompileDebug(ctx, ferretsource.New(document.File().Path, content))
+	if err != nil {
+		return Compilation{Source: snapshot}, err
+	}
+
+	if err := ctx.Err(); err != nil {
+		return Compilation{Source: snapshot, Plan: plan}, err
+	}
+
+	return Compilation{Source: snapshot, Plan: plan}, nil
+}
+
 func (w *Workspace) compile(ctx context.Context, relativePath string, debug bool) (Compilation, error) {
 	if err := ctx.Err(); err != nil {
 		return Compilation{}, err
@@ -219,6 +303,14 @@ func (w *Workspace) compile(ctx context.Context, relativePath string, debug bool
 		return Compilation{}, ErrDocumentNotFound
 	}
 
+	return w.compileDocumentLocked(ctx, document, debug)
+}
+
+func (w *Workspace) compileDocumentLocked(
+	ctx context.Context,
+	document Document,
+	debug bool,
+) (Compilation, error) {
 	snapshot := SourceSnapshot{
 		Workspace:    w.id,
 		RelativePath: document.File().RelativePath,
@@ -227,7 +319,11 @@ func (w *Workspace) compile(ctx context.Context, relativePath string, debug bool
 	}
 
 	if !document.Loaded() {
-		return Compilation{Source: snapshot}, fmt.Errorf("%w: %s", ErrDocumentUnavailable, key)
+		return Compilation{Source: snapshot}, fmt.Errorf(
+			"%w: %s",
+			ErrDocumentUnavailable,
+			document.File().RelativePath,
+		)
 	}
 
 	var plan *ferret.Plan
