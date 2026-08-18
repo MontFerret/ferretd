@@ -97,7 +97,7 @@ func (s *Server) Run(ctx context.Context) (result error) {
 			return err
 		}
 
-		message, err := protocol.ReadProtocolMessage(s.reader)
+		message, initializeOptions, err := readProtocolMessage(s.reader)
 		if err != nil {
 			if contextErr := ctx.Err(); contextErr != nil {
 				return contextErr
@@ -115,7 +115,7 @@ func (s *Server) Run(ctx context.Context) (result error) {
 			continue
 		}
 
-		if err := s.dispatch(ctx, request); err != nil {
+		if err := s.dispatch(ctx, request, initializeOptions); err != nil {
 			return err
 		}
 
@@ -128,10 +128,14 @@ func (s *Server) Run(ctx context.Context) (result error) {
 	}
 }
 
-func (s *Server) dispatch(ctx context.Context, request protocol.RequestMessage) error {
+func (s *Server) dispatch(
+	ctx context.Context,
+	request protocol.RequestMessage,
+	initializeOptions initializeClientOptions,
+) error {
 	switch typed := request.(type) {
 	case *protocol.InitializeRequest:
-		return s.handleInitialize(typed)
+		return s.handleInitialize(typed, initializeOptions)
 	case *protocol.LaunchRequest:
 		return s.handleLaunch(ctx, typed)
 	case *protocol.ConfigurationDoneRequest:

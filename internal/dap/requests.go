@@ -13,8 +13,11 @@ import (
 	"github.com/MontFerret/ferretd/internal/debug"
 )
 
-func (s *Server) handleInitialize(request *protocol.InitializeRequest) error {
-	options, err := normalizeClientOptions(request.Arguments)
+func (s *Server) handleInitialize(
+	request *protocol.InitializeRequest,
+	arguments initializeClientOptions,
+) error {
+	options, err := normalizeClientOptions(arguments)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}

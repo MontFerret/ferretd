@@ -217,6 +217,15 @@ func TestDAPInitializeClientOptionDefaultsAndConventions(t *testing.T) {
 			},
 		},
 		{
+			name:      "explicit_one_based",
+			arguments: `{"adapterID":"ferretd","linesStartAt1":true,"columnsStartAt1":true}`,
+			want: clientOptions{
+				pathFormat:      "path",
+				linesStartAt1:   true,
+				columnsStartAt1: true,
+			},
+		},
+		{
 			name:      "explicit_uri",
 			arguments: `{"adapterID":"ferretd","pathFormat":"uri"}`,
 			want: clientOptions{
@@ -232,6 +241,15 @@ func TestDAPInitializeClientOptionDefaultsAndConventions(t *testing.T) {
 				pathFormat:      "path",
 				linesStartAt1:   false,
 				columnsStartAt1: false,
+			},
+		},
+		{
+			name:      "mixed_coordinate_conventions",
+			arguments: `{"adapterID":"ferretd","linesStartAt1":false}`,
+			want: clientOptions{
+				pathFormat:      "path",
+				linesStartAt1:   false,
+				columnsStartAt1: true,
 			},
 		},
 		{
