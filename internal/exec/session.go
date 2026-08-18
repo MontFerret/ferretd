@@ -20,15 +20,14 @@ type Session struct {
 	compileDebug func(context.Context, string) (workspace.Compilation, error)
 	plan         *ferret.Plan
 	executions   map[ExecutionID]*Execution
-	debugs       map[DebugSessionID]*DebugSession
 	debugPlan    *ferret.Plan
 
 	debugCompileDone   chan struct{}
 	debugCompileErr    error
-	debugCreateDone    chan struct{}
+	debugTargetDone    chan struct{}
 	debugCompiling     bool
 	debugCompileFailed bool
-	debugCreating      int
+	debugTargets       int
 	closing            bool
 	closeDone          chan struct{}
 	closeErr           error
@@ -47,7 +46,6 @@ func newSession(
 		text:       text,
 		plan:       compilation.Plan,
 		executions: make(map[ExecutionID]*Execution),
-		debugs:     make(map[DebugSessionID]*DebugSession),
 		closeDone:  make(chan struct{}),
 	}
 
@@ -92,35 +90,7 @@ func (s *Session) removeExecution(execution *Execution) {
 	}
 }
 
-func (s *Session) beginDebugCreate() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.closing {
-		return ErrSessionClosed
-	}
-
-	if s.debugCreating == 0 {
-		s.debugCreateDone = make(chan struct{})
-	}
-
-	s.debugCreating++
-
-	return nil
-}
-
-func (s *Session) finishDebugCreate() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.debugCreating--
-	if s.debugCreating == 0 {
-		close(s.debugCreateDone)
-		s.debugCreateDone = nil
-	}
-}
-
-func (s *Session) debugCompilation(ctx context.Context) (*ferret.Plan, error) {
+func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) {
 	for {
 		s.mu.Lock()
 		if s.closing {
@@ -130,10 +100,10 @@ func (s *Session) debugCompilation(ctx context.Context) (*ferret.Plan, error) {
 		}
 
 		if s.debugPlan != nil {
-			plan := s.debugPlan
+			target := s.newDebugTargetLocked(s.debugPlan)
 			s.mu.Unlock()
 
-			return plan, nil
+			return target, nil
 		}
 
 		if s.debugCompileFailed {
@@ -163,15 +133,16 @@ func (s *Session) debugCompilation(ctx context.Context) (*ferret.Plan, error) {
 		s.mu.Unlock()
 
 		if compileDebug == nil {
+			compileErr := errors.New("debug compilation is unavailable")
 			s.mu.Lock()
 			s.debugCompiling = false
-			s.debugCompileErr = errors.New("debug compilation is unavailable")
+			s.debugCompileErr = compileErr
 			s.debugCompileFailed = true
 			close(done)
 			s.debugCompileDone = nil
 			s.mu.Unlock()
 
-			return nil, s.debugCompileErr
+			return nil, compileErr
 		}
 
 		compilation, err := compileDebug(ctx, source.RelativePath)
@@ -185,8 +156,10 @@ func (s *Session) debugCompilation(ctx context.Context) (*ferret.Plan, error) {
 
 		s.mu.Lock()
 		closing := s.closing
+		var target *DebugTarget
 		if err == nil && !closing {
 			s.debugPlan = compilation.Plan
+			target = s.newDebugTargetLocked(compilation.Plan)
 		} else if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			s.debugCompileErr = err
 			s.debugCompileFailed = true
@@ -208,75 +181,75 @@ func (s *Session) debugCompilation(ctx context.Context) (*ferret.Plan, error) {
 			return nil, err
 		}
 
-		return compilation.Plan, nil
+		return target, nil
 	}
 }
 
-func (s *Session) addDebugSession(debugSession *DebugSession) error {
+func (s *Session) newDebugTargetLocked(plan *ferret.Plan) *DebugTarget {
+	if s.debugTargets == 0 {
+		s.debugTargetDone = make(chan struct{})
+	}
+	s.debugTargets++
+
+	return newDebugTarget(s.id, s.source, s.text, plan, s.releaseDebugTarget)
+}
+
+func (s *Session) releaseDebugTarget() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.closing {
-		return ErrSessionClosed
+	if s.debugTargets == 0 {
+		return
 	}
 
-	s.debugs[debugSession.id] = debugSession
-
-	return nil
+	s.debugTargets--
+	if s.debugTargets == 0 {
+		close(s.debugTargetDone)
+		s.debugTargetDone = nil
+	}
 }
 
-func (s *Session) removeDebugSession(debugSession *DebugSession) {
+func (s *Session) beginClose() ([]*Execution, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if s.debugs[debugSession.id] == debugSession {
-		delete(s.debugs, debugSession.id)
-	}
-}
-
-func (s *Session) beginClose() ([]*Execution, []*DebugSession, *ferret.Plan, *ferret.Plan, bool) {
-	s.mu.Lock()
-
 	if s.closing {
-		s.mu.Unlock()
-
-		return nil, nil, nil, nil, false
+		return nil, false
 	}
 
 	s.closing = true
-	compileDone := s.debugCompileDone
-	createDone := s.debugCreateDone
-	s.mu.Unlock()
-
-	if compileDone != nil {
-		<-compileDone
-	}
-
-	if createDone != nil {
-		<-createDone
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	executions := make([]*Execution, 0, len(s.executions))
-	debugSessions := make([]*DebugSession, 0, len(s.debugs))
 
 	// Keep the children registered until their runtime cleanup releases ownership.
 	for _, execution := range s.executions {
 		executions = append(executions, execution)
 	}
 
-	for _, debugSession := range s.debugs {
-		debugSessions = append(debugSessions, debugSession)
+	return executions, true
+}
+
+func (s *Session) releasePlans() (*ferret.Plan, *ferret.Plan) {
+	s.mu.Lock()
+	compileDone := s.debugCompileDone
+	targetDone := s.debugTargetDone
+	s.mu.Unlock()
+
+	if compileDone != nil {
+		<-compileDone
 	}
+
+	if targetDone != nil {
+		<-targetDone
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	plan := s.plan
 	s.plan = nil
 	debugPlan := s.debugPlan
 	s.debugPlan = nil
 
-	return executions, debugSessions, plan, debugPlan, true
+	return plan, debugPlan
 }
 
 func (s *Session) finishClose(err error) {

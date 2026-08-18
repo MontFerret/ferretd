@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	protocol "github.com/google/go-dap"
 
+	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -22,6 +24,7 @@ type testClient struct {
 	output   *bufio.Reader
 	cancel   context.CancelFunc
 	done     <-chan error
+	server   *Server
 	sequence int
 }
 
@@ -46,6 +49,7 @@ func newTestClient(t *testing.T) *testClient {
 		output: bufio.NewReader(clientOutput),
 		cancel: cancel,
 		done:   done,
+		server: server,
 	}
 	t.Cleanup(func() {
 		cancel()
@@ -72,6 +76,23 @@ func (c *testClient) send(message protocol.Message) {
 	if err := protocol.WriteProtocolMessage(c.input, message); err != nil {
 		c.t.Fatalf("WriteProtocolMessage: %v", err)
 	}
+}
+
+func (c *testClient) sendRawRequest(command, arguments string) protocol.Request {
+	c.t.Helper()
+
+	request := c.request(command)
+	payload := fmt.Sprintf(
+		`{"seq":%d,"type":"request","command":%q,"arguments":%s}`,
+		request.Seq,
+		command,
+		arguments,
+	)
+	if err := protocol.WriteBaseMessage(c.input, []byte(payload)); err != nil {
+		c.t.Fatalf("WriteBaseMessage: %v", err)
+	}
+
+	return request
 }
 
 func (c *testClient) read() protocol.Message {
@@ -122,6 +143,19 @@ func (c *testClient) disconnect() {
 	}
 }
 
+func waitForDAPStop(t *testing.T, client *testClient) {
+	t.Helper()
+
+	select {
+	case err := <-client.done:
+		if err != nil {
+			t.Fatalf("server Run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not stop")
+	}
+}
+
 func TestDAPContextCancellationUnblocksIdleStream(t *testing.T) {
 	serverInput, clientInput := io.Pipe()
 	clientOutput, serverOutput := io.Pipe()
@@ -145,6 +179,101 @@ func TestDAPContextCancellationUnblocksIdleStream(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not stop after context cancellation")
+	}
+}
+
+func TestDAPContextCancellationUnblocksPendingLaunch(t *testing.T) {
+	root := t.TempDir()
+	program := writeDAPProgram(t, root, "RETURN 1")
+	client := newTestClient(t)
+	initializeDAP(t, client)
+	launchDAP(t, client, program, root, true)
+
+	client.cancel()
+	select {
+	case err := <-client.done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not stop with a pending launch")
+	}
+}
+
+func TestDAPInitializeClientOptionDefaultsAndConventions(t *testing.T) {
+	tests := []struct {
+		name        string
+		arguments   string
+		want        clientOptions
+		wantFailure bool
+	}{
+		{
+			name:      "omitted_defaults",
+			arguments: `{"adapterID":"ferretd"}`,
+			want: clientOptions{
+				pathFormat:      "path",
+				linesStartAt1:   true,
+				columnsStartAt1: true,
+			},
+		},
+		{
+			name:      "explicit_uri",
+			arguments: `{"adapterID":"ferretd","pathFormat":"uri"}`,
+			want: clientOptions{
+				pathFormat:      "uri",
+				linesStartAt1:   true,
+				columnsStartAt1: true,
+			},
+		},
+		{
+			name:      "explicit_zero_based",
+			arguments: `{"adapterID":"ferretd","pathFormat":"path","linesStartAt1":false,"columnsStartAt1":false}`,
+			want: clientOptions{
+				pathFormat:      "path",
+				linesStartAt1:   false,
+				columnsStartAt1: false,
+			},
+		},
+		{
+			name:      "defensive_empty_path_format",
+			arguments: `{"adapterID":"ferretd","pathFormat":""}`,
+			want: clientOptions{
+				pathFormat:      "path",
+				linesStartAt1:   true,
+				columnsStartAt1: true,
+			},
+		},
+		{
+			name:        "unsupported_path_format",
+			arguments:   `{"adapterID":"ferretd","pathFormat":"remote"}`,
+			wantFailure: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := newTestClient(t)
+			client.sendRawRequest("initialize", test.arguments)
+			message := client.read()
+			if test.wantFailure {
+				if response, ok := message.(*protocol.ErrorResponse); !ok || response.Success {
+					t.Fatalf("initialize response = %#v", message)
+				}
+			} else {
+				if response, ok := message.(*protocol.InitializeResponse); !ok || !response.Success {
+					t.Fatalf("initialize response = %#v", message)
+				}
+
+				client.server.stateMu.Lock()
+				got := client.server.client
+				client.server.stateMu.Unlock()
+				if got != test.want {
+					t.Fatalf("client options = %+v, want %+v", got, test.want)
+				}
+			}
+
+			client.disconnect()
+		})
 	}
 }
 
@@ -195,11 +324,15 @@ RETURN outer(@input) + box.value`)
 	}
 	launch := client.request("launch")
 	client.send(&protocol.LaunchRequest{Request: launch, Arguments: launchBody})
-	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
-		t.Fatalf("launch response = %#v", response)
-	}
 	if _, ok := client.read().(*protocol.InitializedEvent); !ok {
 		t.Fatal("expected initialized event")
+	}
+	client.server.stateMu.Lock()
+	debugID := client.server.owned.debug
+	client.server.stateMu.Unlock()
+	debugSnapshot, err := client.server.debugs.GetSession(context.Background(), debugID)
+	if err != nil || debugSnapshot.State != debug.StateCreated {
+		t.Fatalf("debug Session before configurationDone = %+v, %v", debugSnapshot, err)
 	}
 
 	setBreakpoints := client.request("setBreakpoints")
@@ -233,8 +366,12 @@ RETURN outer(@input) + box.value`)
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
-	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
-		t.Fatalf("configurationDone response = %#v", response)
+	message := client.read()
+	if response, ok := message.(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
+		t.Fatalf("configurationDone response = %#v", message)
+	}
+	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
+		t.Fatalf("launch response = %#v", response)
 	}
 	entry, ok := client.read().(*protocol.StoppedEvent)
 	if !ok || entry.Body.Reason != "entry" || entry.Body.ThreadId != threadID {
@@ -414,6 +551,9 @@ func TestDAPSuppressesEntryRuntimeErrorsAndUnsupportedRequests(t *testing.T) {
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
 	}
+	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
+		t.Fatalf("launch response = %#v", response)
+	}
 	runtimeError, ok := client.read().(*protocol.StoppedEvent)
 	if !ok || runtimeError.Body.Reason != "exception" || runtimeError.Body.Description == "" {
 		t.Fatalf("runtime error event = %#v", runtimeError)
@@ -459,6 +599,73 @@ func TestDAPRejectsOutOfOrderInitialization(t *testing.T) {
 	client.disconnect()
 }
 
+func TestDAPConfigurationStartFailureResolvesPendingLaunch(t *testing.T) {
+	root := t.TempDir()
+	program := writeDAPProgram(t, root, "RETURN 1")
+	client := newTestClient(t)
+	initializeDAP(t, client)
+	launchDAP(t, client, program, root, true)
+
+	client.server.stateMu.Lock()
+	client.server.owned.debug = debug.SessionID("missing")
+	client.server.stateMu.Unlock()
+
+	configurationDone := client.request("configurationDone")
+	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+	message := client.read()
+	if response, ok := message.(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
+		t.Fatalf("configurationDone response = %#v", message)
+	}
+	if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success || response.Command != "launch" {
+		t.Fatalf("pending launch response = %#v", response)
+	}
+
+	waitForDAPStop(t, client)
+}
+
+func TestDAPEarlyDisconnectAndTerminateResolvePendingLaunch(t *testing.T) {
+	t.Run("disconnect", func(t *testing.T) {
+		root := t.TempDir()
+		program := writeDAPProgram(t, root, "RETURN 1")
+		client := newTestClient(t)
+		initializeDAP(t, client)
+		launchDAP(t, client, program, root, true)
+
+		disconnect := client.request("disconnect")
+		client.send(&protocol.DisconnectRequest{Request: disconnect})
+		if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success || response.Command != "launch" {
+			t.Fatalf("pending launch response = %#v", response)
+		}
+		if response, ok := client.read().(*protocol.DisconnectResponse); !ok || !response.Success {
+			t.Fatalf("disconnect response = %#v", response)
+		}
+
+		waitForDAPStop(t, client)
+	})
+
+	t.Run("terminate", func(t *testing.T) {
+		root := t.TempDir()
+		program := writeDAPProgram(t, root, "RETURN 1")
+		client := newTestClient(t)
+		initializeDAP(t, client)
+		launchDAP(t, client, program, root, true)
+
+		terminate := client.request("terminate")
+		client.send(&protocol.TerminateRequest{Request: terminate})
+		if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success || response.Command != "launch" {
+			t.Fatalf("pending launch response = %#v", response)
+		}
+		if response, ok := client.read().(*protocol.TerminateResponse); !ok || !response.Success {
+			t.Fatalf("terminate response = %#v", response)
+		}
+		if _, ok := client.read().(*protocol.TerminatedEvent); !ok {
+			t.Fatal("expected terminated event")
+		}
+
+		client.disconnect()
+	})
+}
+
 func TestDAPDisconnectWhileRunningCleansUp(t *testing.T) {
 	root := t.TempDir()
 	program := writeDAPProgram(t, root, "RETURN FOR i IN 1..10000000\n  RETURN i")
@@ -468,8 +675,15 @@ func TestDAPDisconnectWhileRunningCleansUp(t *testing.T) {
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
-	client.read()
-	client.read()
+	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
+		t.Fatalf("configurationDone response = %#v", response)
+	}
+	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
+		t.Fatalf("launch response = %#v", response)
+	}
+	if entry, ok := client.read().(*protocol.StoppedEvent); !ok || entry.Body.Reason != "entry" {
+		t.Fatalf("entry event = %#v", entry)
+	}
 
 	continueRequest := client.request("continue")
 	client.send(&protocol.ContinueRequest{
@@ -497,6 +711,9 @@ RETURN FOR i IN 1..10000000
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
+	}
+	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
+		t.Fatalf("launch response = %#v", response)
 	}
 	if entry, ok := client.read().(*protocol.StoppedEvent); !ok || entry.Body.Reason != "entry" {
 		t.Fatalf("entry event = %#v", entry)
@@ -586,9 +803,6 @@ func launchDAP(t *testing.T, client *testClient, program, root string, stopOnEnt
 	}
 	launch := client.request("launch")
 	client.send(&protocol.LaunchRequest{Request: launch, Arguments: arguments})
-	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
-		t.Fatalf("launch response = %#v", response)
-	}
 	if _, ok := client.read().(*protocol.InitializedEvent); !ok {
 		t.Fatal("expected initialized event")
 	}

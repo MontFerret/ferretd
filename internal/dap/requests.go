@@ -3,16 +3,22 @@ package dap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	protocol "github.com/google/go-dap"
 
-	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/debug"
 )
 
 func (s *Server) handleInitialize(request *protocol.InitializeRequest) error {
+	options, err := normalizeClientOptions(request.Arguments)
+	if err != nil {
+		return s.sendFailure(request.GetRequest(), err.Error())
+	}
+
 	s.stateMu.Lock()
 	if s.initialized {
 		s.stateMu.Unlock()
@@ -20,17 +26,7 @@ func (s *Server) handleInitialize(request *protocol.InitializeRequest) error {
 		return s.sendFailure(request.GetRequest(), "initialize may only be sent once")
 	}
 
-	if request.Arguments.PathFormat != "path" && request.Arguments.PathFormat != "uri" {
-		s.stateMu.Unlock()
-
-		return s.sendFailure(request.GetRequest(), "pathFormat must be path or uri")
-	}
-
-	s.client = clientOptions{
-		pathFormat:      request.Arguments.PathFormat,
-		linesStartAt1:   request.Arguments.LinesStartAt1,
-		columnsStartAt1: request.Arguments.ColumnsStartAt1,
-	}
+	s.client = options
 	s.initialized = true
 	s.stateMu.Unlock()
 
@@ -83,11 +79,11 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
 
-	debugSession, err := s.executions.CreateDebugSession(
+	debugSession, err := s.debugs.CreateSession(
 		ctx,
 		session.ID,
 		arguments.Parameters,
-		exec.DebugSessionOptions{},
+		debug.SessionOptions{},
 	)
 	if err != nil {
 		_ = s.executions.CloseSession(context.Background(), session.ID)
@@ -96,9 +92,9 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
 
-	watch, err := s.executions.WatchDebugSession(ctx, debugSession.ID)
+	watch, err := s.debugs.WatchSession(ctx, debugSession.ID)
 	if err != nil {
-		_ = s.executions.CloseDebugSession(context.Background(), debugSession.ID)
+		_ = s.debugs.CloseSession(context.Background(), debugSession.ID)
 		_ = s.executions.CloseSession(context.Background(), session.ID)
 		_ = s.workspaces.Close(context.Background(), opened.ID())
 
@@ -115,17 +111,9 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 	}
 	s.watch = watch
 	s.launched = true
+	s.pendingLaunch = request.GetRequest()
 	s.suppressEntry = !arguments.StopOnEntry
 	s.stateMu.Unlock()
-
-	if err := s.send(func(base protocol.ProtocolMessage) protocol.Message {
-		response := s.response(request.GetRequest())
-		response.ProtocolMessage = base
-
-		return &protocol.LaunchResponse{Response: response}
-	}); err != nil {
-		return err
-	}
 
 	if err := s.send(func(base protocol.ProtocolMessage) protocol.Message {
 		return &protocol.InitializedEvent{Event: protocol.Event{ProtocolMessage: base, Event: "initialized"}}
@@ -136,6 +124,39 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 	go s.watchDebugSession(watch)
 
 	return nil
+}
+
+func (s *Server) resolvePendingLaunch() error {
+	request := s.takePendingLaunch()
+	if request == nil {
+		return nil
+	}
+
+	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+		response := s.response(request)
+		response.ProtocolMessage = base
+
+		return &protocol.LaunchResponse{Response: response}
+	})
+}
+
+func (s *Server) failPendingLaunch(message string) error {
+	request := s.takePendingLaunch()
+	if request == nil {
+		return nil
+	}
+
+	return s.sendFailure(request, message)
+}
+
+func (s *Server) takePendingLaunch() *protocol.Request {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+
+	request := s.pendingLaunch
+	s.pendingLaunch = nil
+
+	return request
 }
 
 func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.ConfigurationDoneRequest) error {
@@ -151,20 +172,31 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
 
-	if _, err := s.executions.StartDebugSession(ctx, debugID); err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+	if err := s.send(func(base protocol.ProtocolMessage) protocol.Message {
+		response := s.response(request.GetRequest())
+		response.ProtocolMessage = base
+
+		return &protocol.ConfigurationDoneResponse{Response: response}
+	}); err != nil {
+		return err
 	}
+
+	if _, err := s.debugs.StartSession(ctx, debugID); err != nil {
+		result := s.failPendingLaunch(err.Error())
+
+		s.stateMu.Lock()
+		s.disconnected = true
+		s.stateMu.Unlock()
+
+		return errors.Join(result, s.cleanup())
+	}
+
 	s.handles.Reset()
 	s.stateMu.Lock()
 	s.configured = true
 	s.stateMu.Unlock()
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
-		response := s.response(request.GetRequest())
-		response.ProtocolMessage = base
-
-		return &protocol.ConfigurationDoneResponse{Response: response}
-	})
+	return s.resolvePendingLaunch()
 }
 
 func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.SetBreakpointsRequest) error {
@@ -186,7 +218,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		return s.sendFailure(request.GetRequest(), "breakpoint source must match the launched program")
 	}
 
-	locations := make([]exec.DebugBreakpointLocation, 0, len(request.Arguments.Breakpoints))
+	locations := make([]debug.BreakpointLocation, 0, len(request.Arguments.Breakpoints))
 	for _, breakpoint := range request.Arguments.Breakpoints {
 		if breakpoint.Condition != "" || breakpoint.HitCondition != "" || breakpoint.LogMessage != "" {
 			return s.sendFailure(request.GetRequest(), "conditional, hit-count, and log breakpoints are not supported")
@@ -199,10 +231,10 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 			return s.sendFailure(request.GetRequest(), "breakpoint line or column is invalid")
 		}
 
-		locations = append(locations, exec.DebugBreakpointLocation{Line: line, Column: column})
+		locations = append(locations, debug.BreakpointLocation{Line: line, Column: column})
 	}
 
-	breakpoints, err := s.executions.ReplaceDebugBreakpoints(ctx, debugID, path, locations)
+	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, path, locations)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
@@ -239,7 +271,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 
 func (s *Server) bindBreakpointID(
 	file string,
-	requested exec.DebugBreakpointLocation,
+	requested debug.BreakpointLocation,
 	nativeID uint64,
 ) int {
 	s.breakpointMu.Lock()
@@ -279,8 +311,8 @@ func (s *Server) dapBreakpointID(nativeID uint64) int {
 }
 
 func (s *Server) handleContinue(ctx context.Context, request *protocol.ContinueRequest) error {
-	return s.handleResume(request.GetRequest(), request.Arguments.ThreadId, func(id exec.DebugSessionID) error {
-		_, err := s.executions.ContinueDebugSession(ctx, id)
+	return s.handleResume(request.GetRequest(), request.Arguments.ThreadId, func(id debug.SessionID) error {
+		_, err := s.debugs.ContinueSession(ctx, id)
 
 		return err
 	}, func(response protocol.Response) protocol.Message {
@@ -300,7 +332,7 @@ func (s *Server) handlePause(ctx context.Context, request *protocol.PauseRequest
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
 
-	if _, err := s.executions.PauseDebugSession(ctx, debugID); err != nil {
+	if _, err := s.debugs.PauseSession(ctx, debugID); err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
 
@@ -313,8 +345,8 @@ func (s *Server) handlePause(ctx context.Context, request *protocol.PauseRequest
 }
 
 func (s *Server) handleNext(ctx context.Context, request *protocol.NextRequest) error {
-	return s.handleResume(request.GetRequest(), request.Arguments.ThreadId, func(id exec.DebugSessionID) error {
-		_, err := s.executions.StepOverDebugSession(ctx, id)
+	return s.handleResume(request.GetRequest(), request.Arguments.ThreadId, func(id debug.SessionID) error {
+		_, err := s.debugs.StepOverSession(ctx, id)
 
 		return err
 	}, func(response protocol.Response) protocol.Message {
@@ -323,8 +355,8 @@ func (s *Server) handleNext(ctx context.Context, request *protocol.NextRequest) 
 }
 
 func (s *Server) handleStepIn(ctx context.Context, request *protocol.StepInRequest) error {
-	return s.handleResume(request.GetRequest(), request.Arguments.ThreadId, func(id exec.DebugSessionID) error {
-		_, err := s.executions.StepInDebugSession(ctx, id)
+	return s.handleResume(request.GetRequest(), request.Arguments.ThreadId, func(id debug.SessionID) error {
+		_, err := s.debugs.StepInSession(ctx, id)
 
 		return err
 	}, func(response protocol.Response) protocol.Message {
@@ -333,8 +365,8 @@ func (s *Server) handleStepIn(ctx context.Context, request *protocol.StepInReque
 }
 
 func (s *Server) handleStepOut(ctx context.Context, request *protocol.StepOutRequest) error {
-	return s.handleResume(request.GetRequest(), request.Arguments.ThreadId, func(id exec.DebugSessionID) error {
-		_, err := s.executions.StepOutDebugSession(ctx, id)
+	return s.handleResume(request.GetRequest(), request.Arguments.ThreadId, func(id debug.SessionID) error {
+		_, err := s.debugs.StepOutSession(ctx, id)
 
 		return err
 	}, func(response protocol.Response) protocol.Message {
@@ -345,7 +377,7 @@ func (s *Server) handleStepOut(ctx context.Context, request *protocol.StepOutReq
 func (s *Server) handleResume(
 	request *protocol.Request,
 	requestedThread int,
-	resume func(exec.DebugSessionID) error,
+	resume func(debug.SessionID) error,
 	message func(protocol.Response) protocol.Message,
 ) error {
 	debugID, ok := s.configuredDebug(true)
@@ -392,7 +424,7 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 		return s.sendFailure(request.GetRequest(), "stackTrace requires the Ferret thread in a configured session")
 	}
 
-	frames, err := s.executions.DebugFrames(ctx, debugID)
+	frames, err := s.debugs.Frames(ctx, debugID)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
@@ -448,7 +480,7 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 		return s.sendFailure(request.GetRequest(), "stack frame handle is stale or invalid")
 	}
 
-	scopes, err := s.executions.DebugScopes(ctx, debugID, frame)
+	scopes, err := s.debugs.Scopes(ctx, debugID, frame)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
@@ -493,7 +525,7 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 		}
 
 		var err error
-		variables, err = s.executions.DebugVariables(ctx, debugID, reference)
+		variables, err = s.debugs.Variables(ctx, debugID, reference)
 		if err != nil {
 			return s.sendFailure(request.GetRequest(), err.Error())
 		}
@@ -531,7 +563,7 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 		}
 	}
 
-	value, err := s.executions.EvaluateDebugSession(ctx, debugID, frame, request.Arguments.Expression)
+	value, err := s.debugs.Evaluate(ctx, debugID, frame, request.Arguments.Expression)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
@@ -559,7 +591,11 @@ func (s *Server) handleTerminate(ctx context.Context, request *protocol.Terminat
 
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
-	if _, err := s.executions.TerminateDebugSession(ctx, debugID); err != nil {
+	if err := s.failPendingLaunch("launch terminated before configurationDone"); err != nil {
+		return err
+	}
+
+	if _, err := s.debugs.TerminateSession(ctx, debugID); err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
 	s.handles.Reset()
@@ -575,6 +611,13 @@ func (s *Server) handleTerminate(ctx context.Context, request *protocol.Terminat
 func (s *Server) handleDisconnect(_ context.Context, request *protocol.DisconnectRequest) error {
 	if request.Arguments != nil && (request.Arguments.Restart || request.Arguments.SuspendDebuggee) {
 		return s.sendFailure(request.GetRequest(), "disconnect restart and suspend are not supported")
+	}
+
+	s.eventMu.Lock()
+	defer s.eventMu.Unlock()
+
+	if err := s.failPendingLaunch("launch disconnected before configurationDone"); err != nil {
+		return err
 	}
 
 	if err := s.send(func(base protocol.ProtocolMessage) protocol.Message {
@@ -593,7 +636,7 @@ func (s *Server) handleDisconnect(_ context.Context, request *protocol.Disconnec
 	return s.cleanup()
 }
 
-func (s *Server) configuredDebug(requireConfigured bool) (exec.DebugSessionID, bool) {
+func (s *Server) configuredDebug(requireConfigured bool) (debug.SessionID, bool) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 
@@ -604,7 +647,7 @@ func (s *Server) configuredDebug(requireConfigured bool) (exec.DebugSessionID, b
 	return s.owned.debug, true
 }
 
-func (s *Server) protocolVariable(variable exec.DebugVariable) protocol.Variable {
+func (s *Server) protocolVariable(variable debug.Variable) protocol.Variable {
 	return protocol.Variable{
 		Name:               variable.Name,
 		Value:              variable.Value.Display,

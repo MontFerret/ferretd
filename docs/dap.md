@@ -8,7 +8,14 @@ reported by the `ferretd` command on stderr after the adapter exits.
 
 The adapter follows the standard DAP sequence: `initialize`, `launch`, the
 `initialized` event, breakpoint configuration, and `configurationDone`.
-Execution starts only after `configurationDone`.
+The launch request remains pending while configuration requests are accepted.
+After `configurationDone`, the adapter sends `ConfigurationDoneResponse`, starts
+the debug Session, sends the pending `LaunchResponse`, and only then emits
+stopped or terminal events.
+
+When omitted, `pathFormat` defaults to `path` and client line and column bases
+default to one-based. Explicit zero-based line or column conventions are
+preserved.
 
 Launch arguments:
 

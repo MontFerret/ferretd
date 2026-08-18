@@ -3,7 +3,7 @@ package dap
 import (
 	"sync"
 
-	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/debug"
 )
 
 type handleTable struct {
@@ -11,16 +11,16 @@ type handleTable struct {
 
 	next      int
 	frames    map[int]int
-	scopes    map[int][]exec.DebugVariable
-	variables map[int]exec.DebugValueReference
+	scopes    map[int][]debug.Variable
+	variables map[int]debug.ValueReference
 }
 
 func newHandleTable() *handleTable {
 	return &handleTable{
 		next:      1,
 		frames:    make(map[int]int),
-		scopes:    make(map[int][]exec.DebugVariable),
-		variables: make(map[int]exec.DebugValueReference),
+		scopes:    make(map[int][]debug.Variable),
+		variables: make(map[int]debug.ValueReference),
 	}
 }
 
@@ -53,26 +53,26 @@ func (t *handleTable) FrameIndex(handle int) (int, bool) {
 	return index, ok
 }
 
-func (t *handleTable) Scope(variables []exec.DebugVariable) int {
+func (t *handleTable) Scope(variables []debug.Variable) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	handle := t.allocateLocked()
-	t.scopes[handle] = append([]exec.DebugVariable(nil), variables...)
+	t.scopes[handle] = append([]debug.Variable(nil), variables...)
 
 	return handle
 }
 
-func (t *handleTable) ScopeVariables(handle int) ([]exec.DebugVariable, bool) {
+func (t *handleTable) ScopeVariables(handle int) ([]debug.Variable, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	variables, ok := t.scopes[handle]
 
-	return append([]exec.DebugVariable(nil), variables...), ok
+	return append([]debug.Variable(nil), variables...), ok
 }
 
-func (t *handleTable) Variable(reference exec.DebugValueReference) int {
+func (t *handleTable) Variable(reference debug.ValueReference) int {
 	if reference == 0 {
 		return 0
 	}
@@ -86,7 +86,7 @@ func (t *handleTable) Variable(reference exec.DebugValueReference) int {
 	return handle
 }
 
-func (t *handleTable) VariableReference(handle int) (exec.DebugValueReference, bool) {
+func (t *handleTable) VariableReference(handle int) (debug.ValueReference, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

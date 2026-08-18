@@ -14,7 +14,7 @@ import (
 )
 
 type (
-	// Manager owns all process-local daemon Sessions, Executions, and DebugSessions.
+	// Manager owns all process-local daemon Sessions and Executions.
 	Manager struct {
 		mu sync.RWMutex
 
@@ -23,11 +23,13 @@ type (
 		closingSessions   map[SessionID]*Session
 		executions        map[ExecutionID]*Execution
 		closingExecutions map[ExecutionID]*Execution
-		debugSessions     map[DebugSessionID]*DebugSession
-		closingDebugs     map[DebugSessionID]*DebugSession
+		closeHooks        []SessionCloseHook
 		groups            map[workspace.ID]*workspaceGroup
 		closed            bool
 	}
+
+	// SessionCloseHook releases sibling resources parented by an executable Session.
+	SessionCloseHook func(context.Context, SessionID) error
 
 	workspaceGroup struct {
 		closing      bool
@@ -52,13 +54,23 @@ func New(workspaces *workspace.Manager) *Manager {
 		closingSessions:   make(map[SessionID]*Session),
 		executions:        make(map[ExecutionID]*Execution),
 		closingExecutions: make(map[ExecutionID]*Execution),
-		debugSessions:     make(map[DebugSessionID]*DebugSession),
-		closingDebugs:     make(map[DebugSessionID]*DebugSession),
 		groups:            make(map[workspace.ID]*workspaceGroup),
 	}
 	workspaces.RegisterCloseHook(result.CloseWorkspace)
 
 	return result
+}
+
+// RegisterSessionCloseHook adds a Session child-resource closer.
+// Hooks must be registered during service construction, before concurrent use.
+func (m *Manager) RegisterSessionCloseHook(hook SessionCloseHook) {
+	if hook == nil {
+		return
+	}
+
+	m.mu.Lock()
+	m.closeHooks = append(m.closeHooks, hook)
+	m.mu.Unlock()
 }
 
 // CreateSession compiles one immutable workspace document into a reusable Plan.
@@ -158,15 +170,15 @@ func (m *Manager) GetSession(ctx context.Context, id SessionID) (SessionSnapshot
 	return session.Snapshot(), nil
 }
 
-// CloseSession idempotently removes a Session and all child Executions and DebugSessions.
+// CloseSession idempotently removes a Session and all child resources.
 func (m *Manager) CloseSession(ctx context.Context, id SessionID) error {
-	session, owner := m.detachSession(id)
+	session, executions, owner := m.detachSession(id)
 	if session == nil {
 		return nil
 	}
 
 	if owner {
-		go m.finishSessionClose(session)
+		go m.finishSessionClose(session, executions)
 	}
 
 	return waitForDone(ctx, session.closeDone, session.closeResult)
@@ -306,7 +318,7 @@ func (m *Manager) CloseWorkspace(ctx context.Context, id workspace.ID) error {
 	return waitForDone(ctx, done, func() error { return group.closeErr })
 }
 
-// Close prevents new resources and settles all current Sessions, Executions, and DebugSessions.
+// Close prevents new resources and settles all current Sessions and Executions.
 func (m *Manager) Close(ctx context.Context) error {
 	m.mu.Lock()
 	if !m.closed {
@@ -409,17 +421,21 @@ func (m *Manager) finishSessionCreate(id workspace.ID) {
 	}
 }
 
-func (m *Manager) detachSession(id SessionID) (*Session, bool) {
+func (m *Manager) detachSession(id SessionID) (*Session, []*Execution, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if session, ok := m.closingSessions[id]; ok {
-		return session, false
+		return session, nil, false
 	}
 
 	session, ok := m.sessions[id]
 	if !ok {
-		return nil, false
+		return nil, nil, false
+	}
+	executions, owner := session.beginClose()
+	if !owner {
+		return session, nil, false
 	}
 
 	delete(m.sessions, id)
@@ -430,15 +446,10 @@ func (m *Manager) detachSession(id SessionID) (*Session, bool) {
 
 	m.closingSessions[id] = session
 
-	return session, true
+	return session, executions, true
 }
 
-func (m *Manager) finishSessionClose(session *Session) {
-	executions, debugSessions, plan, debugPlan, owner := session.beginClose()
-	if !owner {
-		return
-	}
-
+func (m *Manager) finishSessionClose(session *Session, executions []*Execution) {
 	var result error
 	for _, execution := range executions {
 		m.detachKnownExecution(execution)
@@ -451,17 +462,17 @@ func (m *Manager) finishSessionClose(session *Session) {
 			result = errors.Join(result, err)
 		}
 	}
-	for _, debugSession := range debugSessions {
-		m.detachKnownDebugSession(debugSession)
 
-		if debugSession.beginClose() {
-			go m.finishDebugSessionClose(debugSession)
-		}
-
-		if err := waitForDone(context.Background(), debugSession.closeDone, debugSession.closeResult); err != nil {
+	m.mu.RLock()
+	hooks := append([]SessionCloseHook(nil), m.closeHooks...)
+	m.mu.RUnlock()
+	for _, hook := range hooks {
+		if err := hook(context.Background(), session.id); err != nil {
 			result = errors.Join(result, err)
 		}
 	}
+
+	plan, debugPlan := session.releasePlans()
 
 	if plan != nil {
 		result = errors.Join(result, plan.Close())

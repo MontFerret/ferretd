@@ -1,7 +1,8 @@
-// Package dap adapts the transport-neutral execution manager to DAP stdio.
+// Package dap adapts transport-neutral execution and debug managers to DAP stdio.
 package dap
 
 import (
+	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -23,7 +24,7 @@ type (
 	ownedSession struct {
 		workspace   workspace.ID
 		session     exec.SessionID
-		debug       exec.DebugSessionID
+		debug       debug.SessionID
 		program     string
 		stopOnEntry bool
 	}

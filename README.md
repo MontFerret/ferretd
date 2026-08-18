@@ -96,7 +96,8 @@ continues independently of the triggering RPC context. Clients can observe the
 latest lifecycle event and subsequent events with `WatchExecution`, cancel an
 active execution, and retrieve terminal output or failure details until they
 explicitly close the resource. Closing a workspace cascades through its Sessions
-and Executions.
+and Executions. DAP debug Sessions are independent retained children whose
+lifetime is coordinated by the protocol-neutral debug manager.
 
 `lsp` starts the experimental language server over stdin and stdout. It opens
 the local roots supplied by LSP initialization, uses their static workspace
@@ -106,8 +107,9 @@ documents are open. Analysis snapshots are coalesced and cached per URI.
 `dap` starts a protocol-pure, single-session debug adapter over stdin and
 stdout. It launches one local `.fql` program, opens its workspace in-process,
 and delegates breakpoints, stepping, frame inspection, variables, and
-evaluation to Ferret through the transport-neutral execution manager. It does
-not connect to `ferretd serve` or expose debugging through gRPC. See
+evaluation to Ferret through separate transport-neutral execution and debug
+managers. It does not connect to `ferretd serve` or expose debugging through
+gRPC. See
 [docs/dap.md](docs/dap.md) for launch arguments and supported requests.
 
 ## Current Status

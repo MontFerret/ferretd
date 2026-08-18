@@ -11,7 +11,7 @@ This file is the canonical operating guide for coding agents working in this rep
 * The current language server tracks open `.fql` documents and publishes Ferret parser and compiler diagnostics over LSP stdio.
 * `serve` exposes daemon information, API negotiation, graceful shutdown, workspace lifecycle, and execution sessions over a local gRPC transport.
 * Opening a workspace synchronously discovers `.fql` files, retains daemon-owned source, syntax state, and document diagnostics, and constructs one rooted read-write Ferret engine until explicit close.
-* The execution manager owns one-shot Executions and retained DebugSessions; `dap` is a single-session stdio adapter over that protocol-neutral model.
+* The execution manager owns compiled Sessions and one-shot Executions, the debug manager owns retained DebugSessions, and `dap` is a single-session stdio adapter over both protocol-neutral models.
 * Buf generates the implemented daemon/workspace/execution protobuf and gRPC packages under `gen/`. Debug protobufs remain ungenerated placeholders.
 * Ferret remains the owner of FQL parsing, compilation, runtime semantics, VM execution, and core debugging behavior.
 
@@ -62,7 +62,8 @@ Agents should reason about changes by ownership boundary:
 * `internal/language` owns protocol-neutral open-document state and language-service behavior built on Ferret.
 * `internal/source` owns protocol-neutral source locations, file-URI conversion, and source-position conversion.
 * `internal/workspace` owns workspace state as that capability is implemented.
-* `internal/exec` owns execution and debug-session coordination.
+* `internal/exec` owns compiled execution Sessions, ordinary Executions, lazy debug Plans, and leased immutable debug targets.
+* `internal/debug` owns retained debug-session coordination, debugger commands, inspection, events, and debug child cleanup.
 * `internal/dap` owns DAP translation, stdio framing, and protocol handle allocation, not debugger semantics.
 * `client` owns the supported Go client, compatibility negotiation, and public error classification.
 * `proto/ferretd` owns versioned daemon RPC source contracts; `gen/` is checked-in generated output.
@@ -93,7 +94,7 @@ Protocol adapters should translate and delegate. They must not become alternate 
 * Workspace documents retain source and Ferret syntax state only. Compilation into immutable Plans and one-shot runtime state belong to execution Sessions and Executions; editor overlays and filesystem watching remain separate capabilities.
 * Document load and syntax diagnostics do not fail an otherwise coherent workspace; fatal root/discovery failures do not leave manager entries.
 * A Session owns one immutable compiled Ferret Plan. An Execution owns one fresh runtime Session, one run attempt, isolated parameters, terminal output or failure, and bounded lifecycle observation.
-* A Session lazily compiles and caches one matching debug Plan. Independent retained DebugSessions own exactly one Ferret debugger session, asynchronous commands, paused-state inspection, terminal retention, and bounded lifecycle observation.
+* A Session lazily compiles and caches one matching debug Plan. `internal/exec` leases immutable debug targets while independent retained DebugSessions in `internal/debug` own exactly one Ferret debugger session, asynchronous commands, paused-state inspection, terminal retention, and bounded lifecycle observation.
 * DAP is single-session stdio only. DAP stdout is protocol-only, DAP owns all integer handles, and every handle becomes stale when execution runs or becomes terminal.
 * Debug placeholder protobuf declarations do not imply generated clients, servers, or service behavior.
 * Current package names, protobuf package names, `go_package` values, service versions, CLI behavior, and LSP wire behavior are compatibility-sensitive.
@@ -111,7 +112,7 @@ Begin with the package that owns the requested behavior. Do not move logic into 
     * `lsp` starts the language server over stdin and stdout.
     * `dap` starts the single-session debug adapter over stdin and stdout.
     * Keep command parsing and process-facing error context here.
-    * Preserve protocol-pure stdout for `lsp`.
+    * Preserve protocol-pure stdout for `lsp` and `dap`.
     * Do not move language, workspace, execution, debug, or transport-independent lifecycle behavior into `main`.
 
 ### Daemon coordination
@@ -162,12 +163,16 @@ Begin with the package that owns the requested behavior. Do not move logic into 
     * Returns copies of files, sources, and diagnostics; retained parser state remains shared daemon-owned state that visitors must treat as read-only. State remains independent of connections, lists and documents are sorted deterministically, and repeated open/close operations are convergent.
     * Uses Ferret source/parser/diagnostic APIs for syntax state and exposes the compile boundary consumed by `internal/exec`. It does not own Ferret semantic behavior.
 * `internal/exec`
-    * Owns concurrency-safe compiled Session, one-shot Execution, and retained DebugSession coordination, cancellation, terminal state, bounded watchers, and parent-child cleanup.
+    * Owns concurrency-safe compiled Sessions, one-shot Execution coordination, cancellation, terminal state, bounded execution watchers, lazy debug Plans, immutable debug-target leases, and parent-child cleanup hooks.
     * Ferret remains the owner of compilation, runtime semantics, and VM execution.
-    * Sessions retain an eager normal Plan and a lazy matching debug Plan; each Execution creates and closes a fresh Ferret runtime Session and runs it at most once, while each DebugSession owns one retained Ferret debugger session.
+    * Sessions retain an eager normal Plan and a lazy matching debug Plan; each Execution creates and closes a fresh Ferret runtime Session and runs it at most once.
+* `internal/debug`
+    * Owns retained DebugSessions, breakpoints, debugger commands, paused-state inspection, terminal retention, bounded debug watches, and execution-Session child cleanup.
+    * Acquires only leased immutable debug targets from `internal/exec`; it does not receive mutable execution Session internals or own Plan compilation.
+    * Each DebugSession owns one retained Ferret debugger session while Ferret remains the owner of debugger semantics and VM execution.
 * `internal/dap`
     * Owns the single-session DAP initialization, launch, configuration, request/event translation, client coordinate conversion, integer handles, and serialized stdio writes.
-    * Delegates workspace, Session, DebugSession, breakpoint, stepping, and inspection behavior to `internal/workspace` and `internal/exec`.
+    * Delegates workspace and execution Session behavior to `internal/workspace` and `internal/exec`, and all debugger resources and operations to `internal/debug`.
     * Must not reimplement Ferret debugger behavior or add debug gRPC/client APIs.
 
 ### Protobuf contracts
@@ -274,7 +279,8 @@ Do not claim planned capabilities are supported. When implementing one, update t
     * use Ferret's public embedding/runtime contracts rather than duplicating execution semantics
     * define cancellation, result ownership, cleanup, and session lifetime explicitly
 * Add debug sessions or DAP:
-    * begin with protocol-neutral coordination in `internal/exec`
+    * begin with protocol-neutral retained debugger coordination in `internal/debug`
+    * keep lazy debug Plan compilation and target leases in `internal/exec`
     * keep DAP translation in `internal/dap`
     * consume Ferret debugging capabilities rather than redefining them
 * Change a protobuf contract or implement gRPC:

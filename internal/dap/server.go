@@ -10,6 +10,7 @@ import (
 
 	protocol "github.com/google/go-dap"
 
+	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -27,10 +28,12 @@ type Server struct {
 
 	workspaces            *workspace.Manager
 	executions            *exec.Manager
+	debugs                *debug.Manager
 	handles               *handleTable
 	owned                 ownedSession
 	client                clientOptions
-	watch                 exec.DebugSubscription
+	watch                 debug.Subscription
+	pendingLaunch         *protocol.Request
 	sequence              int
 	initialized           bool
 	launched              bool
@@ -48,6 +51,7 @@ type Server struct {
 // New creates a single-session DAP server over input and output.
 func New(input io.Reader, output io.Writer) *Server {
 	workspaces := workspace.New()
+	executions := exec.New(workspaces)
 	readerClose, _ := input.(io.Closer)
 
 	return &Server{
@@ -55,7 +59,8 @@ func New(input io.Reader, output io.Writer) *Server {
 		readerClose:           readerClose,
 		writer:                output,
 		workspaces:            workspaces,
-		executions:            exec.New(workspaces),
+		executions:            executions,
+		debugs:                debug.New(executions),
 		handles:               newHandleTable(),
 		nextBreakpointID:      1,
 		stableBreakpoints:     make(map[breakpointKey]int),
@@ -214,16 +219,18 @@ func (s *Server) response(request *protocol.Request) protocol.Response {
 
 func (s *Server) cleanup() error {
 	s.cleanupOnce.Do(func() {
+		var result error
+		s.takePendingLaunch()
+
 		if s.watch.Cancel != nil {
 			s.watch.Cancel()
 		}
 
 		ctx := context.Background()
-		var result error
 
 		if s.owned.debug != "" {
-			_, _ = s.executions.TerminateDebugSession(ctx, s.owned.debug)
-			result = errors.Join(result, s.executions.CloseDebugSession(ctx, s.owned.debug))
+			_, _ = s.debugs.TerminateSession(ctx, s.owned.debug)
+			result = errors.Join(result, s.debugs.CloseSession(ctx, s.owned.debug))
 		}
 
 		if s.owned.session != "" {
@@ -234,6 +241,7 @@ func (s *Server) cleanup() error {
 			result = errors.Join(result, s.workspaces.Close(ctx, s.owned.workspace))
 		}
 
+		result = errors.Join(result, s.debugs.Close(ctx))
 		result = errors.Join(result, s.executions.Close(ctx))
 		result = errors.Join(result, s.workspaces.Clear(ctx))
 		s.cleanupErr = result

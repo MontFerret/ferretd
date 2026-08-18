@@ -25,18 +25,6 @@ var (
 	ErrWatcherLagged = errors.New("execution watcher lagged")
 	// ErrCompilationFailed classifies Ferret compiler diagnostics.
 	ErrCompilationFailed = errors.New("session compilation failed")
-	// ErrDebugSessionNotFound reports an unknown daemon DebugSession ID.
-	ErrDebugSessionNotFound = errors.New("debug session not found")
-	// ErrDebugSessionRunning reports a DebugSession with an active command.
-	ErrDebugSessionRunning = errors.New("debug session running")
-	// ErrDebugSessionNotRunning reports a DebugSession without an active command.
-	ErrDebugSessionNotRunning = errors.New("debug session not running")
-	// ErrDebugSessionNotStopped reports a DebugSession that cannot be inspected.
-	ErrDebugSessionNotStopped = errors.New("debug session not stopped")
-	// ErrDebugSessionTerminal reports a terminal DebugSession.
-	ErrDebugSessionTerminal = errors.New("debug session terminal")
-	// ErrDebugWatcherLagged reports a debug watcher that exceeded its bounded buffer.
-	ErrDebugWatcherLagged = errors.New("debug session watcher lagged")
 	// ErrDebugSourceChanged reports debug compilation from a different source snapshot.
 	ErrDebugSourceChanged = errors.New("debug compilation source changed")
 )

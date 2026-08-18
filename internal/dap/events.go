@@ -7,10 +7,10 @@ import (
 
 	protocol "github.com/google/go-dap"
 
-	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/debug"
 )
 
-func (s *Server) watchDebugSession(subscription exec.DebugSubscription) {
+func (s *Server) watchDebugSession(subscription debug.Subscription) {
 	for event := range subscription.Events {
 		s.eventMu.Lock()
 		s.handleDebugEvent(event)
@@ -29,21 +29,21 @@ func (s *Server) watchDebugSession(subscription exec.DebugSubscription) {
 	}
 }
 
-func (s *Server) handleDebugEvent(event exec.DebugEvent) {
+func (s *Server) handleDebugEvent(event debug.Event) {
 	snapshot := event.Snapshot
 	switch snapshot.State {
-	case exec.DebugStateRunning:
+	case debug.StateRunning:
 		s.handles.Reset()
-	case exec.DebugStateStopped:
+	case debug.StateStopped:
 		s.stateMu.Lock()
-		suppress := s.suppressEntry && snapshot.Reason == exec.DebugStopEntry
+		suppress := s.suppressEntry && snapshot.Reason == debug.StopEntry
 		if suppress {
 			s.suppressEntry = false
 		}
 		s.stateMu.Unlock()
 		if suppress {
 			s.handles.Reset()
-			if _, err := s.executions.ContinueDebugSession(context.Background(), snapshot.ID); err != nil {
+			if _, err := s.debugs.ContinueSession(context.Background(), snapshot.ID); err != nil {
 				_ = s.sendOutput("stderr", fmt.Sprintf("continue after entry failed: %v\n", err))
 				_ = s.sendTerminated()
 			}
@@ -52,14 +52,14 @@ func (s *Server) handleDebugEvent(event exec.DebugEvent) {
 		}
 
 		_ = s.sendStopped(snapshot)
-	case exec.DebugStateCompleted:
+	case debug.StateCompleted:
 		s.handles.Reset()
 		if snapshot.Output != nil && len(snapshot.Output.Content) > 0 {
 			_ = s.sendOutput("stdout", ensureTrailingNewline(string(snapshot.Output.Content)))
 		}
 		_ = s.sendExited(0)
 		_ = s.sendTerminated()
-	case exec.DebugStateFailed:
+	case debug.StateFailed:
 		s.handles.Reset()
 		message := "debug execution failed"
 		if snapshot.Failure != nil && snapshot.Failure.Message != "" {
@@ -68,25 +68,25 @@ func (s *Server) handleDebugEvent(event exec.DebugEvent) {
 		_ = s.sendOutput("stderr", ensureTrailingNewline(message))
 		_ = s.sendExited(1)
 		_ = s.sendTerminated()
-	case exec.DebugStateTerminated:
+	case debug.StateTerminated:
 		s.handles.Reset()
 		_ = s.sendTerminated()
 	}
 }
 
-func (s *Server) sendStopped(snapshot exec.DebugSessionSnapshot) error {
+func (s *Server) sendStopped(snapshot debug.SessionSnapshot) error {
 	reason := "pause"
 	description := ""
 	switch snapshot.Reason {
-	case exec.DebugStopEntry:
+	case debug.StopEntry:
 		reason = "entry"
-	case exec.DebugStopBreakpoint:
+	case debug.StopBreakpoint:
 		reason = "breakpoint"
-	case exec.DebugStopStep:
+	case debug.StopStep:
 		reason = "step"
-	case exec.DebugStopPause:
+	case debug.StopPause:
 		reason = "pause"
-	case exec.DebugStopRuntimeError:
+	case debug.StopRuntimeError:
 		reason = "exception"
 		if snapshot.Failure != nil {
 			description = snapshot.Failure.Message
