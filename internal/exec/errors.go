@@ -25,4 +25,6 @@ var (
 	ErrWatcherLagged = errors.New("execution watcher lagged")
 	// ErrCompilationFailed classifies Ferret compiler diagnostics.
 	ErrCompilationFailed = errors.New("session compilation failed")
+	// ErrDebugSourceChanged reports debug compilation from a different source snapshot.
+	ErrDebugSourceChanged = errors.New("debug compilation source changed")
 )

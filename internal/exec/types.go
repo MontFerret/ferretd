@@ -1,4 +1,4 @@
-// Package exec coordinates daemon-owned Ferret Plans and one-shot executions.
+// Package exec coordinates daemon-owned Ferret Plans and one-shot Executions.
 package exec
 
 import (

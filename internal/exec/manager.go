@@ -23,9 +23,13 @@ type (
 		closingSessions   map[SessionID]*Session
 		executions        map[ExecutionID]*Execution
 		closingExecutions map[ExecutionID]*Execution
+		closeHooks        []SessionCloseHook
 		groups            map[workspace.ID]*workspaceGroup
 		closed            bool
 	}
+
+	// SessionCloseHook releases sibling resources parented by an executable Session.
+	SessionCloseHook func(context.Context, SessionID) error
 
 	workspaceGroup struct {
 		closing      bool
@@ -55,6 +59,18 @@ func New(workspaces *workspace.Manager) *Manager {
 	workspaces.RegisterCloseHook(result.CloseWorkspace)
 
 	return result
+}
+
+// RegisterSessionCloseHook adds a Session child-resource closer.
+// Hooks must be registered during service construction, before concurrent use.
+func (m *Manager) RegisterSessionCloseHook(hook SessionCloseHook) {
+	if hook == nil {
+		return
+	}
+
+	m.mu.Lock()
+	m.closeHooks = append(m.closeHooks, hook)
+	m.mu.Unlock()
 }
 
 // CreateSession compiles one immutable workspace document into a reusable Plan.
@@ -115,7 +131,7 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, errors.Join(err, compilation.Plan.Close())
 	}
 
-	created := newSession(id, compilation, document.Content())
+	created := newSession(id, parent, compilation, document.Content())
 	m.mu.Lock()
 	group := m.groups[workspaceID]
 
@@ -154,15 +170,15 @@ func (m *Manager) GetSession(ctx context.Context, id SessionID) (SessionSnapshot
 	return session.Snapshot(), nil
 }
 
-// CloseSession idempotently removes a Session and all child Executions.
+// CloseSession idempotently removes a Session and all child resources.
 func (m *Manager) CloseSession(ctx context.Context, id SessionID) error {
-	session, owner := m.detachSession(id)
+	session, executions, owner := m.detachSession(id)
 	if session == nil {
 		return nil
 	}
 
 	if owner {
-		go m.finishSessionClose(session)
+		go m.finishSessionClose(session, executions)
 	}
 
 	return waitForDone(ctx, session.closeDone, session.closeResult)
@@ -405,17 +421,21 @@ func (m *Manager) finishSessionCreate(id workspace.ID) {
 	}
 }
 
-func (m *Manager) detachSession(id SessionID) (*Session, bool) {
+func (m *Manager) detachSession(id SessionID) (*Session, []*Execution, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if session, ok := m.closingSessions[id]; ok {
-		return session, false
+		return session, nil, false
 	}
 
 	session, ok := m.sessions[id]
 	if !ok {
-		return nil, false
+		return nil, nil, false
+	}
+	executions, owner := session.beginClose()
+	if !owner {
+		return session, nil, false
 	}
 
 	delete(m.sessions, id)
@@ -426,15 +446,10 @@ func (m *Manager) detachSession(id SessionID) (*Session, bool) {
 
 	m.closingSessions[id] = session
 
-	return session, true
+	return session, executions, true
 }
 
-func (m *Manager) finishSessionClose(session *Session) {
-	executions, plan, owner := session.beginClose()
-	if !owner {
-		return
-	}
-
+func (m *Manager) finishSessionClose(session *Session, executions []*Execution) {
 	var result error
 	for _, execution := range executions {
 		m.detachKnownExecution(execution)
@@ -448,8 +463,22 @@ func (m *Manager) finishSessionClose(session *Session) {
 		}
 	}
 
+	m.mu.RLock()
+	hooks := append([]SessionCloseHook(nil), m.closeHooks...)
+	m.mu.RUnlock()
+	for _, hook := range hooks {
+		if err := hook(context.Background(), session.id); err != nil {
+			result = errors.Join(result, err)
+		}
+	}
+
+	plan, debugPlan := session.releasePlans()
+
 	if plan != nil {
 		result = errors.Join(result, plan.Close())
+	}
+	if debugPlan != nil {
+		result = errors.Join(result, debugPlan.Close())
 	}
 
 	session.finishClose(result)

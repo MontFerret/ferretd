@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	ferret "github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2"
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
 	localsource "github.com/MontFerret/ferretd/internal/source"
 )
@@ -185,6 +185,15 @@ func (w *Workspace) Diagnostics() []*ferretdiagnostics.Diagnostic {
 
 // Compile compiles one retained document through the workspace-owned Ferret engine.
 func (w *Workspace) Compile(ctx context.Context, relativePath string) (Compilation, error) {
+	return w.compile(ctx, relativePath, false)
+}
+
+// CompileDebug compiles one retained document with Ferret debug metadata.
+func (w *Workspace) CompileDebug(ctx context.Context, relativePath string) (Compilation, error) {
+	return w.compile(ctx, relativePath, true)
+}
+
+func (w *Workspace) compile(ctx context.Context, relativePath string, debug bool) (Compilation, error) {
 	if err := ctx.Err(); err != nil {
 		return Compilation{}, err
 	}
@@ -221,7 +230,13 @@ func (w *Workspace) Compile(ctx context.Context, relativePath string) (Compilati
 		return Compilation{Source: snapshot}, fmt.Errorf("%w: %s", ErrDocumentUnavailable, key)
 	}
 
-	plan, err := w.engine.Compile(ctx, document.Source())
+	var plan *ferret.Plan
+	var err error
+	if debug {
+		plan, err = w.engine.CompileDebug(ctx, document.Source())
+	} else {
+		plan, err = w.engine.Compile(ctx, document.Source())
+	}
 	if err != nil {
 		return Compilation{Source: snapshot}, err
 	}

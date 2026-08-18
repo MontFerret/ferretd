@@ -24,7 +24,7 @@ func TestHelp(t *testing.T) {
 		t.Fatalf("execute --help: %v", err)
 	}
 
-	for _, want := range []string{"Usage:", "serve", "lsp"} {
+	for _, want := range []string{"Usage:", "serve", "lsp", "dap"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("help output = %q, want it to contain %q", output, want)
 		}
