@@ -31,7 +31,7 @@ make build VERSION=v0.1.0
 Create and push a SemVer release tag from a clean working tree:
 
 ```sh
-make release TAG=v0.1.0
+make release v0.1.0
 ```
 
 The tag triggers the GoReleaser workflow, which builds the supported platform

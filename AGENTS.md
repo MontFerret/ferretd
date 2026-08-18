@@ -717,7 +717,7 @@ Run commands from the repository root.
 
 `make fmt` mutates Go files. Use it only when formatting changes are within task scope, and inspect the resulting diff for unrelated churn.
 
-The release target creates and pushes a tag. Run `make release TAG=<version>` only when the user explicitly requests a release and the release preconditions have been verified.
+The release target creates and pushes a tag. Run `make release <version>` only when the user explicitly requests a release and the release preconditions have been verified.
 
 ## Validation expectations
 
