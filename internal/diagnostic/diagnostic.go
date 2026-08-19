@@ -3,11 +3,18 @@ package diagnostic
 
 import (
 	"errors"
+	"iter"
 	"strings"
 
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
+	"github.com/MontFerret/ferret/v2/pkg/vm"
 	"github.com/MontFerret/ferretd/internal/source"
 )
+
+// runtimeErrorSet matches Ferret's aggregate VM error without importing its internal concrete type.
+type runtimeErrorSet interface {
+	Errors() iter.Seq2[int, *vm.RuntimeError]
+}
 
 type (
 	// Severity identifies the importance of a diagnostic.
@@ -111,6 +118,23 @@ func FromError(uri, text string, err error) []Diagnostic {
 }
 
 func ferretDiagnostics(err error) []*ferretdiagnostics.Diagnostic {
+	var runtimeSet runtimeErrorSet
+	if errors.As(err, &runtimeSet) {
+		result := make([]*ferretdiagnostics.Diagnostic, 0)
+		for _, item := range runtimeSet.Errors() {
+			if item != nil && item.Diagnostic != nil {
+				result = append(result, item.Diagnostic)
+			}
+		}
+
+		return result
+	}
+
+	var runtimeError *vm.RuntimeError
+	if errors.As(err, &runtimeError) && runtimeError != nil && runtimeError.Diagnostic != nil {
+		return []*ferretdiagnostics.Diagnostic{runtimeError.Diagnostic}
+	}
+
 	var set *ferretdiagnostics.DiagnosticSet
 	if errors.As(err, &set) && set != nil {
 		result := make([]*ferretdiagnostics.Diagnostic, 0, set.Size())
