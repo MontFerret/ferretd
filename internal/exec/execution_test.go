@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -159,6 +160,46 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
 		assertFailure(t, terminal, FailureRuntime, false)
+		if got := terminal.Failure.Diagnostics; len(got) != 1 ||
+			got[0].Code == "" || !strings.Contains(got[0].Message, "division by zero") ||
+			got[0].Range.Start == got[0].Range.End {
+			t.Fatalf("runtime diagnostics = %+v, want one source-located division-by-zero diagnostic", got)
+		}
+	})
+
+	t.Run("aggregate runtime diagnostics", func(t *testing.T) {
+		fixture := newExecutionFixture(t, `LET first = @first
+LET second = @second
+LET third = @third
+RETURN [first, second, third]`)
+		created, err := fixture.manager.CreateExecution(
+			context.Background(),
+			fixture.session.ID,
+			nil,
+			ExecutionOptions{},
+		)
+		if err != nil {
+			t.Fatalf("CreateExecution: %v", err)
+		}
+
+		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
+		assertFailure(t, terminal, FailureRuntime, false)
+		if got, want := terminal.Failure.Message, "Found 3 errors"; got != want {
+			t.Fatalf("failure message = %q, want %q", got, want)
+		}
+
+		diagnostics := terminal.Failure.Diagnostics
+		if len(diagnostics) != 3 {
+			t.Fatalf("runtime diagnostics = %+v, want three missing-parameter diagnostics", diagnostics)
+		}
+		for i, name := range []string{"@first", "@second", "@third"} {
+			diagnostic := diagnostics[i]
+			if diagnostic.Code == "" || !strings.Contains(diagnostic.Message, "missing parameter") ||
+				!strings.Contains(diagnostic.Message, name) || diagnostic.Range.Start.Line != uint32(i) ||
+				diagnostic.Range.Start == diagnostic.Range.End {
+				t.Fatalf("runtime diagnostic[%d] = %+v, want source-located diagnostic for %s", i, diagnostic, name)
+			}
+		}
 	})
 
 	t.Run("cleanup with output", func(t *testing.T) {
