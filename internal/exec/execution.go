@@ -8,6 +8,7 @@ import (
 	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -30,8 +31,7 @@ type (
 		ctx            context.Context
 		cancel         context.CancelCauseFunc
 		runDone        chan struct{}
-		closeDone      chan struct{}
-		closing        bool
+		close          lifecycle.CloseOperation
 		sequence       uint64
 		lastEvent      Event
 		nextWatcher    uint64
@@ -68,7 +68,6 @@ func newExecution(
 		ctx:            ctx,
 		cancel:         cancel,
 		runDone:        make(chan struct{}),
-		closeDone:      make(chan struct{}),
 		watchers:       make(map[uint64]*eventWatcher),
 	}
 	result.publishLocked(EventCreated, false)
@@ -236,16 +235,7 @@ func (e *Execution) finish(output *ferret.Output, err error, category FailureCat
 }
 
 func (e *Execution) beginClose() bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.closing {
-		return false
-	}
-
-	e.closing = true
-
-	return true
+	return e.close.Begin()
 }
 
 func (e *Execution) settleClose() {
@@ -261,7 +251,7 @@ func (e *Execution) settleClose() {
 }
 
 func (e *Execution) completeClose() {
-	close(e.closeDone)
+	e.close.Finish(nil)
 }
 
 func (e *Execution) snapshotLocked() ExecutionSnapshot {

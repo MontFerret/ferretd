@@ -42,6 +42,51 @@ func TestManagerDoesNotOwnExecutionManager(t *testing.T) {
 	}
 }
 
+func TestManagerCloseSettlesMultipleParentGroups(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+	ctx := context.Background()
+	secondParent, err := fixture.executions.CreateSession(ctx, fixture.workspace.ID(), "query.fql")
+	if err != nil {
+		t.Fatalf("CreateSession second parent: %v", err)
+	}
+
+	parents := []exec.SessionSnapshot{fixture.session, secondParent}
+	created := make([]SessionSnapshot, 0, len(parents)*2)
+	for _, parent := range parents {
+		for range 2 {
+			session, err := fixture.manager.CreateSession(ctx, parent.ID, nil, SessionOptions{})
+			if err != nil {
+				t.Fatalf("CreateSession debug child: %v", err)
+			}
+			created = append(created, session)
+		}
+	}
+
+	if err := fixture.manager.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	for _, session := range created {
+		if _, err := fixture.manager.GetSession(ctx, session.ID); !errors.Is(err, ErrSessionNotFound) {
+			t.Fatalf("GetSession after Close error = %v, want ErrSessionNotFound", err)
+		}
+	}
+	for _, parent := range parents {
+		if _, err := fixture.executions.GetSession(ctx, parent.ID); err != nil {
+			t.Fatalf("borrowed execution Session after debug Close: %v", err)
+		}
+	}
+
+	fixture.manager.mu.RLock()
+	groups := len(fixture.manager.groups)
+	fixture.manager.mu.RUnlock()
+	if groups != 0 {
+		t.Fatalf("debug parent groups after Close = %d, want 0", groups)
+	}
+	if err := fixture.manager.Close(ctx); err != nil {
+		t.Fatalf("repeated Close: %v", err)
+	}
+}
+
 func TestDebugManagerRequiresContexts(t *testing.T) {
 	t.Run("operation", func(t *testing.T) {
 		fixture := newDebugFixture(t, "RETURN 1")
@@ -347,12 +392,9 @@ func TestParentCloseWaitsForInFlightDebugCreation(t *testing.T) {
 
 	fixture.manager.mu.RLock()
 	group := fixture.manager.groups[parentID]
-	done := group.closeDone
 	fixture.manager.mu.RUnlock()
-	select {
-	case <-done:
-		t.Fatal("parent debug cleanup completed while creation was in flight")
-	default:
+	if err := group.gate.WaitClose(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("parent debug cleanup while creation was in flight = %v, want context.Canceled", err)
 	}
 
 	fixture.manager.finishCreate(parentID)

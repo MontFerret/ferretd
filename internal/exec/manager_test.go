@@ -48,6 +48,61 @@ func TestManagerDoesNotOwnWorkspaceManager(t *testing.T) {
 	}
 }
 
+func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
+	ctx := context.Background()
+	workspaces := workspace.New()
+	manager := mustNewManager(t, workspaces)
+	t.Cleanup(func() {
+		_ = manager.Close(context.Background())
+		_ = workspaces.Clear(context.Background())
+	})
+
+	type resources struct {
+		session   SessionSnapshot
+		execution ExecutionSnapshot
+	}
+	created := make([]resources, 0, 2)
+	for range 2 {
+		root := t.TempDir()
+		writeSourceFile(t, root, "query.fql", "RETURN 1")
+		opened, err := workspaces.Open(ctx, root)
+		if err != nil {
+			t.Fatalf("workspace Open: %v", err)
+		}
+		session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
+		if err != nil {
+			t.Fatalf("CreateSession: %v", err)
+		}
+		execution, err := manager.CreateExecution(ctx, session.ID, nil, ExecutionOptions{})
+		if err != nil {
+			t.Fatalf("CreateExecution: %v", err)
+		}
+		created = append(created, resources{session: session, execution: execution})
+	}
+
+	if err := manager.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	for _, item := range created {
+		if _, err := manager.GetSession(ctx, item.session.ID); !errors.Is(err, ErrSessionNotFound) {
+			t.Fatalf("GetSession after Close error = %v, want ErrSessionNotFound", err)
+		}
+		if _, err := manager.GetExecution(ctx, item.execution.ID); !errors.Is(err, ErrExecutionNotFound) {
+			t.Fatalf("GetExecution after Close error = %v, want ErrExecutionNotFound", err)
+		}
+	}
+
+	manager.mu.RLock()
+	groups := len(manager.groups)
+	manager.mu.RUnlock()
+	if groups != 0 {
+		t.Fatalf("workspace groups after Close = %d, want 0", groups)
+	}
+	if err := manager.Close(ctx); err != nil {
+		t.Fatalf("repeated Close: %v", err)
+	}
+}
+
 func TestCreateSessionCompilesImmutableSourceAndParameters(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN [@second, @first]")
 	got := fixture.session

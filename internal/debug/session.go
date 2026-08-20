@@ -8,11 +8,13 @@ import (
 	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
 type (
-	// Session owns one retained Ferret debugger session.
+	// Session owns one retained Ferret debugger session. Its mutex precedes the
+	// embedded close operation when both locks are required for a transition.
 	Session struct {
 		mu        sync.Mutex
 		controlMu sync.Mutex
@@ -33,9 +35,8 @@ type (
 		failure          *Failure
 		breakpoints      map[string][]ferret.DebugBreakpoint
 		terminating      bool
-		closing          bool
+		close            lifecycle.CloseOperation
 		terminalDone     chan struct{}
-		closeDone        chan struct{}
 		ferretClose      sync.Once
 		ferretCloseDone  chan struct{}
 		ferretCloseErr   error
@@ -72,7 +73,6 @@ func newSession(
 		state:           StateCreated,
 		breakpoints:     make(map[string][]ferret.DebugBreakpoint),
 		terminalDone:    make(chan struct{}),
-		closeDone:       make(chan struct{}),
 		ferretCloseDone: make(chan struct{}),
 		watchers:        make(map[uint64]*debugEventWatcher),
 	}
@@ -378,7 +378,7 @@ func (d *Session) startCommand(
 	}
 
 	d.mu.Lock()
-	if d.terminating || d.closing {
+	if d.terminating || d.close.Started() {
 		d.mu.Unlock()
 
 		return SessionSnapshot{}, ErrSessionTerminal
@@ -514,7 +514,7 @@ func (d *Session) requireInspectable() error {
 		return ErrSessionRunning
 	}
 
-	if d.state.Terminal() || d.closing {
+	if d.state.Terminal() || d.close.Started() {
 		return ErrSessionTerminal
 	}
 
@@ -529,7 +529,7 @@ func (d *Session) requireStopped() error {
 		return ErrSessionRunning
 	}
 
-	if d.state != StateStopped || d.closing {
+	if d.state != StateStopped || d.close.Started() {
 		return ErrSessionNotStopped
 	}
 
@@ -576,13 +576,7 @@ func (d *Session) beginClose() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.closing {
-		return false
-	}
-
-	d.closing = true
-
-	return true
+	return d.close.Begin()
 }
 
 func (d *Session) settleClose() {
@@ -599,13 +593,7 @@ func (d *Session) settleClose() {
 }
 
 func (d *Session) completeClose() {
-	close(d.closeDone)
-}
-
-func (d *Session) closeResult() error {
-	<-d.closeDone
-
-	return d.ferretCloseErr
+	d.close.Finish(d.ferretCloseErr)
 }
 
 func (d *Session) snapshotLocked() SessionSnapshot {

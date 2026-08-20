@@ -6,10 +6,12 @@ import (
 	"sync"
 
 	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// Session owns one immutable reusable Ferret Plan.
+// Session owns one immutable reusable Ferret Plan. Its mutex precedes the
+// embedded close operation when both locks are required for a transition.
 type Session struct {
 	mu sync.Mutex
 
@@ -28,9 +30,7 @@ type Session struct {
 	debugCompiling     bool
 	debugCompileFailed bool
 	debugTargets       int
-	closing            bool
-	closeDone          chan struct{}
-	closeErr           error
+	close              lifecycle.CloseOperation
 }
 
 func newSession(
@@ -46,7 +46,6 @@ func newSession(
 		text:       text,
 		plan:       compilation.Plan,
 		executions: make(map[ExecutionID]*Execution),
-		closeDone:  make(chan struct{}),
 	}
 
 	if parent != nil {
@@ -74,7 +73,7 @@ func (s *Session) addExecution(execution *Execution) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.closing {
+	if s.close.Started() {
 		return ErrSessionClosed
 	}
 
@@ -95,7 +94,7 @@ func (s *Session) removeExecution(execution *Execution) {
 func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) {
 	for {
 		s.mu.Lock()
-		if s.closing {
+		if s.close.Started() {
 			s.mu.Unlock()
 
 			return nil, ErrSessionClosed
@@ -157,7 +156,7 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 		}
 
 		s.mu.Lock()
-		closing := s.closing
+		closing := s.close.Started()
 		var target *DebugTarget
 		if err == nil && !closing {
 			s.debugPlan = compilation.Plan
@@ -212,11 +211,9 @@ func (s *Session) releaseDebugTarget() {
 func (s *Session) beginClose() ([]*Execution, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closing {
+	if !s.close.Begin() {
 		return nil, false
 	}
-
-	s.closing = true
 	executions := make([]*Execution, 0, len(s.executions))
 
 	// Keep the children registered until their runtime cleanup releases ownership.
@@ -253,17 +250,5 @@ func (s *Session) releasePlans() (*ferret.Plan, *ferret.Plan) {
 }
 
 func (s *Session) finishClose(err error) {
-	s.mu.Lock()
-	s.closeErr = err
-	close(s.closeDone)
-	s.mu.Unlock()
-}
-
-func (s *Session) closeResult() error {
-	<-s.closeDone
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return s.closeErr
+	s.close.Finish(err)
 }

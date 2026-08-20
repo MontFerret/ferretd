@@ -31,6 +31,13 @@ type closeOwnershipFixture struct {
 	planCloseStartOnce    sync.Once
 }
 
+type observedDoneContext struct {
+	context.Context
+
+	once     sync.Once
+	observed chan struct{}
+}
+
 func TestCloseExecutionRetainsSessionOwnershipUntilRuntimeCleanup(t *testing.T) {
 	fixture := newCloseOwnershipFixture(t)
 	executionClose := make(chan error, 1)
@@ -131,6 +138,56 @@ func TestConcurrentCloseExecutionUsesOneCleanupOwner(t *testing.T) {
 	assertCloseCounts(t, fixture)
 }
 
+func TestConcurrentCloseSessionSharesFailureAndOneOwner(t *testing.T) {
+	const waiters = 8
+
+	want := errors.New("plan close failed")
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	var closeCalls atomic.Int64
+	var closeStartOnce sync.Once
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseClose) })
+	}
+	t.Cleanup(release)
+
+	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+		closeCalls.Add(1)
+		closeStartOnce.Do(func() { close(closeStarted) })
+		<-releaseClose
+
+		return want
+	}))
+
+	results := make(chan error, waiters+1)
+	go func() {
+		results <- manager.CloseSession(context.Background(), session.ID)
+	}()
+	waitForSignal(t, closeStarted, "Plan close")
+
+	for range waiters {
+		ctx := newObservedDoneContext()
+		go func() {
+			results <- manager.CloseSession(ctx, session.ID)
+		}()
+		waitForSignal(t, ctx.observed, "concurrent close waiter")
+	}
+
+	release()
+	for range waiters + 1 {
+		if err := <-results; !errors.Is(err, want) {
+			t.Fatalf("CloseSession error = %v, want %v", err, want)
+		}
+	}
+	if got := closeCalls.Load(); got != 1 {
+		t.Fatalf("Plan close calls = %d, want 1", got)
+	}
+	if err := manager.CloseSession(context.Background(), session.ID); err != nil {
+		t.Fatalf("late idempotent CloseSession: %v", err)
+	}
+}
+
 func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 	t.Helper()
 
@@ -162,9 +219,7 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 		}),
 		ferret.WithPlanCloseHook(func() error {
 			fixture.planCloseCalls.Add(1)
-			select {
-			case <-fixture.execution.closeDone:
-			default:
+			if !fixture.execution.close.Finished() {
 				fixture.planClosedTooEarly.Store(true)
 			}
 
@@ -196,6 +251,19 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 	return fixture
 }
 
+func newObservedDoneContext() *observedDoneContext {
+	return &observedDoneContext{
+		Context:  context.Background(),
+		observed: make(chan struct{}),
+	}
+}
+
+func (c *observedDoneContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.observed) })
+
+	return c.Context.Done()
+}
+
 func waitForSessionClosing(t *testing.T, session *Session) {
 	t.Helper()
 
@@ -203,10 +271,7 @@ func waitForSessionClosing(t *testing.T, session *Session) {
 	defer deadline.Stop()
 
 	for {
-		session.mu.Lock()
-		closing := session.closing
-		session.mu.Unlock()
-		if closing {
+		if session.close.Started() {
 			return
 		}
 

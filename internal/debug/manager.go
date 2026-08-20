@@ -9,6 +9,7 @@ import (
 	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
 
 type (
@@ -24,13 +25,10 @@ type (
 	}
 
 	sessionGroup struct {
-		closing      bool
-		closeStarted bool
-		closeDone    chan struct{}
-		closeErr     error
-		creating     int
-		createDone   chan struct{}
-		sessions     map[SessionID]*Session
+		// Manager.mu is acquired before gate when both are needed. Gate never
+		// calls back into the Manager, so the lock order cannot reverse.
+		gate     lifecycle.Gate
+		sessions map[SessionID]*Session
 	}
 )
 
@@ -100,7 +98,7 @@ func (m *Manager) CreateSession(
 	created := newSession(id, target, ferretSession, parameters, options)
 	m.mu.Lock()
 	group := m.groups[parentID]
-	if m.closed || group == nil || group.closing {
+	if m.closed || group == nil || !group.gate.Accepting() {
 		managerClosed := m.closed
 		m.mu.Unlock()
 
@@ -285,7 +283,7 @@ func (m *Manager) CloseSession(ctx context.Context, id SessionID) error {
 		go m.finishSessionClose(session)
 	}
 
-	return waitForDone(ctx, session.closeDone, session.closeResult)
+	return session.close.Wait(ctx)
 }
 
 // Close prevents new resources and settles every retained debug Session.
@@ -335,14 +333,9 @@ func (m *Manager) beginCreate(parentID exec.SessionID) error {
 		m.groups[parentID] = group
 	}
 
-	if group.closing {
+	if !group.gate.BeginCreate() {
 		return exec.ErrSessionClosed
 	}
-
-	if group.creating == 0 {
-		group.createDone = make(chan struct{})
-	}
-	group.creating++
 
 	return nil
 }
@@ -352,18 +345,12 @@ func (m *Manager) finishCreate(parentID exec.SessionID) {
 	defer m.mu.Unlock()
 
 	group := m.groups[parentID]
-	if group == nil || group.creating == 0 {
+	if group == nil {
 		return
 	}
 
-	group.creating--
-	if group.creating == 0 {
-		close(group.createDone)
-		group.createDone = nil
-
-		if !group.closing && len(group.sessions) == 0 {
-			delete(m.groups, parentID)
-		}
+	if group.gate.EndCreate() && group.gate.Accepting() && len(group.sessions) == 0 {
+		delete(m.groups, parentID)
 	}
 }
 
@@ -396,7 +383,7 @@ func (m *Manager) finishSessionClose(session *Session) {
 			delete(group.sessions, session.id)
 		}
 
-		if !group.closing && group.creating == 0 && len(group.sessions) == 0 {
+		if group.gate.Accepting() && group.gate.Idle() && len(group.sessions) == 0 {
 			delete(m.groups, session.session)
 		}
 	}
@@ -413,30 +400,18 @@ func (m *Manager) closeExecutionSession(ctx context.Context, parentID exec.Sessi
 		return nil
 	}
 
-	group.closing = true
-	owner := !group.closeStarted
-	if owner {
-		group.closeStarted = true
-		group.closeDone = make(chan struct{})
-	}
-	done := group.closeDone
+	owner := group.gate.BeginClose()
 	m.mu.Unlock()
 
 	if owner {
 		go m.finishExecutionSessionClose(parentID, group)
 	}
 
-	return waitForDone(ctx, done, func() error { return group.closeErr })
+	return group.gate.WaitClose(ctx)
 }
 
 func (m *Manager) finishExecutionSessionClose(parentID exec.SessionID, group *sessionGroup) {
-	m.mu.RLock()
-	creating := group.creating
-	createDone := group.createDone
-	m.mu.RUnlock()
-	if creating > 0 {
-		_ = waitForDone(context.Background(), createDone, func() error { return nil })
-	}
+	group.gate.WaitForCreates()
 
 	m.mu.RLock()
 	ids := make([]SessionID, 0, len(group.sessions))
@@ -450,21 +425,11 @@ func (m *Manager) finishExecutionSessionClose(parentID exec.SessionID, group *se
 		result = errors.Join(result, m.CloseSession(context.Background(), id))
 	}
 
-	group.closeErr = result
-	close(group.closeDone)
+	group.gate.FinishClose(result)
 
 	m.mu.Lock()
 	if m.groups[parentID] == group {
 		delete(m.groups, parentID)
 	}
 	m.mu.Unlock()
-}
-
-func waitForDone(ctx context.Context, done <-chan struct{}, result func() error) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return result()
-	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
 
 	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 	"github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -32,13 +33,10 @@ type (
 	SessionCloseHook func(context.Context, SessionID) error
 
 	workspaceGroup struct {
-		closing      bool
-		closeStarted bool
-		closeDone    chan struct{}
-		closeErr     error
-		creating     int
-		createDone   chan struct{}
-		sessions     map[SessionID]*Session
+		// Manager.mu is acquired before gate when both are needed. Gate never
+		// calls back into the Manager, so the lock order cannot reverse.
+		gate     lifecycle.Gate
+		sessions map[SessionID]*Session
 	}
 )
 
@@ -132,7 +130,7 @@ func (m *Manager) CreateSession(
 	m.mu.Lock()
 	group := m.groups[workspaceID]
 
-	if m.closed || group == nil || group.closing {
+	if m.closed || group == nil || !group.gate.Accepting() {
 		m.mu.Unlock()
 
 		return SessionSnapshot{}, errors.Join(workspace.ErrClosed, compilation.Close())
@@ -178,7 +176,7 @@ func (m *Manager) CloseSession(ctx context.Context, id SessionID) error {
 		go m.finishSessionClose(session, executions)
 	}
 
-	return waitForDone(ctx, session.closeDone, session.closeResult)
+	return session.close.Wait(ctx)
 }
 
 // CreateExecution creates a CREATED one-shot invocation resource.
@@ -272,7 +270,7 @@ func (m *Manager) CloseExecution(ctx context.Context, id ExecutionID) error {
 		go m.finishExecutionClose(execution)
 	}
 
-	return waitForDone(ctx, execution.closeDone, func() error { return nil })
+	return execution.close.Wait(ctx)
 }
 
 // WatchExecution subscribes to current and future lifecycle events.
@@ -295,21 +293,14 @@ func (m *Manager) CloseWorkspace(ctx context.Context, id workspace.ID) error {
 		m.groups[id] = group
 	}
 
-	group.closing = true
-	owner := !group.closeStarted
-	if owner {
-		group.closeStarted = true
-		group.closeDone = make(chan struct{})
-	}
-
-	done := group.closeDone
+	owner := group.gate.BeginClose()
 	m.mu.Unlock()
 
 	if owner {
 		go m.finishWorkspaceClose(id, group)
 	}
 
-	return waitForDone(ctx, done, func() error { return group.closeErr })
+	return group.gate.WaitClose(ctx)
 }
 
 // Close prevents new resources and settles all current Sessions and Executions.
@@ -336,14 +327,7 @@ func (m *Manager) Close(ctx context.Context) error {
 }
 
 func (m *Manager) finishWorkspaceClose(id workspace.ID, group *workspaceGroup) {
-	m.mu.RLock()
-	creating := group.creating
-	createDone := group.createDone
-	m.mu.RUnlock()
-
-	if creating > 0 {
-		_ = waitForDone(context.Background(), createDone, func() error { return nil })
-	}
+	group.gate.WaitForCreates()
 
 	m.mu.RLock()
 	ids := make([]SessionID, 0, len(group.sessions))
@@ -357,8 +341,7 @@ func (m *Manager) finishWorkspaceClose(id workspace.ID, group *workspaceGroup) {
 		result = errors.Join(result, m.CloseSession(context.Background(), sessionID))
 	}
 
-	group.closeErr = result
-	close(group.closeDone)
+	group.gate.FinishClose(result)
 
 	m.mu.Lock()
 	if m.groups[id] == group {
@@ -381,15 +364,9 @@ func (m *Manager) beginSessionCreate(id workspace.ID) error {
 		m.groups[id] = group
 	}
 
-	if group.closing {
+	if !group.gate.BeginCreate() {
 		return workspace.ErrClosed
 	}
-
-	if group.creating == 0 {
-		group.createDone = make(chan struct{})
-	}
-
-	group.creating++
 
 	return nil
 }
@@ -399,19 +376,12 @@ func (m *Manager) finishSessionCreate(id workspace.ID) {
 	defer m.mu.Unlock()
 
 	group := m.groups[id]
-	if group == nil || group.creating == 0 {
+	if group == nil {
 		return
 	}
 
-	group.creating--
-	if group.creating == 0 {
-		close(group.createDone)
-
-		group.createDone = nil
-
-		if !group.closing && len(group.sessions) == 0 {
-			delete(m.groups, id)
-		}
+	if group.gate.EndCreate() && group.gate.Accepting() && len(group.sessions) == 0 {
+		delete(m.groups, id)
 	}
 }
 
@@ -452,7 +422,7 @@ func (m *Manager) finishSessionClose(session *Session, executions []*Execution) 
 			go m.finishExecutionClose(execution)
 		}
 
-		if err := waitForDone(context.Background(), execution.closeDone, func() error { return nil }); err != nil {
+		if err := execution.close.Wait(context.Background()); err != nil {
 			result = errors.Join(result, err)
 		}
 	}
