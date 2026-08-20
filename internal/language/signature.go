@@ -11,7 +11,11 @@ import (
 )
 
 // SignatureHelp returns UDF or registered overloads for the call at position.
-func (s *Service) SignatureHelp(ctx context.Context, uri string, position source.Position) (*SignatureHelp, error) {
+func (s *Service) SignatureHelp(
+	ctx context.Context,
+	uri source.URI,
+	position source.Position,
+) (*SignatureHelp, error) {
 	document, resolved, err := s.resolveAt(ctx, uri, position)
 	if err != nil {
 		return nil, err

@@ -308,10 +308,11 @@ FUNC outer(p) {
   RETURN result
 }
 RETURN outer(@input) + box.value`)
-	programURI, err := source.PathToURI(program)
+	typedProgramURI, err := source.URIFromPath(program)
 	if err != nil {
 		t.Fatal(err)
 	}
+	programURI := typedProgramURI.String()
 
 	client := newTestClient(t)
 	initialize := client.request("initialize")

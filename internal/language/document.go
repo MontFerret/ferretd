@@ -1,9 +1,11 @@
 package language
 
+import "github.com/MontFerret/ferretd/internal/source"
+
 type (
 	// Document is a versioned editor-overlay snapshot.
 	Document struct {
-		URI        string
+		URI        source.URI
 		Path       string
 		Version    int32
 		Text       string

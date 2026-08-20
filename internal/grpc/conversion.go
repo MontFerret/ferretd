@@ -28,7 +28,7 @@ func toStatusError(err error) error {
 
 func toProtoWorkspace(value *workspace.Workspace) *workspacev1.Workspace {
 	return &workspacev1.Workspace{
-		Id:   &workspacev1.WorkspaceId{Value: string(value.ID())},
+		Id:   &workspacev1.WorkspaceId{Value: value.ID().String()},
 		Root: value.Root(),
 	}
 }

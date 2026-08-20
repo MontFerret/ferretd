@@ -3,7 +3,6 @@ package exec
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
@@ -100,20 +99,18 @@ func (m *Manager) CreateSession(
 
 	compilation, err := parent.CompileDocument(ctx, document)
 	if err != nil {
-		if compilation.Plan != nil {
-			err = errors.Join(err, compilation.Plan.Close())
-		}
+		err = errors.Join(err, compilation.Close())
 
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, workspace.ErrClosed) || errors.Is(err, workspace.ErrDocumentNotFound) {
 			return SessionSnapshot{}, err
 		}
 
-		diagnostics := diagnostic.FromError(string(compilation.Source.URI), document.Content(), err)
+		diagnostics := diagnostic.FromError(compilation.Source.URI, document.Content(), err)
 		if errors.Is(err, workspace.ErrDocumentUnavailable) {
 			mapper := source.NewMapper(document.Content())
 			for _, item := range document.Diagnostics() {
-				diagnostics = append(diagnostics, diagnostic.Convert(string(compilation.Source.URI), mapper, item))
+				diagnostics = append(diagnostics, diagnostic.Convert(compilation.Source.URI, mapper, item))
 			}
 		}
 
@@ -126,7 +123,7 @@ func (m *Manager) CreateSession(
 
 	id, err := newSessionID()
 	if err != nil {
-		return SessionSnapshot{}, errors.Join(err, compilation.Plan.Close())
+		return SessionSnapshot{}, errors.Join(err, compilation.Close())
 	}
 
 	created := newSession(id, parent, compilation, document.Content())
@@ -136,13 +133,13 @@ func (m *Manager) CreateSession(
 	if m.closed || group == nil || group.closing {
 		m.mu.Unlock()
 
-		return SessionSnapshot{}, errors.Join(ErrWorkspaceClosed, compilation.Plan.Close())
+		return SessionSnapshot{}, errors.Join(ErrWorkspaceClosed, compilation.Close())
 	}
 
 	if err := ctx.Err(); err != nil {
 		m.mu.Unlock()
 
-		return SessionSnapshot{}, errors.Join(err, compilation.Plan.Close())
+		return SessionSnapshot{}, errors.Join(err, compilation.Close())
 	}
 
 	m.sessions[id] = created
@@ -203,10 +200,7 @@ func (m *Manager) CreateExecution(
 		return ExecutionSnapshot{}, err
 	}
 
-	options.OutputContentType = strings.TrimSpace(options.OutputContentType)
-	if options.OutputContentType == "" {
-		options.OutputContentType = "application/json"
-	}
+	options = options.normalized()
 
 	m.mu.Lock()
 	if m.closed {

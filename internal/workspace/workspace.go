@@ -14,9 +14,6 @@ import (
 )
 
 type (
-	// ID is an opaque workspace identifier.
-	ID string
-
 	// State identifies the current workspace lifecycle state.
 	State uint8
 
@@ -45,17 +42,11 @@ type (
 		// source state for this already-discovered document.
 		Revision uint64
 	}
-
-	// Compilation owns a Ferret Plan and the source snapshot that produced it.
-	Compilation struct {
-		Plan   *ferret.Plan
-		Source SourceSnapshot
-	}
 )
 
 const (
 	// StateOpening identifies a workspace whose initial source load is running.
-	StateOpening State = iota
+	StateOpening State = iota + 1
 	// StateReady identifies a successfully loaded workspace.
 	StateReady
 	// StateFailed identifies a workspace whose initial source load failed.

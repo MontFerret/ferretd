@@ -21,7 +21,7 @@ type Resolution struct {
 }
 
 // ResolveAt resolves compiler identity, reference, call, and type facts at position.
-func (s *Service) ResolveAt(ctx context.Context, uri string, position source.Position) (Resolution, error) {
+func (s *Service) ResolveAt(ctx context.Context, uri source.URI, position source.Position) (Resolution, error) {
 	_, resolved, err := s.resolveAt(ctx, uri, position)
 
 	return resolved, err
@@ -29,7 +29,7 @@ func (s *Service) ResolveAt(ctx context.Context, uri string, position source.Pos
 
 func (s *Service) resolveAt(
 	ctx context.Context,
-	uri string,
+	uri source.URI,
 	position source.Position,
 ) (analyzedDocument, Resolution, error) {
 	document, err := s.analyzedDocument(ctx, uri)

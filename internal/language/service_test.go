@@ -79,18 +79,24 @@ func TestChangeDocumentErrors(t *testing.T) {
 }
 
 func TestOpenDocumentRejectsNonFileURI(t *testing.T) {
-	err := New(Options{}).OpenDocument(context.Background(), "https://example.com/query.fql", "ferret", 1, "RETURN 1")
+	err := New(Options{}).OpenDocument(
+		context.Background(),
+		source.URI("https://example.com/query.fql"),
+		"ferret",
+		1,
+		"RETURN 1",
+	)
 	if err == nil {
 		t.Fatal("OpenDocument returned nil error")
 	}
 }
 
-func documentURI(t *testing.T, name string) string {
+func documentURI(t *testing.T, name string) source.URI {
 	t.Helper()
 
-	uri, err := source.PathToURI(filepath.Join(t.TempDir(), name))
+	uri, err := source.URIFromPath(filepath.Join(t.TempDir(), name))
 	if err != nil {
-		t.Fatalf("PathToURI: %v", err)
+		t.Fatalf("URIFromPath: %v", err)
 	}
 	return uri
 }

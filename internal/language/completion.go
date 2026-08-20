@@ -24,7 +24,11 @@ const (
 )
 
 // Completion returns lexical compiler symbols, runtime environment names, and FQL language words.
-func (s *Service) Completion(ctx context.Context, uri string, position source.Position) ([]CompletionItem, error) {
+func (s *Service) Completion(
+	ctx context.Context,
+	uri source.URI,
+	position source.Position,
+) ([]CompletionItem, error) {
 	document, err := s.analyzedDocument(ctx, uri)
 	if err != nil {
 		return nil, err

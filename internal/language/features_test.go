@@ -32,7 +32,7 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := New(Options{Workspaces: manager})
-	uri, err := source.PathToURI(path)
+	uri, err := source.URIFromPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +504,7 @@ func TestSemanticTokensSplitMultilineStringsAndComments(t *testing.T) {
 	}
 }
 
-func openLanguageDocument(t *testing.T, text string) (*Service, string) {
+func openLanguageDocument(t *testing.T, text string) (*Service, source.URI) {
 	t.Helper()
 
 	service := New(Options{})

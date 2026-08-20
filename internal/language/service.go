@@ -17,8 +17,8 @@ import (
 // Service provides protocol-neutral Ferret language behavior.
 type Service struct {
 	mu            sync.RWMutex
-	overlays      map[string]Document
-	cache         map[string]*analysisEntry
+	overlays      map[source.URI]Document
+	cache         map[source.URI]*analysisEntry
 	compiler      *compiler.Compiler
 	workspaces    *workspace.Manager
 	functionIndex functionIndex
@@ -50,8 +50,8 @@ func New(options Options) *Service {
 
 	compilerInstance := compiler.New()
 	result := &Service{
-		overlays:      make(map[string]Document),
-		cache:         make(map[string]*analysisEntry),
+		overlays:      make(map[source.URI]Document),
+		cache:         make(map[source.URI]*analysisEntry),
 		compiler:      compilerInstance,
 		workspaces:    workspaces,
 		functionIndex: newFunctionIndex(functions),
@@ -70,12 +70,18 @@ func (s *Service) OpenWorkspace(ctx context.Context, root string) error {
 }
 
 // OpenDocument stores or replaces an editor overlay snapshot.
-func (s *Service) OpenDocument(ctx context.Context, uri, _ string, version int32, text string) error {
+func (s *Service) OpenDocument(
+	ctx context.Context,
+	uri source.URI,
+	_ string,
+	version int32,
+	text string,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	path, err := source.URIToPath(uri)
+	path, err := uri.Path()
 	if err != nil {
 		return fmt.Errorf("resolve document URI: %w", err)
 	}
@@ -96,7 +102,12 @@ func (s *Service) OpenDocument(ctx context.Context, uri, _ string, version int32
 }
 
 // ChangeDocument applies full-document changes to an editor overlay.
-func (s *Service) ChangeDocument(ctx context.Context, uri string, version int32, changes []TextChange) error {
+func (s *Service) ChangeDocument(
+	ctx context.Context,
+	uri source.URI,
+	version int32,
+	changes []TextChange,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -128,7 +139,7 @@ func (s *Service) ChangeDocument(ctx context.Context, uri string, version int32,
 }
 
 // CloseDocument removes an editor overlay. Closing an unknown overlay is safe.
-func (s *Service) CloseDocument(ctx context.Context, uri string) error {
+func (s *Service) CloseDocument(ctx context.Context, uri source.URI) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -142,7 +153,7 @@ func (s *Service) CloseDocument(ctx context.Context, uri string) error {
 }
 
 // GetDocument returns a copy of an editor overlay.
-func (s *Service) GetDocument(ctx context.Context, uri string) (*Document, bool) {
+func (s *Service) GetDocument(ctx context.Context, uri source.URI) (*Document, bool) {
 	if ctx.Err() != nil {
 		return nil, false
 	}

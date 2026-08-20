@@ -8,13 +8,16 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/MontFerret/ferretd/internal/language"
+	"github.com/MontFerret/ferretd/internal/source"
 )
 
 func (s *Server) didOpen(glspContext *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
 	document := params.TextDocument
+	uri := source.URI(document.URI)
+
 	if err := s.language.OpenDocument(
 		s.operationContext(glspContext),
-		document.URI,
+		uri,
 		document.LanguageID,
 		document.Version,
 		document.Text,
@@ -22,7 +25,7 @@ func (s *Server) didOpen(glspContext *glsp.Context, params *protocol.DidOpenText
 		return err
 	}
 
-	s.publishDiagnosticsAsync(s.operationContext(glspContext), s.notifier(glspContext), document.URI)
+	s.publishDiagnosticsAsync(s.operationContext(glspContext), s.notifier(glspContext), uri)
 
 	return nil
 }
@@ -52,23 +55,26 @@ func (s *Server) didChange(glspContext *glsp.Context, params *protocol.DidChange
 	}
 
 	document := params.TextDocument
-	if err := s.language.ChangeDocument(s.operationContext(glspContext), document.URI, document.Version, changes); err != nil {
+	uri := source.URI(document.URI)
+
+	if err := s.language.ChangeDocument(s.operationContext(glspContext), uri, document.Version, changes); err != nil {
 		return err
 	}
 
-	s.publishDiagnosticsAsync(s.operationContext(glspContext), s.notifier(glspContext), document.URI)
+	s.publishDiagnosticsAsync(s.operationContext(glspContext), s.notifier(glspContext), uri)
 
 	return nil
 }
 
 func (s *Server) didClose(glspContext *glsp.Context, params *protocol.DidCloseTextDocumentParams) error {
-	uri := params.TextDocument.URI
+	uri := source.URI(params.TextDocument.URI)
+
 	if err := s.language.CloseDocument(s.operationContext(glspContext), uri); err != nil {
 		return err
 	}
 
 	s.notifier(glspContext)(protocol.ServerTextDocumentPublishDiagnostics, protocol.PublishDiagnosticsParams{
-		URI:         uri,
+		URI:         uri.String(),
 		Diagnostics: []protocol.Diagnostic{},
 	})
 
@@ -87,7 +93,7 @@ func (s *Server) notifier(glspContext *glsp.Context) notifyFunc {
 	return func(string, any) {}
 }
 
-func (s *Server) publishDiagnosticsAsync(ctx context.Context, notify notifyFunc, uri string) {
+func (s *Server) publishDiagnosticsAsync(ctx context.Context, notify notifyFunc, uri source.URI) {
 	go func() {
 		report, err := s.language.Diagnostics(ctx, uri)
 		if err != nil || !s.language.IsCurrent(context.Background(), uri, report.Snapshot) {
@@ -95,7 +101,7 @@ func (s *Server) publishDiagnosticsAsync(ctx context.Context, notify notifyFunc,
 		}
 
 		params := protocol.PublishDiagnosticsParams{
-			URI:         uri,
+			URI:         uri.String(),
 			Diagnostics: make([]protocol.Diagnostic, 0, len(report.Items)),
 		}
 

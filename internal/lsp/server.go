@@ -124,7 +124,7 @@ func initializationRoots(params *protocol.InitializeParams) ([]string, error) {
 
 	if len(params.WorkspaceFolders) > 0 {
 		for _, folder := range params.WorkspaceFolders {
-			path, err := source.URIToPath(folder.URI)
+			path, err := source.URI(folder.URI).Path()
 			if err != nil {
 				return nil, err
 			}
@@ -132,7 +132,7 @@ func initializationRoots(params *protocol.InitializeParams) ([]string, error) {
 			values = append(values, path)
 		}
 	} else if params.RootURI != nil && *params.RootURI != "" {
-		path, err := source.URIToPath(*params.RootURI)
+		path, err := source.URI(*params.RootURI).Path()
 		if err != nil {
 			return nil, err
 		}

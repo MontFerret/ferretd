@@ -9,7 +9,7 @@ import (
 type (
 	// Location identifies a source range in one document.
 	Location struct {
-		URI   string
+		URI   source.URI
 		Range source.Range
 	}
 

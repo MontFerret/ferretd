@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
@@ -30,10 +28,6 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 	if first != second {
 		t.Fatalf("workspaces differ: %#v != %#v", first, second)
 	}
-	if _, err := uuid.Parse(string(first.ID())); err != nil {
-		t.Fatalf("workspace ID is not a UUID: %v", err)
-	}
-
 	link := filepath.Join(linkParent, "linked-root")
 	if err := os.Symlink(root, link); err != nil {
 		t.Skipf("create symlink: %v", err)

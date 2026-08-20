@@ -57,7 +57,7 @@ RETURN TO_STRING(data)
 	if err != nil {
 		t.Fatalf("Compile escape: %v", err)
 	}
-	defer func() { _ = compilation.Plan.Close() }()
+	defer func() { _ = compilation.Close() }()
 
 	session, err := compilation.Plan.NewSession(context.Background())
 	if err != nil {
@@ -208,8 +208,8 @@ func TestWorkspaceCloseWaitsForConcurrentCompilation(t *testing.T) {
 	if err := <-compileErr; err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	if err := result.Plan.Close(); err != nil {
-		t.Fatalf("Plan.Close: %v", err)
+	if err := result.Close(); err != nil {
+		t.Fatalf("Compilation.Close: %v", err)
 	}
 	if err := waitForClose(context.Background(), operation); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -233,7 +233,7 @@ func TestWorkspaceCompilationUsesStaticSourceSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	defer func() { _ = compilation.Plan.Close() }()
+	defer func() { _ = compilation.Close() }()
 
 	if compilation.Source.Workspace != opened.ID() || compilation.Source.RelativePath != "query.fql" ||
 		compilation.Source.Revision != 1 || compilation.Source.URI == "" {
@@ -266,7 +266,7 @@ func TestWorkspaceCompileDebugPreservesSourceSnapshotAndDebuggerMetadata(t *test
 	if err != nil {
 		t.Fatalf("CompileDebug: %v", err)
 	}
-	defer func() { _ = compilation.Plan.Close() }()
+	defer func() { _ = compilation.Close() }()
 	if compilation.Source.Workspace != opened.ID() || compilation.Source.RelativePath != "query.fql" ||
 		compilation.Source.Revision != 1 || compilation.Source.URI == "" {
 		t.Fatalf("source snapshot = %+v", compilation.Source)
@@ -293,7 +293,7 @@ func runWorkspaceCompilation(t *testing.T, opened *Workspace, relativePath strin
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	defer func() { _ = compilation.Plan.Close() }()
+	defer func() { _ = compilation.Close() }()
 
 	session, err := compilation.Plan.NewSession(context.Background())
 	if err != nil {

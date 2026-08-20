@@ -9,7 +9,7 @@ import (
 )
 
 // Hover returns compiler-known symbol, type, call, and bind-parameter information.
-func (s *Service) Hover(ctx context.Context, uri string, position source.Position) (*Hover, error) {
+func (s *Service) Hover(ctx context.Context, uri source.URI, position source.Position) (*Hover, error) {
 	document, resolved, err := s.resolveAt(ctx, uri, position)
 	if err != nil {
 		return nil, err

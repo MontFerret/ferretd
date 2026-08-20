@@ -9,13 +9,15 @@ import (
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 
 	"github.com/MontFerret/ferretd/internal/language"
+	"github.com/MontFerret/ferretd/internal/source"
 )
 
 func (s *Server) documentSymbols(
 	glspContext *glsp.Context,
 	params *protocol.DocumentSymbolParams,
 ) (any, error) {
-	values, err := s.language.DocumentSymbols(s.operationContext(glspContext), params.TextDocument.URI)
+	uri := source.URI(params.TextDocument.URI)
+	values, err := s.language.DocumentSymbols(s.operationContext(glspContext), uri)
 	if err != nil {
 		return nil, err
 	}
@@ -29,9 +31,10 @@ func (s *Server) documentSymbols(
 }
 
 func (s *Server) hover(glspContext *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+	uri := source.URI(params.TextDocument.URI)
 	value, err := s.language.Hover(
 		s.operationContext(glspContext),
-		params.TextDocument.URI,
+		uri,
 		toSourcePosition(params.Position),
 	)
 	if err != nil || value == nil {
@@ -46,9 +49,10 @@ func (s *Server) hover(glspContext *glsp.Context, params *protocol.HoverParams) 
 }
 
 func (s *Server) definition(glspContext *glsp.Context, params *protocol.DefinitionParams) (any, error) {
+	uri := source.URI(params.TextDocument.URI)
 	value, err := s.language.Definition(
 		s.operationContext(glspContext),
-		params.TextDocument.URI,
+		uri,
 		toSourcePosition(params.Position),
 	)
 	if err != nil || value == nil {
@@ -62,9 +66,10 @@ func (s *Server) references(
 	glspContext *glsp.Context,
 	params *protocol.ReferenceParams,
 ) ([]protocol.Location, error) {
+	uri := source.URI(params.TextDocument.URI)
 	values, err := s.language.References(
 		s.operationContext(glspContext),
-		params.TextDocument.URI,
+		uri,
 		toSourcePosition(params.Position),
 		params.Context.IncludeDeclaration,
 	)
@@ -81,9 +86,10 @@ func (s *Server) references(
 }
 
 func (s *Server) completion(glspContext *glsp.Context, params *protocol.CompletionParams) (any, error) {
+	uri := source.URI(params.TextDocument.URI)
 	values, err := s.language.Completion(
 		s.operationContext(glspContext),
-		params.TextDocument.URI,
+		uri,
 		toSourcePosition(params.Position),
 	)
 	if err != nil {
@@ -102,9 +108,10 @@ func (s *Server) signatureHelp(
 	glspContext *glsp.Context,
 	params *protocol.SignatureHelpParams,
 ) (*protocol.SignatureHelp, error) {
+	uri := source.URI(params.TextDocument.URI)
 	value, err := s.language.SignatureHelp(
 		s.operationContext(glspContext),
-		params.TextDocument.URI,
+		uri,
 		toSourcePosition(params.Position),
 	)
 	if err != nil || value == nil {
@@ -139,7 +146,8 @@ func (s *Server) semanticTokensFull(
 	glspContext *glsp.Context,
 	params *protocol.SemanticTokensParams,
 ) (*protocol.SemanticTokens, error) {
-	values, err := s.language.SemanticTokens(s.operationContext(glspContext), params.TextDocument.URI)
+	uri := source.URI(params.TextDocument.URI)
+	values, err := s.language.SemanticTokens(s.operationContext(glspContext), uri)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +160,8 @@ func (s *Server) formatting(
 	params *protocol.DocumentFormattingParams,
 ) ([]protocol.TextEdit, error) {
 	tabSize := formattingTabSize(params.Options)
-	value, err := s.language.Format(s.operationContext(glspContext), params.TextDocument.URI, tabSize)
+	uri := source.URI(params.TextDocument.URI)
+	value, err := s.language.Format(s.operationContext(glspContext), uri, tabSize)
 	if err != nil {
 		return nil, err
 	}

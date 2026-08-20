@@ -17,7 +17,7 @@ type documentSymbolNode struct {
 }
 
 // DocumentSymbols returns compiler declarations arranged by their nearest containing UDF.
-func (s *Service) DocumentSymbols(ctx context.Context, uri string) ([]DocumentSymbol, error) {
+func (s *Service) DocumentSymbols(ctx context.Context, uri source.URI) ([]DocumentSymbol, error) {
 	document, err := s.analyzedDocument(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -93,7 +93,11 @@ func (s *Service) DocumentSymbols(ctx context.Context, uri string) ([]DocumentSy
 }
 
 // Definition returns the compiler declaration for the symbol at position.
-func (s *Service) Definition(ctx context.Context, uri string, position source.Position) (*Location, error) {
+func (s *Service) Definition(
+	ctx context.Context,
+	uri source.URI,
+	position source.Position,
+) (*Location, error) {
 	resolved, err := s.ResolveAt(ctx, uri, position)
 	if err != nil {
 		return nil, err
@@ -112,7 +116,7 @@ func (s *Service) Definition(ctx context.Context, uri string, position source.Po
 // References returns document-local locations for the compiler symbol at position.
 func (s *Service) References(
 	ctx context.Context,
-	uri string,
+	uri source.URI,
 	position source.Position,
 	includeDeclaration bool,
 ) ([]Location, error) {

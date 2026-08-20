@@ -9,8 +9,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/google/uuid"
-
 	"github.com/MontFerret/ferret/v2"
 )
 
@@ -185,12 +183,12 @@ func (m *Manager) Open(ctx context.Context, root string) (*Workspace, error) {
 			return nil, err
 		}
 
-		candidateUUID, err := uuid.NewRandom()
+		candidateID, err := newID()
 		if err != nil {
-			return nil, fmt.Errorf("%w: generate workspace ID: %w", ErrLoad, err)
+			return nil, fmt.Errorf("%w: %w", ErrLoad, err)
 		}
 
-		candidate := newWorkspace(ID(candidateUUID.String()), canonical)
+		candidate := newWorkspace(candidateID, canonical)
 		operation, owner := m.beginOpen(candidate)
 		if !owner {
 			continue

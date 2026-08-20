@@ -22,7 +22,7 @@ type (
 
 	// Diagnostic describes a protocol-neutral source problem.
 	Diagnostic struct {
-		URI                string
+		URI                source.URI
 		Message            string
 		Severity           Severity
 		Range              source.Range
@@ -33,7 +33,7 @@ type (
 
 	// RelatedInformation describes a source location related to a diagnostic.
 	RelatedInformation struct {
-		URI     string
+		URI     source.URI
 		Range   source.Range
 		Message string
 	}
@@ -45,7 +45,7 @@ const (
 )
 
 // Convert projects one Ferret diagnostic through the supplied source mapper.
-func Convert(uri string, mapper *source.Mapper, value *ferretdiagnostics.Diagnostic) Diagnostic {
+func Convert(uri source.URI, mapper *source.Mapper, value *ferretdiagnostics.Diagnostic) Diagnostic {
 	if value == nil {
 		return Diagnostic{URI: uri, Severity: SeverityError, Source: "ferret"}
 	}
@@ -102,7 +102,7 @@ func Convert(uri string, mapper *source.Mapper, value *ferretdiagnostics.Diagnos
 }
 
 // FromError extracts Ferret diagnostics from a compilation or runtime error.
-func FromError(uri, text string, err error) []Diagnostic {
+func FromError(uri source.URI, text string, err error) []Diagnostic {
 	values := ferretDiagnostics(err)
 	if len(values) == 0 {
 		return nil

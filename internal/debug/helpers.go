@@ -2,22 +2,10 @@ package debug
 
 import (
 	"context"
-	"fmt"
-
-	"github.com/google/uuid"
 
 	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 )
-
-func newSessionID() (SessionID, error) {
-	value, err := uuid.NewRandom()
-	if err != nil {
-		return "", fmt.Errorf("generate debug session ID: %w", err)
-	}
-
-	return SessionID(value.String()), nil
-}
 
 func contextError(ctx context.Context) error {
 	if ctx == nil {

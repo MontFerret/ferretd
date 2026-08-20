@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/MontFerret/ferret/v2"
@@ -73,10 +72,7 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, err
 	}
 
-	options.OutputContentType = strings.TrimSpace(options.OutputContentType)
-	if options.OutputContentType == "" {
-		options.OutputContentType = "application/json"
-	}
+	options = options.normalized()
 
 	if err := m.beginCreate(parentID); err != nil {
 		return SessionSnapshot{}, err

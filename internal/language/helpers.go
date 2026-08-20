@@ -13,11 +13,15 @@ import (
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
-func fmtDocumentNotOpen(uri string) error {
+func fmtDocumentNotOpen(uri source.URI) error {
 	return fmt.Errorf("%w: %s", ErrDocumentNotOpen, uri)
 }
 
-func convertFerretDiagnostic(uri string, mapper *source.Mapper, diagnostic *ferretdiagnostics.Diagnostic) Diagnostic {
+func convertFerretDiagnostic(
+	uri source.URI,
+	mapper *source.Mapper,
+	diagnostic *ferretdiagnostics.Diagnostic,
+) Diagnostic {
 	return diagnosticprojection.Convert(uri, mapper, diagnostic)
 }
 

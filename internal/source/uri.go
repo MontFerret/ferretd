@@ -13,9 +13,43 @@ import (
 // URI identifies a source document.
 type URI string
 
-// URIToPath converts a local file URI into an operating-system path.
-func URIToPath(uri string) (string, error) {
-	parsed, err := url.Parse(uri)
+// ParseURI validates a local file URI while preserving its original spelling.
+func ParseURI(value string) (URI, error) {
+	uri := URI(value)
+	if _, err := uri.Path(); err != nil {
+		return "", err
+	}
+
+	return uri, nil
+}
+
+// URIFromPath constructs an escaped absolute file URI from a local path.
+func URIFromPath(path string) (URI, error) {
+	if path == "" {
+		return "", errors.New("path is empty")
+	}
+
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("make path absolute: %w", err)
+	}
+
+	slashPath := filepath.ToSlash(absolute)
+	if runtime.GOOS == "windows" && !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+
+	return URI((&url.URL{Scheme: "file", Path: slashPath}).String()), nil
+}
+
+// String returns the URI's original string representation.
+func (u URI) String() string {
+	return string(u)
+}
+
+// Path converts a local file URI into an operating-system path.
+func (u URI) Path() (string, error) {
+	parsed, err := url.Parse(u.String())
 	if err != nil {
 		return "", fmt.Errorf("parse URI: %w", err)
 	}
@@ -42,23 +76,4 @@ func URIToPath(uri string) (string, error) {
 	}
 
 	return filepath.FromSlash(path), nil
-}
-
-// PathToURI converts a local path into an escaped absolute file URI.
-func PathToURI(path string) (string, error) {
-	if path == "" {
-		return "", errors.New("path is empty")
-	}
-
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("make path absolute: %w", err)
-	}
-
-	slashPath := filepath.ToSlash(absolute)
-	if runtime.GOOS == "windows" && !strings.HasPrefix(slashPath, "/") {
-		slashPath = "/" + slashPath
-	}
-
-	return (&url.URL{Scheme: "file", Path: slashPath}).String(), nil
 }

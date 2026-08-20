@@ -211,7 +211,7 @@ func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing
 		len(compilation.Diagnostics) == 0 {
 		t.Fatalf("CompilationError = %+v", compilation)
 	}
-	if compilation.Diagnostics[0].URI != string(compilation.Source.URI) ||
+	if compilation.Diagnostics[0].URI != compilation.Source.URI ||
 		compilation.Diagnostics[0].Code == "" || compilation.Diagnostics[0].Message == "" {
 		t.Fatalf("diagnostic = %+v", compilation.Diagnostics[0])
 	}

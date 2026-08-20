@@ -84,7 +84,7 @@ func (s *Server) sourcePath(value string) (string, error) {
 	var path string
 	var err error
 	if s.client.pathFormat == "uri" {
-		path, err = source.URIToPath(value)
+		path, err = source.URI(value).Path()
 		if err != nil {
 			return "", err
 		}
@@ -101,7 +101,12 @@ func (s *Server) sourcePath(value string) (string, error) {
 
 func (s *Server) clientPath(path string) (string, error) {
 	if s.client.pathFormat == "uri" {
-		return source.PathToURI(path)
+		uri, err := source.URIFromPath(path)
+		if err != nil {
+			return "", err
+		}
+
+		return uri.String(), nil
 	}
 
 	return filepath.Clean(path), nil

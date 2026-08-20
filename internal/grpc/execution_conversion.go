@@ -15,7 +15,7 @@ import (
 
 func toProtoSession(value exec.SessionSnapshot) *executionv1.Session {
 	return &executionv1.Session{
-		Id:         &executionv1.SessionId{Value: string(value.ID)},
+		Id:         &executionv1.SessionId{Value: value.ID.String()},
 		Source:     toProtoSourceSnapshot(value.Source),
 		Parameters: append([]string(nil), value.Parameters...),
 	}
@@ -23,9 +23,9 @@ func toProtoSession(value exec.SessionSnapshot) *executionv1.Session {
 
 func toProtoSourceSnapshot(value workspace.SourceSnapshot) *executionv1.SourceSnapshot {
 	return &executionv1.SourceSnapshot{
-		WorkspaceId:  &workspacev1.WorkspaceId{Value: string(value.Workspace)},
+		WorkspaceId:  &workspacev1.WorkspaceId{Value: value.Workspace.String()},
 		RelativePath: value.RelativePath,
-		Uri:          string(value.URI),
+		Uri:          value.URI.String(),
 		Revision:     value.Revision,
 	}
 }
@@ -37,8 +37,8 @@ func toProtoExecution(value exec.ExecutionSnapshot) (*executionv1.Execution, err
 	}
 
 	result := &executionv1.Execution{
-		Id:         &executionv1.ExecutionId{Value: string(value.ID)},
-		SessionId:  &executionv1.SessionId{Value: string(value.Session)},
+		Id:         &executionv1.ExecutionId{Value: value.ID.String()},
+		SessionId:  &executionv1.SessionId{Value: value.Session.String()},
 		State:      toProtoExecutionState(value.State),
 		Parameters: parameters,
 		Options: &executionv1.ExecutionOptions{
@@ -120,7 +120,7 @@ func toProtoDiagnostics(values []diagnostic.Diagnostic) []*executionv1.Diagnosti
 
 func toProtoDiagnostic(value diagnostic.Diagnostic) *executionv1.Diagnostic {
 	result := &executionv1.Diagnostic{
-		Uri:                value.URI,
+		Uri:                value.URI.String(),
 		Range:              toProtoRange(value.Range),
 		Severity:           toProtoDiagnosticSeverity(value.Severity),
 		Code:               value.Code,
@@ -131,7 +131,7 @@ func toProtoDiagnostic(value diagnostic.Diagnostic) *executionv1.Diagnostic {
 
 	for _, related := range value.RelatedInformation {
 		result.RelatedInformation = append(result.RelatedInformation, &executionv1.RelatedInformation{
-			Uri:     related.URI,
+			Uri:     related.URI.String(),
 			Range:   toProtoRange(related.Range),
 			Message: related.Message,
 		})
@@ -166,7 +166,7 @@ func toProtoExecutionEvent(value exec.Event) (*executionv1.WatchExecutionRespons
 	}
 
 	result := &executionv1.WatchExecutionResponse{
-		ExecutionId: &executionv1.ExecutionId{Value: string(value.Execution)},
+		ExecutionId: &executionv1.ExecutionId{Value: value.Execution.String()},
 		Sequence:    value.Sequence,
 	}
 

@@ -7,9 +7,6 @@ import (
 )
 
 type (
-	// SessionID is an opaque daemon debug Session identifier.
-	SessionID string
-
 	// State identifies a debug Session lifecycle state.
 	State uint8
 
@@ -24,11 +21,6 @@ type (
 
 	// ValueReference identifies an expandable value in one paused state.
 	ValueReference uint64
-
-	// SessionOptions contains invocation-specific debugger settings.
-	SessionOptions struct {
-		OutputContentType string
-	}
 
 	// SessionSnapshot is an immutable view of one daemon debug Session.
 	SessionSnapshot struct {
@@ -135,6 +127,7 @@ const (
 )
 
 const (
+	// StopNone is the natural zero value when no stop reason applies.
 	StopNone StopReason = iota
 	StopEntry
 	StopBreakpoint

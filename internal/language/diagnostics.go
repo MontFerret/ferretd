@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/source"
 )
 
 type (
@@ -30,7 +31,7 @@ const (
 )
 
 // Diagnostics returns diagnostics from the immutable compiler analysis snapshot.
-func (s *Service) Diagnostics(ctx context.Context, uri string) (DiagnosticReport, error) {
+func (s *Service) Diagnostics(ctx context.Context, uri source.URI) (DiagnosticReport, error) {
 	document, err := s.analyzedDocument(ctx, uri)
 	if err != nil {
 		return DiagnosticReport{}, err

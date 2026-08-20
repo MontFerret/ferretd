@@ -28,7 +28,7 @@ func toProtocolDiagnostic(diagnostic language.Diagnostic) protocol.Diagnostic {
 	for _, related := range diagnostic.RelatedInformation {
 		result.RelatedInformation = append(result.RelatedInformation, protocol.DiagnosticRelatedInformation{
 			Location: protocol.Location{
-				URI:   related.URI,
+				URI:   related.URI.String(),
 				Range: toProtocolRange(related.Range),
 			},
 			Message: related.Message,
@@ -66,7 +66,7 @@ func toProtocolSymbolKind(value compiler.SymbolKind) protocol.SymbolKind {
 }
 
 func toProtocolLocation(value language.Location) protocol.Location {
-	return protocol.Location{URI: value.URI, Range: toProtocolRange(value.Range)}
+	return protocol.Location{URI: value.URI.String(), Range: toProtocolRange(value.Range)}
 }
 
 func toSourcePosition(value protocol.Position) source.Position {

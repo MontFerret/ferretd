@@ -123,7 +123,7 @@ func discoverFiles(ctx context.Context, rootPath string, fileSystem fs.FS) ([]Fi
 
 		canonical := path.Clean(relativePath)
 		absolute := filepath.Join(rootPath, filepath.FromSlash(canonical))
-		uri, err := localsource.PathToURI(absolute)
+		uri, err := localsource.URIFromPath(absolute)
 		if err != nil {
 			return fmt.Errorf("resolve source URI for %q: %w", canonical, err)
 		}
@@ -131,7 +131,7 @@ func discoverFiles(ctx context.Context, rootPath string, fileSystem fs.FS) ([]Fi
 		result = append(result, File{
 			RelativePath: canonical,
 			Path:         absolute,
-			URI:          localsource.URI(uri),
+			URI:          uri,
 		})
 
 		return nil

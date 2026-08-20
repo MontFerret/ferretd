@@ -8,6 +8,7 @@ import (
 	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/source"
 )
 
 type (
@@ -20,7 +21,7 @@ type (
 		session          exec.SessionID
 		target           *exec.DebugTarget
 		debugger         *ferret.DebugSession
-		sourceURI        string
+		sourceURI        source.URI
 		sourceText       string
 		parameters       map[string]any
 		options          SessionOptions
@@ -64,7 +65,7 @@ func newSession(
 		session:         target.SessionID(),
 		target:          target,
 		debugger:        debuggerSession,
-		sourceURI:       string(source.URI),
+		sourceURI:       source.URI,
 		sourceText:      target.SourceText(),
 		parameters:      cloneParameters(parameters),
 		options:         options,

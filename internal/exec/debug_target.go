@@ -99,7 +99,7 @@ func (m *Manager) AcquireDebugTarget(ctx context.Context, id SessionID) (*DebugT
 
 	return nil, &CompilationError{
 		Source:      session.source,
-		Diagnostics: diagnostic.FromError(string(session.source.URI), session.text, err),
+		Diagnostics: diagnostic.FromError(session.source.URI, session.text, err),
 		Cause:       err,
 	}
 }

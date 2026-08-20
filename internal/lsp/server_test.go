@@ -81,7 +81,7 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 
 	if err := server.didOpen(glspContext, &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
-			URI:        uri,
+			URI:        uri.String(),
 			LanguageID: "ferret",
 			Version:    1,
 			Text:       "RETURN 1",
@@ -96,7 +96,7 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 
 	if err := server.didChange(glspContext, &protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
-			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.String()},
 			Version:                2,
 		},
 		ContentChanges: []any{protocol.TextDocumentContentChangeEventWhole{Text: "RETURN missing"}},
@@ -109,7 +109,7 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	}
 
 	if err := server.didClose(glspContext, &protocol.DidCloseTextDocumentParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
 	}); err != nil {
 		t.Fatalf("didClose: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
 
 	err := server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
-			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.String()},
 			Version:                2,
 		},
 		ContentChanges: []any{protocol.TextDocumentContentChangeEvent{
@@ -159,12 +159,12 @@ func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
 	}
 }
 
-func documentURI(t *testing.T, name string) string {
+func documentURI(t *testing.T, name string) source.URI {
 	t.Helper()
 
-	uri, err := source.PathToURI(filepath.Join(t.TempDir(), name))
+	uri, err := source.URIFromPath(filepath.Join(t.TempDir(), name))
 	if err != nil {
-		t.Fatalf("PathToURI: %v", err)
+		t.Fatalf("URIFromPath: %v", err)
 	}
 	return uri
 }

@@ -9,12 +9,6 @@ import (
 )
 
 type (
-	// SessionID is an opaque daemon Session identifier.
-	SessionID string
-
-	// ExecutionID is an opaque daemon Execution identifier.
-	ExecutionID string
-
 	// State identifies an Execution lifecycle state.
 	State uint8
 
@@ -29,11 +23,6 @@ type (
 		ID         SessionID
 		Source     workspace.SourceSnapshot
 		Parameters []string
-	}
-
-	// ExecutionOptions contains invocation-specific Ferret settings.
-	ExecutionOptions struct {
-		OutputContentType string
 	}
 
 	// ExecutionSnapshot is an immutable view of one daemon Execution.

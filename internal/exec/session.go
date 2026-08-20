@@ -172,9 +172,7 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 		s.mu.Unlock()
 
 		if err != nil || closing {
-			if compilation.Plan != nil {
-				err = errors.Join(err, compilation.Plan.Close())
-			}
+			err = errors.Join(err, compilation.Close())
 
 			if closing {
 				err = errors.Join(ErrSessionClosed, err)

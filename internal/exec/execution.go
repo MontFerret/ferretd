@@ -8,6 +8,7 @@ import (
 	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/source"
 )
 
 type (
@@ -18,7 +19,7 @@ type (
 		id             ExecutionID
 		session        SessionID
 		plan           *ferret.Plan
-		sourceURI      string
+		sourceURI      source.URI
 		sourceText     string
 		params         runtime.Params
 		parameterInput map[string]any
@@ -58,7 +59,7 @@ func newExecution(
 		id:             id,
 		session:        session.id,
 		plan:           session.plan,
-		sourceURI:      string(session.source.URI),
+		sourceURI:      session.source.URI,
 		sourceText:     session.text,
 		params:         params,
 		parameterInput: cloneParameters(parameterInput),

@@ -17,7 +17,7 @@ import (
 const DefaultTabSize uint32 = 4
 
 // Format formats the current document using Ferret's canonical formatter.
-func (s *Service) Format(ctx context.Context, uri string, tabSize uint32) (*FormattingResult, error) {
+func (s *Service) Format(ctx context.Context, uri source.URI, tabSize uint32) (*FormattingResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
