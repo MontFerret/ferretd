@@ -92,9 +92,9 @@ func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
 		}
 	}
 
-	manager.mu.RLock()
-	groups := len(manager.groups)
-	manager.mu.RUnlock()
+	manager.sessions.mu.RLock()
+	groups := len(manager.sessions.groups)
+	manager.sessions.mu.RUnlock()
 	if groups != 0 {
 		t.Fatalf("workspace groups after Close = %d, want 0", groups)
 	}
@@ -305,9 +305,9 @@ func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing
 		t.Fatalf("diagnostic = %+v", compilation.Diagnostics[0])
 	}
 
-	manager.mu.RLock()
-	registered := len(manager.sessions)
-	manager.mu.RUnlock()
+	manager.sessions.mu.RLock()
+	registered := len(manager.sessions.entries)
+	manager.sessions.mu.RUnlock()
 	if registered != 0 {
 		t.Fatalf("registered Sessions = %d, want 0", registered)
 	}
@@ -368,8 +368,9 @@ func TestSessionCloseCallerTimeoutDoesNotStopCleanup(t *testing.T) {
 func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 	manager := mustNewManager(t, workspace.New())
 	workspaceID := workspace.ID("workspace")
-	if err := manager.beginSessionCreate(workspaceID); err != nil {
-		t.Fatalf("beginSessionCreate: %v", err)
+	creation, err := manager.sessions.beginCreate(workspaceID)
+	if err != nil {
+		t.Fatalf("begin Session creation: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -377,18 +378,102 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 	if err := manager.CloseWorkspace(ctx, workspaceID); !errors.Is(err, context.Canceled) {
 		t.Fatalf("CloseWorkspace error = %v, want context.Canceled", err)
 	}
-	if err := manager.beginSessionCreate(workspaceID); !errors.Is(err, workspace.ErrClosed) {
-		t.Fatalf("beginSessionCreate during workspace close error = %v, want workspace.ErrClosed", err)
+	if _, err := manager.sessions.beginCreate(workspaceID); !errors.Is(err, workspace.ErrClosed) {
+		t.Fatalf("begin Session creation during workspace close error = %v, want workspace.ErrClosed", err)
 	}
-	manager.finishSessionCreate(workspaceID)
+	manager.sessions.finishCreate(creation)
 	if err := manager.CloseWorkspace(context.Background(), workspaceID); err != nil {
 		t.Fatalf("wait for CloseWorkspace: %v", err)
 	}
-	manager.mu.RLock()
-	_, retained := manager.groups[workspaceID]
-	manager.mu.RUnlock()
+	manager.sessions.mu.RLock()
+	_, retained := manager.sessions.groups[workspaceID]
+	manager.sessions.mu.RUnlock()
 	if retained {
 		t.Fatal("workspace group retained after committed close")
+	}
+}
+
+func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
+	manager, snapshot, _ := newHookedManager(t, "RETURN 1")
+	parent, err := manager.sessions.beginExecutionCreate(snapshot.ID)
+	if err != nil {
+		t.Fatalf("begin Execution creation: %v", err)
+	}
+
+	closed := make(chan error, 1)
+	go func() {
+		closed <- manager.CloseSession(context.Background(), snapshot.ID)
+	}()
+	waitForSessionClosing(t, parent)
+
+	if _, err := manager.CreateExecution(
+		context.Background(),
+		snapshot.ID,
+		nil,
+		ExecutionOptions{},
+	); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
+	}
+
+	admitted := newExecution(
+		ExecutionID("admitted-execution"),
+		parent,
+		nil,
+		nil,
+		ExecutionOptions{},
+	)
+	manager.executions.add(admitted)
+	parent.finishExecutionCreate()
+
+	if err := <-closed; err != nil {
+		t.Fatalf("CloseSession: %v", err)
+	}
+	if _, err := manager.GetExecution(
+		context.Background(),
+		admitted.id,
+	); !errors.Is(err, ErrExecutionNotFound) {
+		t.Fatalf("GetExecution after parent close error = %v, want ErrExecutionNotFound", err)
+	}
+
+	manager.executions.mu.RLock()
+	entries := len(manager.executions.entries)
+	groups := len(manager.executions.bySession)
+	manager.executions.mu.RUnlock()
+	if entries != 0 || groups != 0 {
+		t.Fatalf("Execution registry after parent close = %d entries, %d groups", entries, groups)
+	}
+}
+
+func TestManagerCloseWaitsForAdmittedSessionCreation(t *testing.T) {
+	manager := mustNewManager(t, workspace.New())
+	workspaceID := workspace.ID("workspace")
+	creation, err := manager.sessions.beginCreate(workspaceID)
+	if err != nil {
+		t.Fatalf("begin Session creation: %v", err)
+	}
+
+	closeContext := newObservedDoneContext()
+	closed := make(chan error, 1)
+	go func() {
+		closed <- manager.Close(closeContext)
+	}()
+	waitForSignal(t, closeContext.observed, "Manager close wait")
+
+	if _, err := manager.sessions.beginCreate(workspace.ID("other")); !errors.Is(err, ErrClosed) {
+		t.Fatalf("begin Session creation after Manager close error = %v, want ErrClosed", err)
+	}
+	manager.sessions.finishCreate(creation)
+
+	if err := <-closed; err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	manager.sessions.mu.RLock()
+	entries := len(manager.sessions.entries)
+	groups := len(manager.sessions.groups)
+	manager.sessions.mu.RUnlock()
+	if entries != 0 || groups != 0 {
+		t.Fatalf("Session registry after Manager close = %d entries, %d groups", entries, groups)
 	}
 }
 
@@ -404,19 +489,11 @@ func TestParentCloseDoesNotReadoptSettledExecution(t *testing.T) {
 		t.Fatalf("CreateExecution: %v", err)
 	}
 
-	fixture.manager.mu.RLock()
-	execution := fixture.manager.executions[created.ID]
-	fixture.manager.mu.RUnlock()
 	if err := fixture.manager.CloseExecution(context.Background(), created.ID); err != nil {
 		t.Fatalf("CloseExecution: %v", err)
 	}
-	fixture.manager.detachKnownExecution(execution)
-
-	fixture.manager.mu.RLock()
-	_, retained := fixture.manager.closingExecutions[created.ID]
-	fixture.manager.mu.RUnlock()
-	if retained {
-		t.Fatal("settled Execution was reinserted into closing lookup")
+	if children := fixture.manager.executions.beginSessionClose(fixture.session.ID); len(children) != 0 {
+		t.Fatalf("settled Executions retained by Session = %d, want 0", len(children))
 	}
 }
 

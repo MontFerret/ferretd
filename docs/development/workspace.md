@@ -22,6 +22,14 @@ filesystem I/O or Ferret parsing. A workspace is published only after coherent
 loading and engine construction. Cancellation before publication must not leave
 a manager entry or engine behind.
 
+Published workspaces use one ID registry whose entries explicitly transition
+from active to closing. Root lookup and normal ID lookup expose active entries
+only. A closing entry composes `internal/lifecycle.CloseOperation`, remains
+retained for concurrent `Close` or `Clear` waiters, and is removed after engine
+cleanup publishes its result. The root-coalesced open operation remains
+workspace-specific because it also owns a candidate Workspace, load result, and
+manager generation.
+
 Close is explicit and idempotent. Concurrent close callers observe one close
 operation and retained result. The manager runs registered child close hooks
 before closing the workspace engine. `Clear` invalidates in-flight opens,

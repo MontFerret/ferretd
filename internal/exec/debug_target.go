@@ -70,16 +70,9 @@ func (m *Manager) AcquireDebugTarget(ctx context.Context, id SessionID) (*DebugT
 		return nil, err
 	}
 
-	m.mu.RLock()
-	session := m.sessions[id]
-	closed := m.closed
-	m.mu.RUnlock()
-	if closed {
-		return nil, ErrClosed
-	}
-
-	if session == nil {
-		return nil, ErrSessionNotFound
+	session, err := m.sessions.sessionForDebug(id)
+	if err != nil {
+		return nil, err
 	}
 
 	target, err := session.acquireDebugTarget(ctx)

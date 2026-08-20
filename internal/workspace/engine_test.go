@@ -151,6 +151,57 @@ func TestWorkspaceCloseCallerCancellationDoesNotStopCleanup(t *testing.T) {
 	}
 }
 
+func TestWorkspaceClearJoinsCommittedClose(t *testing.T) {
+	want := errors.New("engine close failed")
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	manager := New()
+	manager.newEngine = func(root string) (*ferret.Engine, error) {
+		return ferret.New(
+			ferret.WithFSRoot(root),
+			ferret.WithEngineCloseHook(func() error {
+				close(closeStarted)
+				<-releaseClose
+
+				return want
+			}),
+		)
+	}
+
+	opened, err := manager.Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	closed := make(chan error, 1)
+	go func() {
+		closed <- manager.Close(context.Background(), opened.ID())
+	}()
+	<-closeStarted
+
+	clearContext := newObservedDoneContext(context.Background())
+	cleared := make(chan error, 1)
+	go func() {
+		cleared <- manager.Clear(clearContext)
+	}()
+	<-clearContext.observed
+
+	close(releaseClose)
+	if err := <-closed; !errors.Is(err, want) {
+		t.Fatalf("Close error = %v, want %v", err, want)
+	}
+	if err := <-cleared; !errors.Is(err, want) {
+		t.Fatalf("Clear error = %v, want %v", err, want)
+	}
+
+	manager.mu.RLock()
+	entries := len(manager.byID)
+	manager.mu.RUnlock()
+	if entries != 0 {
+		t.Fatalf("workspace entries after close = %d, want 0", entries)
+	}
+}
+
 func TestWorkspaceCloseWaitsForConcurrentCompilation(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspaceSource(t, root, "query.fql", "RETURN 1")
@@ -211,7 +262,7 @@ func TestWorkspaceCloseWaitsForConcurrentCompilation(t *testing.T) {
 	if err := result.Close(); err != nil {
 		t.Fatalf("Compilation.Close: %v", err)
 	}
-	if err := waitForClose(context.Background(), operation); err != nil {
+	if err := operation.close.Wait(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	if _, err := opened.Compile(context.Background(), "query.fql"); !errors.Is(err, ErrClosed) {

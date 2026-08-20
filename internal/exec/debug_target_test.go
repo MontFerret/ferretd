@@ -15,7 +15,7 @@ import (
 func TestAcquireDebugTargetCoordinatesCachesAndRetries(t *testing.T) {
 	t.Run("concurrent_success", func(t *testing.T) {
 		manager, snapshot, engine := newHookedManager(t, "RETURN 1")
-		parent := manager.sessions[snapshot.ID]
+		parent := retainedSession(t, manager, snapshot.ID).session
 		var calls atomic.Int32
 		started := make(chan struct{})
 		release := make(chan struct{})
@@ -64,7 +64,7 @@ func TestAcquireDebugTargetCoordinatesCachesAndRetries(t *testing.T) {
 
 	t.Run("failure_cache_and_cancellation_retry", func(t *testing.T) {
 		manager, snapshot, _ := newHookedManager(t, "RETURN 1")
-		parent := manager.sessions[snapshot.ID]
+		parent := retainedSession(t, manager, snapshot.ID).session
 		compileErr := errors.New("deterministic compile failure")
 		var calls atomic.Int32
 		started := make(chan struct{})
@@ -119,7 +119,7 @@ func TestAcquireDebugTargetRejectsChangedSourceAndCachesFailure(t *testing.T) {
 
 		return nil
 	}))
-	parent := manager.sessions[snapshot.ID]
+	parent := retainedSession(t, manager, snapshot.ID).session
 	var calls atomic.Int32
 	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
 		calls.Add(1)
@@ -153,7 +153,7 @@ func TestSessionCloseWaitsForDebugCompilationWithoutPublishingTarget(t *testing.
 
 		return nil
 	}))
-	parent := manager.sessions[snapshot.ID]
+	parent := retainedSession(t, manager, snapshot.ID).session
 	compileStarted := make(chan struct{})
 	releaseCompile := make(chan struct{})
 	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
@@ -204,7 +204,7 @@ func TestDebugTargetLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 
 		return nil
 	}))
-	parent := manager.sessions[snapshot.ID]
+	parent := retainedSession(t, manager, snapshot.ID).session
 	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
 		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
 

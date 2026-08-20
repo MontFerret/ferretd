@@ -10,16 +10,16 @@ import (
 	"sync"
 
 	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
 
 type (
 	// Manager owns concurrency-safe, process-local workspace state.
 	Manager struct {
 		mu         sync.RWMutex
-		byID       map[ID]*Workspace
+		byID       map[ID]*workspaceEntry
 		byRoot     map[string]ID
 		opening    map[string]*openOperation
-		closing    map[ID]*closeOperation
 		closeHooks []CloseHook
 		load       loadWorkspaceFunc
 		newEngine  engineFactory
@@ -40,20 +40,26 @@ type (
 		err        error
 	}
 
-	closeOperation struct {
-		done      chan struct{}
+	workspaceEntry struct {
 		workspace *Workspace
-		err       error
+		state     workspaceEntryState
+		close     lifecycle.CloseOperation
 	}
+)
+
+type workspaceEntryState uint8
+
+const (
+	workspaceEntryActive workspaceEntryState = iota + 1
+	workspaceEntryClosing
 )
 
 // New creates a workspace manager.
 func New() *Manager {
 	return &Manager{
-		byID:    make(map[ID]*Workspace),
+		byID:    make(map[ID]*workspaceEntry),
 		byRoot:  make(map[string]ID),
 		opening: make(map[string]*openOperation),
-		closing: make(map[ID]*closeOperation),
 		load:    loadWorkspace,
 		newEngine: func(root string) (*ferret.Engine, error) {
 			return ferret.New(ferret.WithFSRoot(root))
@@ -87,8 +93,10 @@ func (m *Manager) LookupDocument(ctx context.Context, absolutePath string) (Docu
 	path := filepath.Clean(absolutePath)
 	m.mu.RLock()
 	workspaces := make([]*Workspace, 0, len(m.byID))
-	for _, item := range m.byID {
-		workspaces = append(workspaces, item)
+	for _, entry := range m.byID {
+		if entry.state == workspaceEntryActive {
+			workspaces = append(workspaces, entry.workspace)
+		}
 	}
 	m.mu.RUnlock()
 
@@ -193,12 +201,12 @@ func (m *Manager) Get(ctx context.Context, id ID) (*Workspace, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	result, ok := m.byID[id]
-	if !ok {
+	entry := m.byID[id]
+	if entry == nil || entry.state != workspaceEntryActive {
 		return nil, ErrNotFound
 	}
 
-	return result, nil
+	return entry.workspace, nil
 }
 
 // List returns shared workspaces ordered by root.
@@ -209,8 +217,10 @@ func (m *Manager) List(ctx context.Context) ([]*Workspace, error) {
 
 	m.mu.RLock()
 	result := make([]*Workspace, 0, len(m.byID))
-	for _, item := range m.byID {
-		result = append(result, item)
+	for _, entry := range m.byID {
+		if entry.state == workspaceEntryActive {
+			result = append(result, entry.workspace)
+		}
 	}
 	m.mu.RUnlock()
 
@@ -223,53 +233,49 @@ func (m *Manager) List(ctx context.Context) ([]*Workspace, error) {
 
 // Close removes a workspace and releases its retained source state.
 func (m *Manager) Close(ctx context.Context, id ID) error {
-	operation, owner := m.beginClose(id)
-	if operation == nil {
+	entry, owner := m.beginClose(id)
+	if entry == nil {
 		return nil
 	}
 
 	if owner {
-		go m.finishClose(id, operation)
+		go m.finishClose(id, entry)
 	}
 
-	return waitForClose(ctx, operation)
+	return entry.close.Wait(ctx)
 }
 
 // Clear removes and closes all retained workspace state.
 func (m *Manager) Clear(ctx context.Context) error {
 	m.mu.Lock()
-	operations := make([]*closeOperation, 0, len(m.byID)+len(m.closing))
-	owned := make(map[ID]*closeOperation, len(m.byID))
-
-	for id, item := range m.byID {
-		operation := &closeOperation{done: make(chan struct{}), workspace: item}
-		item.markClosing()
-		m.closing[id] = operation
-		operations = append(operations, operation)
-		owned[id] = operation
-	}
-
-	for id, operation := range m.closing {
-		if owned[id] == operation {
+	entries := make([]*workspaceEntry, 0, len(m.byID))
+	owned := make([]*workspaceEntry, 0, len(m.byID))
+	for _, entry := range m.byID {
+		entries = append(entries, entry)
+		if entry.state == workspaceEntryClosing {
 			continue
 		}
 
-		operations = append(operations, operation)
+		if !entry.close.Begin() {
+			panic("workspace: active entry close has already started")
+		}
+		entry.workspace.markClosing()
+		entry.state = workspaceEntryClosing
+		owned = append(owned, entry)
 	}
 
-	m.byID = make(map[ID]*Workspace)
 	m.byRoot = make(map[string]ID)
 	m.opening = make(map[string]*openOperation)
 	m.generation++
 	m.mu.Unlock()
 
-	for id, operation := range owned {
-		go m.finishClose(id, operation)
+	for _, entry := range owned {
+		go m.finishClose(entry.workspace.ID(), entry)
 	}
 
 	var result error
-	for _, operation := range operations {
-		if err := waitForClose(ctx, operation); err != nil {
+	for _, entry := range entries {
+		if err := entry.close.Wait(ctx); err != nil {
 			result = errors.Join(result, err)
 		}
 	}
@@ -277,29 +283,29 @@ func (m *Manager) Clear(ctx context.Context) error {
 	return result
 }
 
-func (m *Manager) beginClose(id ID) (*closeOperation, bool) {
+func (m *Manager) beginClose(id ID) (*workspaceEntry, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if operation, ok := m.closing[id]; ok {
-		return operation, false
-	}
-
-	item, ok := m.byID[id]
-	if !ok {
+	entry := m.byID[id]
+	if entry == nil {
 		return nil, false
 	}
+	if entry.state == workspaceEntryClosing {
+		return entry, false
+	}
 
-	operation := &closeOperation{done: make(chan struct{}), workspace: item}
-	item.markClosing()
-	m.closing[id] = operation
-	delete(m.byID, id)
-	delete(m.byRoot, item.Root())
+	if !entry.close.Begin() {
+		panic("workspace: active entry close has already started")
+	}
+	entry.workspace.markClosing()
+	entry.state = workspaceEntryClosing
+	delete(m.byRoot, entry.workspace.Root())
 
-	return operation, true
+	return entry, true
 }
 
-func (m *Manager) finishClose(id ID, operation *closeOperation) {
+func (m *Manager) finishClose(id ID, entry *workspaceEntry) {
 	m.mu.RLock()
 	hooks := append([]CloseHook(nil), m.closeHooks...)
 	m.mu.RUnlock()
@@ -311,24 +317,14 @@ func (m *Manager) finishClose(id ID, operation *closeOperation) {
 		}
 	}
 
-	result = errors.Join(result, operation.workspace.close())
-	operation.err = result
-	close(operation.done)
+	result = errors.Join(result, entry.workspace.close())
+	entry.close.Finish(result)
 
 	m.mu.Lock()
-	if m.closing[id] == operation {
-		delete(m.closing, id)
+	if m.byID[id] == entry {
+		delete(m.byID, id)
 	}
 	m.mu.Unlock()
-}
-
-func waitForClose(ctx context.Context, operation *closeOperation) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-operation.done:
-		return operation.err
-	}
 }
 
 func (m *Manager) find(root string) (*Workspace, *openOperation) {
@@ -336,7 +332,7 @@ func (m *Manager) find(root string) (*Workspace, *openOperation) {
 	defer m.mu.RUnlock()
 
 	if id, ok := m.byRoot[root]; ok {
-		return m.byID[id], nil
+		return m.byID[id].workspace, nil
 	}
 
 	return nil, m.opening[root]
@@ -402,7 +398,10 @@ func (m *Manager) loadAndCommit(ctx context.Context, operation *openOperation) (
 	}
 	operation.err = err
 	if err == nil {
-		m.byID[operation.workspace.ID()] = operation.workspace
+		m.byID[operation.workspace.ID()] = &workspaceEntry{
+			workspace: operation.workspace,
+			state:     workspaceEntryActive,
+		}
 		m.byRoot[operation.workspace.Root()] = operation.workspace.ID()
 	}
 	close(operation.done)

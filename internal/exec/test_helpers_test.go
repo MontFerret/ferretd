@@ -104,16 +104,46 @@ func newHookedManager(
 		query,
 	)
 	manager := mustNewManager(t, workspace.New())
-	manager.sessions[session.id] = session
-	manager.groups[workspaceID] = &workspaceGroup{
-		sessions: map[SessionID]*Session{session.id: session},
+	creation, err := manager.sessions.beginCreate(workspaceID)
+	if err != nil {
+		t.Fatalf("begin Session creation: %v", err)
 	}
+	if err := manager.sessions.commitCreate(context.Background(), creation, session); err != nil {
+		t.Fatalf("commit Session creation: %v", err)
+	}
+	manager.sessions.finishCreate(creation)
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = engine.Close()
 	})
 
 	return manager, session.Snapshot(), engine
+}
+
+func retainedSession(t testing.TB, manager *Manager, id SessionID) *sessionEntry {
+	t.Helper()
+
+	manager.sessions.mu.RLock()
+	entry := manager.sessions.entries[id]
+	manager.sessions.mu.RUnlock()
+	if entry == nil {
+		t.Fatalf("Session %q is not retained", id)
+	}
+
+	return entry
+}
+
+func retainedExecution(t testing.TB, manager *Manager, id ExecutionID) *executionEntry {
+	t.Helper()
+
+	manager.executions.mu.RLock()
+	entry := manager.executions.entries[id]
+	manager.executions.mu.RUnlock()
+	if entry == nil {
+		t.Fatalf("Execution %q is not retained", id)
+	}
+
+	return entry
 }
 
 func runAndObserve(t *testing.T, manager *Manager, id ExecutionID) (ExecutionSnapshot, []Event) {

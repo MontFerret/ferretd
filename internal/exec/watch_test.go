@@ -66,9 +66,7 @@ func TestWatcherOverflowDisconnectsOnlyLaggingWatcher(t *testing.T) {
 		t.Fatalf("CreateExecution: %v", err)
 	}
 
-	fixture.manager.mu.RLock()
-	execution := fixture.manager.executions[created.ID]
-	fixture.manager.mu.RUnlock()
+	execution := retainedExecution(t, fixture.manager, created.ID).execution
 	lagging := execution.Subscribe()
 	independent := execution.Subscribe()
 	defer independent.Cancel()

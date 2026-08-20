@@ -10,8 +10,9 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// Session owns one immutable reusable Ferret Plan. Its mutex precedes the
-// embedded close operation when both locks are required for a transition.
+// Session owns one immutable reusable Ferret Plan. The child gate orders
+// Execution creation before close; its mutex owns debug compilation and Plan
+// lease state. No operation holds the Session mutex while waiting on the gate.
 type Session struct {
 	mu sync.Mutex
 
@@ -21,7 +22,6 @@ type Session struct {
 	text         string
 	compileDebug func(context.Context) (workspace.Compilation, error)
 	plan         *ferret.Plan
-	executions   map[ExecutionID]*Execution
 	debugPlan    *ferret.Plan
 
 	debugCompileDone   chan struct{}
@@ -30,7 +30,7 @@ type Session struct {
 	debugCompiling     bool
 	debugCompileFailed bool
 	debugTargets       int
-	close              lifecycle.CloseOperation
+	children           lifecycle.Gate
 }
 
 func newSession(
@@ -45,7 +45,6 @@ func newSession(
 		parameters: compilation.Plan.Params(),
 		text:       text,
 		plan:       compilation.Plan,
-		executions: make(map[ExecutionID]*Execution),
 	}
 
 	if parent != nil {
@@ -69,32 +68,10 @@ func (s *Session) Snapshot() SessionSnapshot {
 	}
 }
 
-func (s *Session) addExecution(execution *Execution) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.close.Started() {
-		return ErrSessionClosed
-	}
-
-	s.executions[execution.id] = execution
-
-	return nil
-}
-
-func (s *Session) removeExecution(execution *Execution) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.executions[execution.id] == execution {
-		delete(s.executions, execution.id)
-	}
-}
-
 func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) {
 	for {
 		s.mu.Lock()
-		if s.close.Started() {
+		if !s.children.Accepting() {
 			s.mu.Unlock()
 
 			return nil, ErrSessionClosed
@@ -156,7 +133,7 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 		}
 
 		s.mu.Lock()
-		closing := s.close.Started()
+		closing := !s.children.Accepting()
 		var target *DebugTarget
 		if err == nil && !closing {
 			s.debugPlan = compilation.Plan
@@ -208,20 +185,20 @@ func (s *Session) releaseDebugTarget() {
 	}
 }
 
-func (s *Session) beginClose() ([]*Execution, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.close.Begin() {
-		return nil, false
-	}
-	executions := make([]*Execution, 0, len(s.executions))
+func (s *Session) beginExecutionCreate() bool {
+	return s.children.BeginCreate()
+}
 
-	// Keep the children registered until their runtime cleanup releases ownership.
-	for _, execution := range s.executions {
-		executions = append(executions, execution)
-	}
+func (s *Session) finishExecutionCreate() {
+	s.children.EndCreate()
+}
 
-	return executions, true
+func (s *Session) beginClose() bool {
+	return s.children.BeginClose()
+}
+
+func (s *Session) waitForExecutionCreates() {
+	s.children.WaitForCreates()
 }
 
 func (s *Session) releasePlans() (*ferret.Plan, *ferret.Plan) {
@@ -250,5 +227,26 @@ func (s *Session) releasePlans() (*ferret.Plan, *ferret.Plan) {
 }
 
 func (s *Session) finishClose(err error) {
-	s.close.Finish(err)
+	s.children.FinishClose(err)
+}
+
+func (s *Session) waitClose(ctx context.Context) error {
+	return s.children.WaitClose(ctx)
+}
+
+func (s *Session) closeStarted() bool {
+	return !s.children.Accepting()
+}
+
+func (s *Session) closeUnpublished() error {
+	s.mu.Lock()
+	plan := s.plan
+	s.plan = nil
+	s.mu.Unlock()
+
+	if plan == nil {
+		return nil
+	}
+
+	return plan.Close()
 }

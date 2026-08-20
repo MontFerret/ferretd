@@ -76,6 +76,21 @@ watchers, and becomes idempotent. Closing a Session closes every child Execution
 and DebugSession before closing its Plans. Closing a workspace invokes the
 execution manager's registered close hook before the workspace engine closes.
 
+The manager orchestrates two package-local registries rather than owning all
+resource maps under one lock. The Session registry owns active-versus-closing
+reachability, service shutdown admission, and workspace groups. Each workspace
+group owns its Session membership and the creation gate that orders compilation
+against workspace close. The Execution registry owns active-versus-closing
+reachability and the Session-to-Execution index. Closing entries remain retained
+for concurrent waiters and parent teardown, but normal lookups expose active
+entries only.
+
+Each Session owns the gate that admits Execution creation. Session close stops
+that gate, waits for every admitted creator to publish or leave, then detaches
+the complete child set from the Execution registry. No Session-registry lock is
+held while entering the Execution registry, and no registry lock is held during
+compilation, hooks, runtime cleanup, Plan closure, or lifecycle waits.
+
 Concurrent close calls share one close operation and retained result. A caller's
 canceled wait does not transfer or abandon ownership of the underlying cleanup;
 a later caller can still observe completion.

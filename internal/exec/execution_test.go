@@ -134,9 +134,7 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 			t.Fatalf("CreateExecution: %v", err)
 		}
 
-		manager.mu.RLock()
-		plan := manager.sessions[session.ID].plan
-		manager.mu.RUnlock()
+		plan := retainedSession(t, manager, session.ID).session.plan
 		if err := plan.Close(); err != nil {
 			t.Fatalf("Plan.Close: %v", err)
 		}
