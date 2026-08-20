@@ -8,7 +8,6 @@ import (
 
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
-	"github.com/MontFerret/ferret/v2/pkg/stdlib"
 
 	"github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
@@ -27,25 +26,19 @@ type Service struct {
 	analyze       analyzeFunc
 }
 
-// New creates a language service with immutable compiler and runtime environments.
-func New(options Options) *Service {
-	workspaces := options.Workspaces
+// New creates a language service using the supplied workspace and immutable runtime environment.
+// It returns an error when either required dependency is nil.
+func New(
+	workspaces *workspace.Manager,
+	functions *runtime.Functions,
+	options Options,
+) (*Service, error) {
 	if workspaces == nil {
-		workspaces = workspace.New()
+		return nil, errNilWorkspaceManager
 	}
 
-	functions := options.Functions
 	if functions == nil {
-		library := runtime.NewLibrary()
-		if err := stdlib.Full().Register(library); err != nil {
-			panic(fmt.Errorf("register Ferret standard library: %w", err))
-		}
-
-		var err error
-		functions, err = library.Build()
-		if err != nil {
-			panic(fmt.Errorf("build Ferret standard library: %w", err))
-		}
+		return nil, errNilFunctions
 	}
 
 	compilerInstance := compiler.New()
@@ -59,7 +52,7 @@ func New(options Options) *Service {
 	}
 	result.analyze = compilerInstance.Analyze
 
-	return result
+	return result, nil
 }
 
 // OpenWorkspace synchronously opens a static workspace root.

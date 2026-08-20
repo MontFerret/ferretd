@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,9 +16,30 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
+func TestWorkspaceServiceRequiresManager(t *testing.T) {
+	service, err := newWorkspaceService(nil)
+	if service != nil {
+		t.Fatal("newWorkspaceService returned a service for a nil manager")
+	}
+	if !errors.Is(err, errNilWorkspaceManager) {
+		t.Fatalf("newWorkspaceService error = %v, want %v", err, errNilWorkspaceManager)
+	}
+}
+
+func TestWorkspaceServiceUsesSuppliedManager(t *testing.T) {
+	manager := workspace.New()
+	service, err := newWorkspaceService(manager)
+	if err != nil {
+		t.Fatalf("newWorkspaceService: %v", err)
+	}
+	if service.workspaces != manager {
+		t.Fatal("newWorkspaceService did not retain the supplied manager")
+	}
+}
+
 func TestWorkspaceServiceDelegatesLifecycle(t *testing.T) {
 	manager := workspace.New()
-	service := newWorkspaceService(manager)
+	service := mustNewWorkspaceService(t, manager)
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "query.fql"), []byte("RETURN 1"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -62,7 +84,7 @@ func TestWorkspaceServiceDelegatesLifecycle(t *testing.T) {
 }
 
 func TestWorkspaceServiceMapsInvalidRoot(t *testing.T) {
-	service := newWorkspaceService(workspace.New())
+	service := mustNewWorkspaceService(t, workspace.New())
 
 	_, err := service.Open(context.Background(), &workspacev1.OpenRequest{Root: "relative"})
 	if status.Code(err) != codes.InvalidArgument {

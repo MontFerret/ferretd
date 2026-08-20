@@ -6,12 +6,67 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/MontFerret/ferret/v2/pkg/runtime"
+
 	"github.com/MontFerret/ferretd/internal/source"
+	"github.com/MontFerret/ferretd/internal/workspace"
 )
+
+func TestNewRequiresDependencies(t *testing.T) {
+	tests := []struct {
+		name string
+		new  func() (*Service, error)
+		want error
+	}{
+		{
+			name: "workspace manager",
+			new:  func() (*Service, error) { return New(nil, runtime.NewFunctions(), Options{}) },
+			want: errNilWorkspaceManager,
+		},
+		{
+			name: "functions",
+			new:  func() (*Service, error) { return New(workspace.New(), nil, Options{}) },
+			want: errNilFunctions,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, err := tt.new()
+			if service != nil {
+				t.Fatal("New returned a service with a nil dependency")
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("New error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewUsesSuppliedDependencies(t *testing.T) {
+	workspaces := workspace.New()
+	service, err := New(workspaces, runtime.NewFunctions(), Options{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if service.workspaces != workspaces {
+		t.Fatal("New did not retain the supplied workspace manager")
+	}
+}
+
+func TestNewDefaultFunctions(t *testing.T) {
+	functions, err := NewDefaultFunctions()
+	if err != nil {
+		t.Fatalf("NewDefaultFunctions: %v", err)
+	}
+	if functions.Size() == 0 {
+		t.Fatal("NewDefaultFunctions returned an empty function registry")
+	}
+}
 
 func TestDocumentLifecycle(t *testing.T) {
 	ctx := context.Background()
-	service := New(Options{})
+	service := newTestService(t, Options{})
 	uri := documentURI(t, "query.fql")
 
 	if err := service.OpenDocument(ctx, uri, "ferret", 1, "RETURN 1"); err != nil {
@@ -61,7 +116,7 @@ func TestDocumentLifecycle(t *testing.T) {
 
 func TestChangeDocumentErrors(t *testing.T) {
 	ctx := context.Background()
-	service := New(Options{})
+	service := newTestService(t, Options{})
 	uri := documentURI(t, "query.fql")
 
 	if err := service.ChangeDocument(ctx, uri, 1, []TextChange{{Text: "RETURN 1"}}); !errors.Is(err, ErrDocumentNotOpen) {
@@ -79,7 +134,7 @@ func TestChangeDocumentErrors(t *testing.T) {
 }
 
 func TestOpenDocumentRejectsNonFileURI(t *testing.T) {
-	err := New(Options{}).OpenDocument(
+	err := newTestService(t, Options{}).OpenDocument(
 		context.Background(),
 		source.URI("https://example.com/query.fql"),
 		"ferret",

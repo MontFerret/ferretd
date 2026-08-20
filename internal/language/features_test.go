@@ -31,7 +31,7 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 	if _, err := manager.Open(ctx, root); err != nil {
 		t.Fatal(err)
 	}
-	service := New(Options{Workspaces: manager})
+	service := mustNewService(t, manager, newTestDefaultFunctions(t), Options{})
 	uri, err := source.URIFromPath(path)
 	if err != nil {
 		t.Fatal(err)
@@ -244,10 +244,7 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuredParams := runtime.Params{"Configured": runtime.Int(1)}
-	service := New(Options{
-		Functions: functions,
-		Params:    configuredParams,
-	})
+	service := mustNewService(t, workspace.New(), functions, Options{Params: configuredParams})
 	configuredParams["AddedLater"] = runtime.Int(2)
 	query := "RETURN CuStOm" + runtime.NamespaceSeparator + "DoThing(@Known)"
 	uri := documentURI(t, "registry.fql")
@@ -292,7 +289,12 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		t.Fatalf("registered hover = %+v, %v", hover, err)
 	}
 
-	paramService := New(Options{Functions: functions, Params: runtime.Params{"Configured": runtime.Int(1)}})
+	paramService := mustNewService(
+		t,
+		workspace.New(),
+		functions,
+		Options{Params: runtime.Params{"Configured": runtime.Int(1)}},
+	)
 	paramURI := documentURI(t, "params.fql")
 	if err := paramService.OpenDocument(context.Background(), paramURI, "ferret", 1, "RETURN @"); err != nil {
 		t.Fatal(err)
@@ -507,7 +509,7 @@ func TestSemanticTokensSplitMultilineStringsAndComments(t *testing.T) {
 func openLanguageDocument(t *testing.T, text string) (*Service, source.URI) {
 	t.Helper()
 
-	service := New(Options{})
+	service := newTestService(t, Options{})
 	uri := documentURI(t, "features.fql")
 	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, text); err != nil {
 		t.Fatal(err)

@@ -14,6 +14,40 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
+func TestNewRequiresWorkspaceManager(t *testing.T) {
+	manager, err := New(nil)
+	if manager != nil {
+		t.Fatal("New returned a manager for a nil workspace dependency")
+	}
+	if !errors.Is(err, errNilWorkspaceManager) {
+		t.Fatalf("New error = %v, want %v", err, errNilWorkspaceManager)
+	}
+}
+
+func TestManagerDoesNotOwnWorkspaceManager(t *testing.T) {
+	workspaces := workspace.New()
+	opened, err := workspaces.Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = workspaces.Clear(context.Background()) })
+
+	manager, err := New(workspaces)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if manager.workspaces != workspaces {
+		t.Fatal("New did not retain the supplied workspace manager")
+	}
+
+	if err := manager.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := workspaces.Get(context.Background(), opened.ID()); err != nil {
+		t.Fatalf("workspace after execution manager Close: %v", err)
+	}
+}
+
 func TestCreateSessionCompilesImmutableSourceAndParameters(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN [@second, @first]")
 	got := fixture.session
@@ -193,7 +227,7 @@ func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	manager := New(workspaces)
+	manager := mustNewManager(t, workspaces)
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = workspaces.Clear(context.Background())
@@ -269,7 +303,7 @@ func TestSessionCloseCallerTimeoutDoesNotStopCleanup(t *testing.T) {
 }
 
 func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
-	manager := New(workspace.New())
+	manager := mustNewManager(t, workspace.New())
 	workspaceID := workspace.ID("workspace")
 	if err := manager.beginSessionCreate(workspaceID); err != nil {
 		t.Fatalf("beginSessionCreate: %v", err)

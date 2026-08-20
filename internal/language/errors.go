@@ -3,6 +3,9 @@ package language
 import "errors"
 
 var (
+	errNilWorkspaceManager = errors.New("language: nil workspace manager")
+	errNilFunctions        = errors.New("language: nil functions")
+
 	// ErrDocumentNotOpen indicates that an operation requires an open document.
 	ErrDocumentNotOpen = errors.New("document is not open")
 	// ErrStaleDocumentVersion indicates that a change does not advance a document version.

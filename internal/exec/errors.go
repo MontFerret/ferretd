@@ -3,7 +3,8 @@ package exec
 import "errors"
 
 var (
-	errExecutionCanceled = errors.New("execution cancellation requested")
+	errNilWorkspaceManager = errors.New("execution: nil workspace manager")
+	errExecutionCanceled   = errors.New("execution cancellation requested")
 
 	// ErrManagerClosed reports an execution manager that is shutting down.
 	ErrManagerClosed = errors.New("execution manager closed")

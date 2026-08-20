@@ -18,6 +18,28 @@ type debugFixture struct {
 	session    exec.SessionSnapshot
 }
 
+func mustNewExecutionManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
+	t.Helper()
+
+	manager, err := exec.New(workspaces)
+	if err != nil {
+		t.Fatalf("exec.New: %v", err)
+	}
+
+	return manager
+}
+
+func mustNewManager(t testing.TB, executions *exec.Manager) *Manager {
+	t.Helper()
+
+	manager, err := New(executions)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	return manager
+}
+
 func newDebugFixture(t *testing.T, query string) debugFixture {
 	t.Helper()
 
@@ -31,8 +53,8 @@ func newDebugFixture(t *testing.T, query string) debugFixture {
 	if err != nil {
 		t.Fatalf("workspace Open: %v", err)
 	}
-	executions := exec.New(workspaces)
-	manager := New(executions)
+	executions := mustNewExecutionManager(t, workspaces)
+	manager := mustNewManager(t, executions)
 	session, err := executions.CreateSession(context.Background(), opened.ID(), "query.fql")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)

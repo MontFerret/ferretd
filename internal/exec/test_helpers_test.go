@@ -19,6 +19,17 @@ type executionFixture struct {
 	session    SessionSnapshot
 }
 
+func mustNewManager(t testing.TB, workspaces *workspace.Manager) *Manager {
+	t.Helper()
+
+	manager, err := New(workspaces)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	return manager
+}
+
 func newExecutionFixture(t *testing.T, query string) executionFixture {
 	t.Helper()
 
@@ -32,7 +43,7 @@ func newExecutionFixture(t *testing.T, query string) executionFixture {
 	if err != nil {
 		t.Fatalf("workspace Open: %v", err)
 	}
-	manager := New(workspaces)
+	manager := mustNewManager(t, workspaces)
 	session, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -80,7 +91,7 @@ func newHookedManager(
 		workspace.Compilation{Plan: plan, Source: snapshot},
 		query,
 	)
-	manager := New(workspace.New())
+	manager := mustNewManager(t, workspace.New())
 	manager.sessions[session.id] = session
 	manager.groups[workspaceID] = &workspaceGroup{
 		sessions: map[SessionID]*Session{session.id: session},

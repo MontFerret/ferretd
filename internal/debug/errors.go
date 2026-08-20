@@ -3,6 +3,8 @@ package debug
 import "errors"
 
 var (
+	errNilExecutionManager = errors.New("debug: nil execution manager")
+
 	// ErrManagerClosed reports a debug manager that is shutting down.
 	ErrManagerClosed = errors.New("debug manager closed")
 	// ErrSessionNotFound reports an unknown daemon debug Session ID.

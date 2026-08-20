@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -10,12 +11,32 @@ import (
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
-	"github.com/MontFerret/ferretd/internal/language"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
+func TestNewRequiresLanguageService(t *testing.T) {
+	server, err := New(nil)
+	if server != nil {
+		t.Fatal("New returned a server for a nil language dependency")
+	}
+	if !errors.Is(err, errNilLanguageService) {
+		t.Fatalf("New error = %v, want %v", err, errNilLanguageService)
+	}
+}
+
+func TestNewUsesSuppliedLanguageService(t *testing.T) {
+	service := newTestLanguageService(t)
+	server, err := New(service)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if server.language != service {
+		t.Fatal("New did not retain the supplied language service")
+	}
+}
+
 func TestInitializeAdvertisesFullDocumentSync(t *testing.T) {
-	server := New(language.New(language.Options{}))
+	server := newTestServer(t)
 
 	value, err := server.initialize(nil, &protocol.InitializeParams{})
 	if err != nil {
@@ -65,8 +86,8 @@ func TestInitializeAdvertisesFullDocumentSync(t *testing.T) {
 }
 
 func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
-	service := language.New(language.Options{})
-	server := New(service)
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
 	uri := documentURI(t, "query.fql")
 
 	var published []protocol.PublishDiagnosticsParams
@@ -132,8 +153,8 @@ func waitForNotification(t *testing.T, signal <-chan struct{}) {
 }
 
 func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
-	service := language.New(language.Options{})
-	server := New(service)
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
 	uri := documentURI(t, "query.fql")
 	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "RETURN 1"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)

@@ -22,10 +22,11 @@ type Server struct {
 	contexts sync.Map
 }
 
-// New creates an LSP server adapter.
-func New(service *language.Service) *Server {
+// New creates an LSP server adapter around the supplied language service.
+// It returns an error when the language service is nil.
+func New(service *language.Service) (*Server, error) {
 	if service == nil {
-		service = language.New(language.Options{})
+		return nil, errNilLanguageService
 	}
 
 	result := &Server{language: service}
@@ -47,7 +48,7 @@ func New(service *language.Service) *Server {
 		TextDocumentFormatting:         result.formatting,
 	}
 
-	return result
+	return result, nil
 }
 
 func (s *Server) initialize(glspContext *glsp.Context, params *protocol.InitializeParams) (any, error) {

@@ -15,12 +15,12 @@ type workspaceService struct {
 	workspaces *workspace.Manager
 }
 
-func newWorkspaceService(workspaces *workspace.Manager) *workspaceService {
+func newWorkspaceService(workspaces *workspace.Manager) (*workspaceService, error) {
 	if workspaces == nil {
-		workspaces = workspace.New()
+		return nil, errNilWorkspaceManager
 	}
 
-	return &workspaceService{workspaces: workspaces}
+	return &workspaceService{workspaces: workspaces}, nil
 }
 
 func (s *workspaceService) Open(

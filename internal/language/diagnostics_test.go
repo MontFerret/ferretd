@@ -13,7 +13,7 @@ import (
 
 func TestDiagnostics(t *testing.T) {
 	ctx := context.Background()
-	service := New(Options{})
+	service := newTestService(t, Options{})
 	uri := documentURI(t, "query.fql")
 
 	if err := service.OpenDocument(ctx, uri, "ferret", 1, "RETURN 1"); err != nil {
@@ -57,7 +57,7 @@ func TestDiagnostics(t *testing.T) {
 
 func TestDiagnosticsForEmptyDocument(t *testing.T) {
 	ctx := context.Background()
-	service := New(Options{})
+	service := newTestService(t, Options{})
 	uri := documentURI(t, "empty.fql")
 
 	if err := service.OpenDocument(ctx, uri, "ferret", 1, ""); err != nil {

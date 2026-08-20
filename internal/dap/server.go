@@ -49,9 +49,24 @@ type Server struct {
 }
 
 // New creates a single-session DAP server over input and output.
-func New(input io.Reader, output io.Writer) *Server {
+// It returns an error when its owned service graph cannot be constructed.
+func New(input io.Reader, output io.Writer) (*Server, error) {
 	workspaces := workspace.New()
-	executions := exec.New(workspaces)
+	executions, err := exec.New(workspaces)
+	if err != nil {
+		cleanupErr := workspaces.Clear(context.Background())
+
+		return nil, errors.Join(fmt.Errorf("create execution manager: %w", err), cleanupErr)
+	}
+
+	debugs, err := debug.New(executions)
+	if err != nil {
+		ctx := context.Background()
+		cleanupErr := errors.Join(executions.Close(ctx), workspaces.Clear(ctx))
+
+		return nil, errors.Join(fmt.Errorf("create debug manager: %w", err), cleanupErr)
+	}
+
 	readerClose, _ := input.(io.Closer)
 
 	return &Server{
@@ -60,7 +75,7 @@ func New(input io.Reader, output io.Writer) *Server {
 		writer:                output,
 		workspaces:            workspaces,
 		executions:            executions,
-		debugs:                debug.New(executions),
+		debugs:                debugs,
 		handles:               newHandleTable(),
 		nextBreakpointID:      1,
 		stableBreakpoints:     make(map[breakpointKey]int),
@@ -71,7 +86,7 @@ func New(input io.Reader, output io.Writer) *Server {
 			linesStartAt1:   true,
 			columnsStartAt1: true,
 		},
-	}
+	}, nil
 }
 
 // Run reads and serves DAP requests until disconnect or stream EOF.

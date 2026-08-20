@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"errors"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -10,6 +11,28 @@ import (
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
+
+func TestExecutionServiceRequiresManager(t *testing.T) {
+	service, err := newExecutionService(nil)
+	if service != nil {
+		t.Fatal("newExecutionService returned a service for a nil manager")
+	}
+	if !errors.Is(err, errNilExecutionManager) {
+		t.Fatalf("newExecutionService error = %v, want %v", err, errNilExecutionManager)
+	}
+}
+
+func TestExecutionServiceUsesSuppliedManager(t *testing.T) {
+	workspaces := workspace.New()
+	manager := mustNewExecutionManager(t, workspaces)
+	service, err := newExecutionService(manager)
+	if err != nil {
+		t.Fatalf("newExecutionService: %v", err)
+	}
+	if service.executions != manager {
+		t.Fatal("newExecutionService did not retain the supplied manager")
+	}
+}
 
 func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 	tests := []struct {

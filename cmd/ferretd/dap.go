@@ -24,7 +24,11 @@ func newDAPCommand() *cobra.Command {
 }
 
 func serveDAP(ctx context.Context) error {
-	server := ferretdap.New(os.Stdin, os.Stdout)
+	server, err := ferretdap.New(os.Stdin, os.Stdout)
+	if err != nil {
+		return fmt.Errorf("create DAP server: %w", err)
+	}
+
 	if err := server.Run(ctx); err != nil {
 		return fmt.Errorf("run DAP server: %w", err)
 	}

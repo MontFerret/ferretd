@@ -166,7 +166,7 @@ func TestOverlayGenerationRejectsStaleReportsWhenClientVersionIsReused(t *testin
 }
 
 func BenchmarkAnalysisCold(b *testing.B) {
-	service := New(Options{})
+	service := newTestService(b, Options{})
 	uri := source.URI("file:///benchmark.fql")
 	var version int32
 	for b.Loop() {
@@ -177,7 +177,7 @@ func BenchmarkAnalysisCold(b *testing.B) {
 }
 
 func BenchmarkAnalysisCacheHit(b *testing.B) {
-	service := New(Options{})
+	service := newTestService(b, Options{})
 	uri := source.URI("file:///benchmark.fql")
 	_ = service.OpenDocument(context.Background(), uri, "ferret", 1, "LET value = 1\nRETURN value")
 	_, _ = service.Diagnostics(context.Background(), uri)

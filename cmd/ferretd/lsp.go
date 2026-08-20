@@ -25,7 +25,22 @@ func newLSPCommand() *cobra.Command {
 }
 
 func serveLSP(ctx context.Context) error {
-	server := lsp.New(language.New(language.Options{Workspaces: workspace.New()}))
+	workspaces := workspace.New()
+	functions, err := language.NewDefaultFunctions()
+	if err != nil {
+		return fmt.Errorf("create default language functions: %w", err)
+	}
+
+	service, err := language.New(workspaces, functions, language.Options{})
+	if err != nil {
+		return fmt.Errorf("create language service: %w", err)
+	}
+
+	server, err := lsp.New(service)
+	if err != nil {
+		return fmt.Errorf("create LSP server: %w", err)
+	}
+
 	if err := server.Run(ctx); err != nil {
 		return fmt.Errorf("run LSP server: %w", err)
 	}

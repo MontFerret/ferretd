@@ -34,10 +34,11 @@ type (
 	}
 )
 
-// New creates a debug manager parented by an execution manager.
-func New(executions *exec.Manager) *Manager {
+// New creates a debug manager that borrows an execution manager.
+// It returns an error when the execution manager is nil.
+func New(executions *exec.Manager) (*Manager, error) {
 	if executions == nil {
-		panic("debug: nil execution manager")
+		return nil, errNilExecutionManager
 	}
 
 	result := &Manager{
@@ -48,7 +49,7 @@ func New(executions *exec.Manager) *Manager {
 	}
 	executions.RegisterSessionCloseHook(result.closeExecutionSession)
 
-	return result
+	return result, nil
 }
 
 // CreateSession creates one retained debugger child of an executable Session.

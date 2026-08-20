@@ -22,28 +22,32 @@ type Server struct {
 	health *health.Server
 }
 
-// New constructs the daemon's gRPC adapter.
+// New constructs the daemon's gRPC adapter over the supplied domain services.
+// It returns an error when either required service is nil.
 func New(
 	workspaces *workspace.Manager,
 	executions *exec.Manager,
 	version string,
 	instanceID string,
 	shutdown func(),
-) *Server {
-	if workspaces == nil {
-		workspaces = workspace.New()
+) (*Server, error) {
+	workspaceAdapter, err := newWorkspaceService(workspaces)
+	if err != nil {
+		return nil, err
 	}
 
-	if executions == nil {
-		executions = exec.New(workspaces)
+	executionAdapter, err := newExecutionService(executions)
+	if err != nil {
+		return nil, err
 	}
 
+	daemonAdapter := newDaemonService(version, instanceID, shutdown)
 	server := grpcgo.NewServer()
 	healthServer := health.NewServer()
 
-	daemonv1.RegisterDaemonServiceServer(server, newDaemonService(version, instanceID, shutdown))
-	workspacev1.RegisterWorkspaceServiceServer(server, newWorkspaceService(workspaces))
-	executionv1.RegisterExecutionServiceServer(server, newExecutionService(executions))
+	daemonv1.RegisterDaemonServiceServer(server, daemonAdapter)
+	workspacev1.RegisterWorkspaceServiceServer(server, workspaceAdapter)
+	executionv1.RegisterExecutionServiceServer(server, executionAdapter)
 	healthv1.RegisterHealthServer(server, healthServer)
 
 	result := &Server{
@@ -52,7 +56,7 @@ func New(
 	}
 	result.SetNotServing()
 
-	return result
+	return result, nil
 }
 
 // Serve accepts gRPC traffic until the server is stopped or the listener fails.

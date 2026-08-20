@@ -14,12 +14,10 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
-
-	"github.com/MontFerret/ferretd/internal/language"
 )
 
 func TestRPCHandlerCancellationReturnsLSPCancellationCode(t *testing.T) {
-	server := New(language.New(language.Options{}))
+	server := newTestServer(t)
 	started := make(chan struct{})
 	server.handler.TextDocumentHover = func(glspContext *glsp.Context, _ *protocol.HoverParams) (*protocol.Hover, error) {
 		close(started)
@@ -57,7 +55,7 @@ func TestRPCHandlerCancellationReturnsLSPCancellationCode(t *testing.T) {
 }
 
 func TestRPCHandlerRejectsUnsupportedMethods(t *testing.T) {
-	server := New(language.New(language.Options{}))
+	server := newTestServer(t)
 	client, cleanup := rpcTestConnection(t, server)
 	defer cleanup()
 	initializeRPC(t, client)
@@ -71,7 +69,7 @@ func TestRPCHandlerRejectsUnsupportedMethods(t *testing.T) {
 }
 
 func TestRPCHandlerRequestsWaitForEarlierLifecycleNotification(t *testing.T) {
-	server := New(language.New(language.Options{}))
+	server := newTestServer(t)
 	lifecycleStarted := make(chan struct{})
 	lifecycleRelease := make(chan struct{})
 	requestStarted := make(chan struct{})
@@ -126,7 +124,7 @@ func TestRunStreamWritesOnlyFramedProtocolResponses(t *testing.T) {
 	writeLSPFrame(t, input, `{"jsonrpc":"2.0","method":"exit"}`)
 	stream := &memoryReadWriteCloser{reader: input, closed: make(chan struct{})}
 
-	if err := New(language.New(language.Options{})).runStream(context.Background(), stream); err != nil {
+	if err := newTestServer(t).runStream(context.Background(), stream); err != nil {
 		t.Fatal(err)
 	}
 

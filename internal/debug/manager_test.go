@@ -10,6 +10,30 @@ import (
 	"github.com/MontFerret/ferretd/internal/exec"
 )
 
+func TestNewRequiresExecutionManager(t *testing.T) {
+	manager, err := New(nil)
+	if manager != nil {
+		t.Fatal("New returned a manager for a nil execution dependency")
+	}
+	if !errors.Is(err, errNilExecutionManager) {
+		t.Fatalf("New error = %v, want %v", err, errNilExecutionManager)
+	}
+}
+
+func TestManagerDoesNotOwnExecutionManager(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+	if fixture.manager.executions != fixture.executions {
+		t.Fatal("New did not retain the supplied execution manager")
+	}
+
+	if err := fixture.manager.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := fixture.executions.GetSession(context.Background(), fixture.session.ID); err != nil {
+		t.Fatalf("execution Session after debug manager Close: %v", err)
+	}
+}
+
 func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T) {
 	fixture := newDebugFixture(t, `LET box = {value: 10}
 FUNC add(a) {

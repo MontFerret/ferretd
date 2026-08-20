@@ -18,12 +18,12 @@ type executionService struct {
 	executions *exec.Manager
 }
 
-func newExecutionService(executions *exec.Manager) *executionService {
+func newExecutionService(executions *exec.Manager) (*executionService, error) {
 	if executions == nil {
-		executions = exec.New(nil)
+		return nil, errNilExecutionManager
 	}
 
-	return &executionService{executions: executions}
+	return &executionService{executions: executions}, nil
 }
 
 func (s *executionService) CreateSession(

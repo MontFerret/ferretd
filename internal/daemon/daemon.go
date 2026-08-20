@@ -14,8 +14,6 @@ import (
 
 	"github.com/MontFerret/ferretd/internal/exec"
 	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
-	"github.com/MontFerret/ferretd/internal/language"
-	"github.com/MontFerret/ferretd/internal/lsp"
 	"github.com/MontFerret/ferretd/internal/transport"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -31,9 +29,7 @@ type (
 	// Daemon owns the services and lifecycle that make up ferretd.
 	Daemon struct {
 		workspaces *workspace.Manager
-		language   *language.Service
 		execution  *exec.Manager
-		lsp        *lsp.Server
 		rpc        *grpcadapter.Server
 
 		endpoint transport.Endpoint
@@ -71,20 +67,22 @@ func New(options Options) (*Daemon, error) {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	workspaceManager := workspace.New()
-	languageService := language.New(language.Options{Workspaces: workspaceManager})
-	executionManager := exec.New(workspaceManager)
 	instanceID, err := uuid.NewRandom()
-
 	if err != nil {
 		return nil, fmt.Errorf("generate daemon instance ID: %w", err)
 	}
 
+	workspaceManager := workspace.New()
+	executionManager, err := exec.New(workspaceManager)
+	if err != nil {
+		cleanupErr := workspaceManager.Clear(context.Background())
+
+		return nil, errors.Join(fmt.Errorf("create execution manager: %w", err), cleanupErr)
+	}
+
 	result := &Daemon{
 		workspaces: workspaceManager,
-		language:   languageService,
 		execution:  executionManager,
-		lsp:        lsp.New(languageService),
 		endpoint:   endpoint,
 		version:    version,
 		logger:     logger,
@@ -92,13 +90,20 @@ func New(options Options) (*Daemon, error) {
 		stopDone:   make(chan struct{}),
 		state:      stateNew,
 	}
-	result.rpc = grpcadapter.New(
+	rpc, err := grpcadapter.New(
 		result.workspaces,
 		result.execution,
 		version,
 		instanceID.String(),
 		result.requestShutdown,
 	)
+	if err != nil {
+		ctx := context.Background()
+		cleanupErr := errors.Join(result.execution.Close(ctx), result.workspaces.Clear(ctx))
+
+		return nil, errors.Join(fmt.Errorf("create gRPC server: %w", err), cleanupErr)
+	}
+	result.rpc = rpc
 
 	return result, nil
 }

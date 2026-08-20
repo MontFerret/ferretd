@@ -17,10 +17,6 @@ type (
 )
 
 func newFunctionIndex(functions *runtime.Functions) functionIndex {
-	if functions == nil {
-		functions = runtime.NewFunctions()
-	}
-
 	names := functions.List()
 	result := functionIndex{
 		ordered: make([]registeredFunction, 0, len(names)),

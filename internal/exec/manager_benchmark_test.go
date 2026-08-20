@@ -21,7 +21,7 @@ func BenchmarkManagerCreateSessionUnchanged(b *testing.B) {
 	if err != nil {
 		b.Fatalf("workspace Open: %v", err)
 	}
-	manager := New(workspaces)
+	manager := mustNewManager(b, workspaces)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -133,7 +133,7 @@ func benchmarkExecutionManager(b *testing.B) (*Manager, SessionSnapshot, *worksp
 	if err != nil {
 		b.Fatalf("workspace Open: %v", err)
 	}
-	manager := New(workspaces)
+	manager := mustNewManager(b, workspaces)
 	session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
 	if err != nil {
 		b.Fatalf("CreateSession: %v", err)

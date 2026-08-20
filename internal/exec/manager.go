@@ -41,10 +41,11 @@ type (
 	}
 )
 
-// New creates an execution manager parented by the existing workspace manager.
-func New(workspaces *workspace.Manager) *Manager {
+// New creates an execution manager that borrows the existing workspace manager.
+// It returns an error when the workspace manager is nil.
+func New(workspaces *workspace.Manager) (*Manager, error) {
 	if workspaces == nil {
-		workspaces = workspace.New()
+		return nil, errNilWorkspaceManager
 	}
 
 	result := &Manager{
@@ -57,7 +58,7 @@ func New(workspaces *workspace.Manager) *Manager {
 	}
 	workspaces.RegisterCloseHook(result.CloseWorkspace)
 
-	return result
+	return result, nil
 }
 
 // RegisterSessionCloseHook adds a Session child-resource closer.

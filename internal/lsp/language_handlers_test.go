@@ -13,8 +13,8 @@ import (
 )
 
 func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
-	service := language.New(language.Options{})
-	server := New(service)
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
 	uri := documentURI(t, "handlers.fql")
 	query := "LET value = 1\nFUNC add(p) => value + p\nRETURN add(value)"
 	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, query); err != nil {
@@ -220,8 +220,8 @@ func TestCompletionWordKindMapping(t *testing.T) {
 }
 
 func TestCompletionPreservesCanonicalLowercaseText(t *testing.T) {
-	service := language.New(language.Options{})
-	server := New(service)
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
 	uri := documentURI(t, "completion.fql")
 	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "re"); err != nil {
 		t.Fatal(err)
