@@ -35,7 +35,9 @@ type (
 	workspaceGroup struct {
 		// Manager.mu is acquired before gate when both are needed. Gate never
 		// calls back into the Manager, so the lock order cannot reverse.
-		gate     lifecycle.Gate
+		gate lifecycle.Gate
+		// sessions retains closing children through committed cleanup. Once parent
+		// close begins, completed children remain until that close collects them.
 		sessions map[SessionID]*Session
 	}
 )
@@ -167,9 +169,18 @@ func (m *Manager) GetSession(ctx context.Context, id SessionID) (SessionSnapshot
 
 // CloseSession idempotently removes a Session and all child resources.
 func (m *Manager) CloseSession(ctx context.Context, id SessionID) error {
+	return m.closeSession(ctx, id, nil)
+}
+
+func (m *Manager) closeSession(ctx context.Context, id SessionID, retained *Session) error {
 	session, executions, owner := m.detachSession(id)
 	if session == nil {
-		return nil
+		// A parent close retains its captured child so registry removal cannot
+		// hide the committed cleanup result before the parent joins it.
+		session = retained
+		if session == nil {
+			return nil
+		}
 	}
 
 	if owner {
@@ -330,15 +341,15 @@ func (m *Manager) finishWorkspaceClose(id workspace.ID, group *workspaceGroup) {
 	group.gate.WaitForCreates()
 
 	m.mu.RLock()
-	ids := make([]SessionID, 0, len(group.sessions))
-	for sessionID := range group.sessions {
-		ids = append(ids, sessionID)
+	sessions := make([]*Session, 0, len(group.sessions))
+	for _, session := range group.sessions {
+		sessions = append(sessions, session)
 	}
 	m.mu.RUnlock()
 
 	var result error
-	for _, sessionID := range ids {
-		result = errors.Join(result, m.CloseSession(context.Background(), sessionID))
+	for _, session := range sessions {
+		result = errors.Join(result, m.closeSession(context.Background(), session.id, session))
 	}
 
 	group.gate.FinishClose(result)
@@ -403,11 +414,6 @@ func (m *Manager) detachSession(id SessionID) (*Session, []*Execution, bool) {
 	}
 
 	delete(m.sessions, id)
-
-	if group := m.groups[session.source.Workspace]; group != nil {
-		delete(group.sessions, id)
-	}
-
 	m.closingSessions[id] = session
 
 	return session, executions, true
@@ -446,7 +452,12 @@ func (m *Manager) finishSessionClose(session *Session, executions []*Execution) 
 	}
 
 	session.finishClose(result)
+
 	m.mu.Lock()
+	if group := m.groups[session.source.Workspace]; group != nil &&
+		!m.closed && group.gate.Accepting() && group.sessions[session.id] == session {
+		delete(group.sessions, session.id)
+	}
 	delete(m.closingSessions, session.id)
 	m.mu.Unlock()
 }

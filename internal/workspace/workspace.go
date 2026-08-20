@@ -30,7 +30,9 @@ type (
 		documents map[string]Document
 		order     []string
 		engine    *ferret.Engine
-		closing   atomic.Bool
+		// closing is the lock-free admission barrier set before child cleanup;
+		// state records resource teardown once the workspace lock is available.
+		closing atomic.Bool
 	}
 
 	// SourceSnapshot identifies the immutable workspace document compiled into a Plan.

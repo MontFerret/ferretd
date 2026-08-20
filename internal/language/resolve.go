@@ -8,41 +8,31 @@ import (
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
-// Resolution combines the compiler facts available at one source position.
-type Resolution struct {
+type resolution struct {
 	Symbol      *compiler.Symbol
-	Reference   *compiler.Reference
 	Call        *compiler.Call
 	Type        *compiler.TypeFact
 	Range       source.Range
 	Declaration *source.Range
 	Offset      int
-	Snapshot    SnapshotID
-}
-
-// ResolveAt resolves compiler identity, reference, call, and type facts at position.
-func (s *Service) ResolveAt(ctx context.Context, uri source.URI, position source.Position) (Resolution, error) {
-	_, resolved, err := s.resolveAt(ctx, uri, position)
-
-	return resolved, err
 }
 
 func (s *Service) resolveAt(
 	ctx context.Context,
 	uri source.URI,
 	position source.Position,
-) (analyzedDocument, Resolution, error) {
+) (analyzedDocument, resolution, error) {
 	document, err := s.analyzedDocument(ctx, uri)
 	if err != nil {
-		return analyzedDocument{}, Resolution{}, err
+		return analyzedDocument{}, resolution{}, err
 	}
 
 	return document, resolveAnalyzed(document, position), nil
 }
 
-func resolveAnalyzed(document analyzedDocument, position source.Position) Resolution {
+func resolveAnalyzed(document analyzedDocument, position source.Position) resolution {
 	offset := document.mapper.PositionToOffset(position)
-	result := Resolution{Offset: offset, Snapshot: document.snapshot.id}
+	result := resolution{Offset: offset}
 
 	if symbol, ok := document.analysis.SymbolAt(offset); ok {
 		result.Symbol = &symbol
@@ -54,7 +44,6 @@ func resolveAnalyzed(document analyzedDocument, position source.Position) Resolu
 	}
 
 	if reference, ok := document.analysis.ReferenceAt(offset); ok {
-		result.Reference = &reference
 		result.Range = document.mapper.SpanToRange(source.SpanFromFerret(reference.Span))
 	}
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +38,29 @@ func mustNewServer(t testing.TB, input io.Reader, output io.Writer) *Server {
 	}
 
 	return server
+}
+
+func TestNewRequiresStreams(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  io.Reader
+		output io.Writer
+	}{
+		{name: "nil input", output: io.Discard},
+		{name: "nil output", input: strings.NewReader("")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, err := New(test.input, test.output)
+			if err == nil {
+				t.Fatal("New error = nil, want non-nil")
+			}
+			if server != nil {
+				t.Fatalf("New server = %v, want nil", server)
+			}
+		})
+	}
 }
 
 func newTestClient(t *testing.T) *testClient {

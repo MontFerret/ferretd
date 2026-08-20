@@ -48,9 +48,17 @@ type Server struct {
 	cleanupErr            error
 }
 
-// New creates a single-session DAP server over input and output.
-// It returns an error when its owned service graph cannot be constructed.
+// New creates a single-session DAP server over non-nil input and output.
+// It returns an error when either stream is nil or its owned service graph
+// cannot be constructed.
 func New(input io.Reader, output io.Writer) (*Server, error) {
+	if input == nil {
+		return nil, errors.New("dap: nil input")
+	}
+	if output == nil {
+		return nil, errors.New("dap: nil output")
+	}
+
 	workspaces := workspace.New()
 	executions, err := exec.New(workspaces)
 	if err != nil {

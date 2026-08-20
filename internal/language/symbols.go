@@ -98,7 +98,7 @@ func (s *Service) Definition(
 	uri source.URI,
 	position source.Position,
 ) (*Location, error) {
-	resolved, err := s.ResolveAt(ctx, uri, position)
+	_, resolved, err := s.resolveAt(ctx, uri, position)
 	if err != nil {
 		return nil, err
 	}
