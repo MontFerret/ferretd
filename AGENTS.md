@@ -191,32 +191,96 @@ they make a deliberate choice.
 * Keep option validation, trimming, and defaults with the option-owning type or
   constructor rather than repeating normalization across layers.
 
-### Type and file structure
+### Type declarations and file structure
 
 These rules are mandatory unless the task explicitly requires otherwise.
 
-* Do not define multiple method-bearing structs in one `.go` file.
-* Prefer a standalone `type Name struct { ... }` for a method-bearing struct and
-  give it a file named for the primary type or responsibility when practical.
-* Grouped `type ( ... )` declarations are for interfaces, passive data structs,
-  and small related value types. A group may contain one method-bearing struct
-  only when it is the file's sole behavioral type and the others are passive
-  helpers for the same concern.
-* If a helper gains methods and would become another behavioral type, extract it
-  to its own file.
-* Keep methods and constructors with their struct unless a strong concern-based
-  split is clearer. Do not add a behavioral type to an existing file merely
-  because it compiles.
+* Prefer grouped `type ( ... )` declarations for package-level types.
+* Types declared in the same file should normally be placed in a single grouped
+  `type` declaration rather than written as independent `type` declarations.
+* This applies equally to structs, interfaces, aliases, named primitive types,
+  and method-bearing types.
+* Do not split types into independent declarations merely because one or more of
+  them have methods.
+* Keep related types together when they belong to the same narrow responsibility
+  and their proximity makes ownership, lifecycle, or state transitions easier
+  to understand.
+* A file may contain multiple related behavioral types when they form one
+  cohesive concern.
+* Split types into separate files based on responsibility and ownership, not
+  simply because multiple types have methods.
+* When a file contains only one package-level type, a standalone declaration is
+  acceptable; do not create an artificial group containing a single type.
+* When adding a package-level type to a file that already contains type
+  declarations, incorporate it into the existing type group when it belongs to
+  the same concern.
+* Keep small state, lifecycle, protocol, or coordination types together when
+  they collectively describe one implementation concern.
+* Avoid scattering a cohesive family of small types across multiple files.
 * Do not use `helpers.go`, `utils.go`, or similar files as dumping grounds.
   Organize growing concerns by predictable responsibilities.
+
+Preferred:
+
+```go
+type (
+	sessionRegistry struct {
+		mu sync.RWMutex
+
+		entries map[SessionID]*sessionEntry
+		groups  map[workspace.ID]*workspaceGroup
+		closed  bool
+	}
+
+	sessionEntry struct {
+		session *Session
+		state   registryState
+	}
+
+	sessionCreation struct {
+		workspace workspace.ID
+		group     *workspaceGroup
+	}
+
+	workspaceClose struct {
+		id    workspace.ID
+		group *workspaceGroup
+		owner bool
+	}
+)
+```
+
+Avoid independent declarations when the types form the same cohesive concern:
+
+```go
+type sessionRegistry struct {
+	// ...
+}
+
+type sessionEntry struct {
+	// ...
+}
+
+type sessionCreation struct {
+	// ...
+}
+
+type workspaceClose struct {
+	// ...
+}
+```
 
 ### Functions, methods, packages, and abstractions
 
 * Prefer a method for behavior intrinsic to a semantic type, its invariants, or
   resources it owns. Prefer a package function for construction, package-wide
   conversion, or behavior with no natural receiver.
-* A file centered on a behavioral type contains that type, its methods, and its
-  constructors. Do not mix unrelated package helpers into it.
+* Organize files around cohesive responsibilities rather than individual types.
+  A file may contain multiple related types and their methods when they
+  participate in the same narrow concern.
+* Keep methods close to the types they belong to. Split a file when it contains
+  multiple distinct responsibilities, not merely because it contains multiple
+  behavioral or method-bearing types.
 * Keep protocol conversions with their adapter concern and Ferret-to-neutral
   conversions in the language, diagnostic, or source layer.
 * Keep package boundaries domain-oriented. Do not create packages merely to
@@ -230,7 +294,10 @@ These rules are mandatory unless the task explicitly requires otherwise.
   layers for aesthetic symmetry, easier mocking alone, a few repeated lines, or
   hypothetical future requirements.
 * Avoid both oversized responsibilities and fragmentation across excessive
-  helpers, files, interfaces, or packages. Ownership should be predictable.
+  helpers, files, interfaces, or packages. Ownership should remain predictable
+  and the primary execution path easy to follow.
+* Do not split cohesive behavior across files merely to enforce one type or one
+  method-bearing type per file.
 
 ### Comments
 
