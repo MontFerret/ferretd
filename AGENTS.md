@@ -326,15 +326,20 @@ and narrow non-hot-path refactors normally do not require benchmarks.
    collateral cleanup.
 6. Run the narrowest validation that exercises the change, then broaden by risk
    with integration, race, lint, build, generation, or repository-wide checks.
-7. Perform the mandatory final self-review below and inspect the complete diff.
-8. Fix issues introduced by the task and appropriate small adjacent findings,
+7. Evaluate documentation impact and update affected repository and public
+   documentation.
+8. Perform the mandatory final self-review below and inspect the complete diff.
+9. Fix issues introduced by the task and appropriate small adjacent findings,
    then repeat every invalidated validation and benchmark.
-9. Report the implementation, preserved invariants, tests, measurements, review,
-   limitations, and unresolved follow-up accurately.
+10. Report the implementation, preserved invariants, documentation impact,
+    tests, measurements, review, limitations, and unresolved follow-up
+    accurately.
 
 Do not perform opportunistic refactors, dependency upgrades, formatting churn,
-API redesign, package reshuffling, generated-file changes, documentation
-rewrites, or implementation of future features unrelated to the task.
+API redesign, package reshuffling, generated-file changes, or implementation of
+future features unrelated to the task. Do not perform unrelated documentation
+rewrites; documentation updates required to keep affected contracts, behavior,
+examples, and guidance accurate are part of the task.
 
 ## Validation expectations
 
@@ -368,61 +373,4 @@ succeeded unless they actually completed.
 Every coding task ends with a design and style review after implementation and
 initial validation. Review changed and directly adjacent code as though reviewing
 another engineer's pull request; for non-trivial work, inspect the complete diff
-as one coherent change. Compilation, tests, and lint do not replace this review.
-
-Review the final change for:
-
-* **Correctness:** requested behavior, non-goals, preserved behavior, missing and
-  boundary cases, partial state, error identity, cancellation, cleanup,
-  idempotency, stale state, ordering, concurrency, protocol conversion, Unicode,
-  ranges, output purity, and assertions that catch plausible regressions.
-* **Clarity and cleanliness:** unnecessary complexity, duplication, nesting,
-  misleading names, hidden transitions or ownership, mutation, indirection,
-  oversized functions, temporary code, debug output, dead branches, and obsolete
-  comments.
-* **Go and API design:** semantic types, method ownership, constructor and nil
-  behavior, dependencies, resource lifetimes, enum zero values, options, context,
-  errors, synchronization, file/type rules, comments, and control-flow spacing.
-* **Abstractions:** each new interface, wrapper, helper, manager, factory, generic
-  type, or layer must represent a real current concept, clarify ownership, and
-  earn its complexity.
-* **Architecture:** owning package, dependency direction, adapter boundaries,
-  Ferret ownership, internal/public API exposure, cohesive responsibilities, and
-  implemented-versus-planned claims.
-* **Tests:** meaningful positive and failure coverage, boundary and lifecycle
-  cases, deterministic synchronization, strong assertions, resource cleanup,
-  integration boundaries, and absence of brittle or redundant coverage.
-* **Performance:** significant allocations, copying, materialization, repeated
-  work, synchronization, blocking, contention, retained memory or resources, and
-  comparable final benchmark results when required.
-* **Documentation:** comments and guides exposed by the change, current contracts,
-  user-visible behavior, links, and removal of stale or speculative statements.
-
-Fix every meaningful problem introduced by the task. Fix a pre-existing issue
-only when the correction is small, local, low-risk, clearly understood, directly
-within the affected area, and relevant to correctness, ownership, lifecycle,
-architecture, or maintainability. Report broader cleanup separately; do not use
-self-review to justify unrelated changes.
-
-Immediately before finishing, verify that every changed line belongs to the
-task; unrelated user changes remain intact; no temporary or abandoned work
-remains; no accidental behavior, API, protocol, dependency, generated-file, or
-documentation change slipped in; tests and comments express current contracts;
-ownership and lifecycles remain coherent; formatting churn is absent; and the
-result is the smallest complete change. If review causes an edit, repeat affected
-validation.
-
-## Editing, documentation, and completion reports
-
-Preserve unrelated dirty or untracked files. Do not update dependencies or edit
-`gen/` manually. Keep documentation precise about current versus planned support.
-Update `README.md` for user-facing commands or status, `docs/lsp.md` for LSP
-behavior, `docs/dap.md` for DAP behavior, and the relevant development guide for
-subsystem architecture. Documentation synchronization does not authorize
-unrelated cleanup.
-
-Completion reports for non-trivial changes identify the owning subsystem and
-files changed; behavior changed and invariants preserved; tests and validation
-actually run; race and benchmark evidence when applicable; final self-review and
-corrections; intentionally out-of-scope findings; and remaining limitations.
-Accurate evidence and a focused, comprehensible final diff are part of completion.
+as one coherent change.
