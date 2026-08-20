@@ -152,5 +152,6 @@ LSP-over-gRPC are not implemented. DAP remains single-session stdio only.
 Execution sessions do not add queues, durable replay, persistence, background
 automatic recompilation, or REPL state.
 
-See [docs/architecture.md](docs/architecture.md) for the intended architecture
-and [docs/lsp.md](docs/lsp.md) for experimental editor setup.
+See [the development architecture](docs/development/architecture.md) for the
+implemented subsystem boundaries and [docs/lsp.md](docs/lsp.md) for experimental
+editor setup.
