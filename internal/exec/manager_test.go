@@ -395,35 +395,45 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 
 func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 	manager, snapshot, _ := newHookedManager(t, "RETURN 1")
-	parent, err := manager.sessions.beginExecutionCreate(snapshot.ID)
-	if err != nil {
-		t.Fatalf("begin Execution creation: %v", err)
-	}
-
 	closed := make(chan error, 1)
-	go func() {
-		closed <- manager.CloseSession(context.Background(), snapshot.ID)
+	var admitted *Execution
+	func() {
+		creation, err := manager.sessions.beginExecutionCreate(snapshot.ID)
+		if err != nil {
+			t.Fatalf("begin Execution creation: %v", err)
+		}
+		defer creation.finish()
+
+		parent := creation.session()
+		go func() {
+			closed <- manager.CloseSession(context.Background(), snapshot.ID)
+		}()
+		waitForSessionClosing(t, parent)
+
+		select {
+		case err := <-closed:
+			t.Fatalf("CloseSession completed with admitted Execution creator: %v", err)
+		default:
+		}
+
+		if _, err := manager.CreateExecution(
+			context.Background(),
+			snapshot.ID,
+			nil,
+			ExecutionOptions{},
+		); !errors.Is(err, ErrSessionNotFound) {
+			t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
+		}
+
+		admitted = newExecution(
+			ExecutionID("admitted-execution"),
+			parent,
+			nil,
+			nil,
+			ExecutionOptions{},
+		)
+		manager.executions.add(admitted)
 	}()
-	waitForSessionClosing(t, parent)
-
-	if _, err := manager.CreateExecution(
-		context.Background(),
-		snapshot.ID,
-		nil,
-		ExecutionOptions{},
-	); !errors.Is(err, ErrSessionNotFound) {
-		t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
-	}
-
-	admitted := newExecution(
-		ExecutionID("admitted-execution"),
-		parent,
-		nil,
-		nil,
-		ExecutionOptions{},
-	)
-	manager.executions.add(admitted)
-	parent.finishExecutionCreate()
 
 	if err := <-closed; err != nil {
 		t.Fatalf("CloseSession: %v", err)

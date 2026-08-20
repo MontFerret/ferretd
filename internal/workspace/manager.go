@@ -40,14 +40,14 @@ type (
 		err        error
 	}
 
+	workspaceEntryState uint8
+
 	workspaceEntry struct {
 		workspace *Workspace
 		state     workspaceEntryState
 		close     lifecycle.CloseOperation
 	}
 )
-
-type workspaceEntryState uint8
 
 const (
 	workspaceEntryActive workspaceEntryState = iota + 1

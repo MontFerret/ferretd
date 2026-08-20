@@ -8,6 +8,8 @@ import (
 )
 
 type (
+	registryState uint8
+
 	// sessionRegistry owns Session reachability, lifecycle state, workspace
 	// membership, and service-wide creation admission. Its lock may nest only into
 	// a workspaceGroup or Session lifecycle gate.
@@ -29,11 +31,20 @@ type (
 		group     *workspaceGroup
 	}
 
+	executionCreation struct {
+		parent *Session
+	}
+
 	workspaceClose struct {
 		id    workspace.ID
 		group *workspaceGroup
 		owner bool
 	}
+)
+
+const (
+	registryStateActive registryState = iota + 1
+	registryStateClosing
 )
 
 func newSessionRegistry() *sessionRegistry {
@@ -112,24 +123,32 @@ func (r *sessionRegistry) active(id SessionID) *Session {
 	return entry.session
 }
 
-func (r *sessionRegistry) beginExecutionCreate(id SessionID) (*Session, error) {
+func (r *sessionRegistry) beginExecutionCreate(id SessionID) (executionCreation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return nil, ErrClosed
+		return executionCreation{}, ErrClosed
 	}
 
 	entry := r.entries[id]
 	if entry == nil || entry.state != registryStateActive {
-		return nil, ErrSessionNotFound
+		return executionCreation{}, ErrSessionNotFound
 	}
 
 	if !entry.session.beginExecutionCreate() {
 		panic("execution: active Session rejected child creation")
 	}
 
-	return entry.session, nil
+	return executionCreation{parent: entry.session}, nil
+}
+
+func (c executionCreation) session() *Session {
+	return c.parent
+}
+
+func (c executionCreation) finish() {
+	c.parent.finishExecutionCreate()
 }
 
 func (r *sessionRegistry) sessionForDebug(id SessionID) (*Session, error) {

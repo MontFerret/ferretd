@@ -13,31 +13,33 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-type closeOwnershipFixture struct {
-	manager               *Manager
-	session               *Session
-	execution             *Execution
-	sessionID             SessionID
-	executionID           ExecutionID
-	runStarted            chan struct{}
-	runtimeCloseStarted   chan struct{}
-	releaseRuntimeClose   chan struct{}
-	planCloseStarted      chan struct{}
-	releaseClose          func()
-	runtimeCloseCalls     atomic.Int64
-	planCloseCalls        atomic.Int64
-	planClosedTooEarly    atomic.Bool
-	runStartOnce          sync.Once
-	runtimeCloseStartOnce sync.Once
-	planCloseStartOnce    sync.Once
-}
+type (
+	closeOwnershipFixture struct {
+		manager               *Manager
+		session               *Session
+		execution             *Execution
+		sessionID             SessionID
+		executionID           ExecutionID
+		runStarted            chan struct{}
+		runtimeCloseStarted   chan struct{}
+		releaseRuntimeClose   chan struct{}
+		planCloseStarted      chan struct{}
+		releaseClose          func()
+		runtimeCloseCalls     atomic.Int64
+		planCloseCalls        atomic.Int64
+		planClosedTooEarly    atomic.Bool
+		runStartOnce          sync.Once
+		runtimeCloseStartOnce sync.Once
+		planCloseStartOnce    sync.Once
+	}
 
-type observedDoneContext struct {
-	context.Context
+	observedDoneContext struct {
+		context.Context
 
-	once     sync.Once
-	observed chan struct{}
-}
+		once     sync.Once
+		observed chan struct{}
+	}
+)
 
 func TestCloseExecutionRetainsSessionOwnershipUntilRuntimeCleanup(t *testing.T) {
 	fixture := newCloseOwnershipFixture(t)

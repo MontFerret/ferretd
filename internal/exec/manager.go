@@ -187,14 +187,15 @@ func (m *Manager) CreateExecution(
 
 	options = options.normalized()
 
-	parent, err := m.sessions.beginExecutionCreate(sessionID)
+	creation, err := m.sessions.beginExecutionCreate(sessionID)
 	if err != nil {
 		return ExecutionSnapshot{}, err
 	}
+	defer creation.finish()
 
+	parent := creation.session()
 	execution := newExecution(id, parent, runtimeParams, retainedParameters, options)
 	m.executions.add(execution)
-	parent.finishExecutionCreate()
 
 	return execution.Snapshot(), nil
 }
