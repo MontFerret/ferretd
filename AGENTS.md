@@ -8,7 +8,7 @@ This file is the canonical operating guide for coding agents working in this rep
 * Go version in `go.mod`: Go 1.26.1
 * `ferretd` is the experimental long-running developer service for Ferret.
 * The current executable provides `serve`, `lsp`, `dap`, and version/help behavior.
-* The current language server tracks open `.fql` documents and publishes Ferret parser and compiler diagnostics over LSP stdio.
+* The current language server combines static workspace baselines with versioned editor overlays and provides Ferret-backed diagnostics, document symbols, hover, document-local navigation and references, completion, signature help, semantic tokens, and formatting over LSP stdio.
 * `serve` exposes daemon information, API negotiation, graceful shutdown, workspace lifecycle, and execution sessions over a local gRPC transport.
 * Opening a workspace synchronously discovers `.fql` files, retains daemon-owned source, syntax state, and document diagnostics, and constructs one rooted read-write Ferret engine until explicit close.
 * The execution manager owns compiled Sessions and one-shot Executions, the debug manager owns retained DebugSessions, and `dap` is a single-session stdio adapter over both protocol-neutral models.
@@ -25,10 +25,11 @@ The implemented language-tooling flow is:
 editor or language client
     -> ferretd lsp over stdin/stdout
     -> internal/lsp protocol adapter
-    -> internal/language protocol-neutral document service
-    -> Ferret compiler and diagnostics
-    -> internal/source rune-to-UTF-16 mapping
-    -> LSP diagnostics notification
+    -> internal/language protocol-neutral language service
+        -> versioned editor overlay or static workspace snapshot
+        -> coalesced per-snapshot Ferret analysis or canonical formatting
+        -> internal/source UTF-8-byte-to-UTF-16 mapping
+    -> LSP responses and diagnostics notifications
 ```
 
 The current daemon flow is:
@@ -77,11 +78,12 @@ Protocol adapters should translate and delegate. They must not become alternate 
 * The language service is protocol-neutral. LSP-specific request and response types stay in `internal/lsp`.
 * LSP stdout is protocol-only. Do not print logs, progress messages, diagnostics, or ordinary CLI text to stdout while serving LSP.
 * The current language server uses full-document synchronization. Incremental text edits are rejected.
-* Open document contents are supplied by the client, kept in memory, and removed on close. The current language service does not read document contents from disk.
+* Open document contents are supplied by the client, kept as versioned in-memory overlays, and removed on close. An overlay takes precedence over the static workspace snapshot for the same URI; closing it falls back to that snapshot when one exists.
+* Initialization roots synchronously populate static workspace baselines for unopened documents. The language service does not watch disk, reload roots in the background, or mutate workspace discovery in response to editor lifecycle events.
 * A document change must advance the stored version. Stale or same-version changes are rejected.
 * Closing an unknown document is safe and idempotent.
 * Current document URIs must be local `file` URIs. Unsupported schemes, non-local hosts, queries, fragments, and empty paths remain errors.
-* Ferret compiler spans use rune offsets. Protocol-neutral positions and LSP positions use zero-based lines and UTF-16 code units with half-open ranges.
+* Ferret compiler spans and protocol-neutral source spans use zero-based, half-open UTF-8 byte offsets. Protocol-neutral positions and LSP positions use zero-based lines and UTF-16 code units with half-open ranges.
 * Source mapping must clamp invalid offsets safely and preserve CR, LF, CRLF, Unicode, and astral-character behavior.
 * Shared service state must remain safe for concurrent callers. Do not bypass or leak mutable state protected by service synchronization.
 * Context cancellation must remain effective at process and service boundaries. Long-running operations must not outlive their owning context without an explicit lifecycle reason.
@@ -126,9 +128,9 @@ Begin with the package that owns the requested behavior. Do not move logic into 
 ### Protocol-neutral language service
 
 * `internal/language`
-    * Owns open-document snapshots, document version rules, protocol-neutral diagnostics, and calls into the Ferret compiler.
-    * The service stores document values rather than exposing mutable internal references.
-    * Keep Ferret diagnostic extraction and conversion here when it is independent of a wire protocol.
+    * Owns versioned editor overlays, static workspace fallback, snapshot resolution, per-snapshot analysis scheduling and caching, and protocol-neutral language features built on Ferret.
+    * The service stores document values rather than exposing mutable internal references, and an overlay always takes precedence over a matching workspace snapshot until close.
+    * Keep Ferret analysis, formatting, diagnostic extraction, and protocol-neutral feature projection here when they are independent of a wire protocol.
     * Preserve stable error identity through `errors.Is` when adding context to document lifecycle errors.
     * Do not introduce LSP types into this package.
     * Do not reimplement parser, compiler, or diagnostic semantics already owned by Ferret.
@@ -137,7 +139,7 @@ Begin with the package that owns the requested behavior. Do not move logic into 
 
 * `internal/lsp`
     * Owns Language Server Protocol capability advertisement, lifecycle handlers, request/notification translation, and LSP diagnostic projection.
-    * Keep the adapter thin and delegate document behavior to `internal/language`.
+    * Keep the adapter thin and delegate document symbols, hover, definition, references, completion, signature help, semantic tokens, formatting, diagnostics, and document state to `internal/language`.
     * Preserve full-document synchronization until incremental changes are intentionally implemented through the protocol-neutral service.
     * Serialize document lifecycle handling where required to keep notification order and shared document state coherent.
     * Publish diagnostics with the current document version when available and clear diagnostics when a document closes.
@@ -149,7 +151,7 @@ Begin with the package that owns the requested behavior. Do not move logic into 
 * `internal/source`
     * Owns protocol-neutral `URI`, `Position`, `Range`, and `Span` concepts used by services and adapters.
     * Owns conversion between local filesystem paths and escaped absolute file URIs.
-    * Owns conversion from Ferret's rune-indexed spans to zero-based UTF-16 positions.
+    * Owns conversion from Ferret's UTF-8 byte-indexed spans to zero-based UTF-16 positions.
     * URI handling is platform-sensitive. Preserve Unix and Windows path behavior, escaping, localhost handling, and rejection of unsupported URI forms.
     * Position mapping is correctness-sensitive. Cover newlines, CRLF, Unicode, astral characters, empty text, and invalid offsets.
     * Do not place LSP-specific types in this package; adapters should convert protocol-neutral values at the boundary.
@@ -228,9 +230,10 @@ Currently implemented:
 * single-session DAP over stdio with local launch, source breakpoints, client coordinate conversion, and paused-state handle invalidation;
 * LSP over stdio;
 * open, full-document change, and close notifications;
-* in-memory open-document snapshots and version checks;
-* Ferret parser/compiler diagnostics for open documents;
-* source-span to UTF-16 range conversion;
+* initialization-root workspace baselines for unopened documents and versioned in-memory editor overlays with overlay precedence;
+* coalesced and cached Ferret analysis per resolved source snapshot;
+* Ferret parser/compiler diagnostics, document symbols, hover, document-local definitions and references, completion, signature help, full semantic tokens, and full-document formatting;
+* UTF-8 byte-span to UTF-16 range conversion;
 * pinned protobuf generation for daemon/workspace/execution v1;
 * placeholder debug protobuf source contract.
 
@@ -238,11 +241,10 @@ Not currently implemented:
 
 * debug protobuf generation, gRPC service behavior, or public Go client APIs;
 * durable workspace persistence or eviction;
-* module resolution;
-* LSP document loading from daemon workspaces or disk;
-* filesystem watching, editor overlays, background reload, create/delete/rename discovery, and incremental workspace parsing;
+* module resolution and cross-file indexing;
+* filesystem watching, background reload, create/delete/rename discovery, and incremental workspace parsing;
 * incremental document synchronization;
-* completion, hover, formatting, navigation, semantic tokens, or code actions.
+* rename, code actions, workspace symbols, cross-file definitions or references, range formatting, or dynamic workspace-folder changes.
 
 Do not claim planned capabilities are supported. When implementing one, update the relevant current-status documentation and remove only the corresponding obsolete limitation.
 
@@ -307,6 +309,8 @@ Do not claim planned capabilities are supported. When implementing one, update t
 
 The repository contains no intended public Go package today; all service packages are under `internal`. That does not make process and wire behavior freely changeable.
 
+Treat observable behavior as intentional until the task establishes otherwise. Do not change public, language-visible, wire-visible, CLI-visible, persistence-visible, or integration-visible behavior as collateral cleanup.
+
 Treat these as compatibility-sensitive:
 
 * CLI command names, arguments, exit behavior, version text, stdout/stderr separation, and cancellation behavior;
@@ -320,13 +324,20 @@ For compatibility-sensitive changes:
 * make the behavior change explicit in the task summary;
 * add focused tests at the observable boundary;
 * preserve old behavior unless incompatibility is required;
+* document intentional incompatibility;
 * update user-facing documentation when support or configuration changes;
 * avoid exporting Go APIs merely to share implementation across internal packages.
+
+Do not infer desired behavior from historical discussions, abandoned designs, stale comments, or future-looking architecture when current source and tests establish a different contract.
 
 ## Protocol and adapter rules
 
 * Keep adapters thin: validate and translate protocol values, delegate to protocol-neutral services, and translate results back.
 * Do not let LSP, DAP, or gRPC types leak into shared service packages.
+* Keep framing, protocol handles, client capability state, wire identifiers, and other protocol-specific state in the owning adapter.
+* Keep reusable language, workspace, execution, and debugging behavior below adapters even when one protocol is currently its only caller. Do not move domain behavior upward for call-site convenience.
+* Avoid duplicated semantics. When one subsystem owns a rule, adapters and consumers should call through that owner rather than reproduce it independently.
+* Do not expose implementation details across boundaries merely to avoid making the proper change in the owning layer.
 * Do not place transport lifecycle, serialization, or notification behavior in domain services.
 * Validate unsupported protocol forms explicitly. Do not silently reinterpret incremental changes as full-document changes.
 * Keep output channels pure. In particular, LSP stdout contains framed protocol messages only.
@@ -337,18 +348,24 @@ For compatibility-sensitive changes:
 
 ## Context, lifecycle, and concurrency rules
 
-* Accept `context.Context` at operation boundaries that can block, be canceled, perform I/O, or participate in a caller-owned lifecycle.
+* Accept `context.Context` at operation boundaries that can block, be canceled, perform I/O, perform potentially long-running work, or participate in a caller-owned lifecycle.
 * Check or propagate cancellation early enough to avoid committing state after cancellation.
 * Do not store contexts in long-lived structs. Store explicit lifecycle state and cancellation functions when ownership requires them.
 * Do not replace an available caller context with `context.Background()` without a concrete protocol or lifecycle reason.
+* Long-running work must not outlive its owning context without an explicit lifecycle reason.
 * Every goroutine must have a clear owner, termination condition, and cleanup path.
 * Avoid goroutine leaks on normal completion, errors, cancellation, partial startup, and repeated shutdown.
-* Keep lock scope narrow and make the protected state obvious.
-* Do not call unknown or external code while holding a lock unless the ordering requirement is explicit and tested.
+* Identify which mutex protects each field or cohesive state group. Keep lock scope narrow and make protected state obvious from the type layout or a focused invariant comment.
+* Prefer one cohesive lock-owned state representation when fields participate in the same lifecycle transition. Do not mix mutexes, atomics, channels, and once-guards for the same state without a concrete ordering or performance reason.
+* Give lifecycle transitions one authoritative representation. Derived flags and events must not become competing sources of truth.
+* Scrutinize repeated hand-written lifecycle or synchronization protocols because fixes otherwise need to be reproduced. Share a mechanism only when its semantics and ownership genuinely match across domains.
+* Never trade obvious domain ownership for a clever concurrency abstraction. Execution Sessions and DebugSessions may share a coordination mechanism without becoming one generic session model.
+* Do not call unknown, external, blocking, or potentially re-entrant code while holding a lock unless the ordering requirement is explicit and tested.
 * Return copies or immutable views when callers must not mutate synchronized internal state.
-* Preserve ordering between document state changes and diagnostic publication.
-* Test cancellation, idempotent cleanup, stale state, and concurrent access where the behavior is meaningful.
+* Preserve required ordering between state changes and externally visible events, including document changes and diagnostic publication.
+* Test cancellation, idempotent cleanup, stale state, and concurrent access with deterministic lifecycle coordination where the behavior is meaningful.
 * Use the race detector for changes that add or materially alter shared mutable state or goroutine coordination.
+* Concurrency comments should explain ownership, invariants, and non-obvious ordering, not narrate individual statements.
 
 ## Error-handling rules
 
@@ -356,10 +373,40 @@ For compatibility-sensitive changes:
 * Add context at subsystem and process boundaries without repeating the entire call chain.
 * Error strings should be lowercase sentence fragments unless they contain a proper name or protocol-defined text.
 * Keep sentinel errors for stable conditions callers need to classify.
+* Use typed errors when they express a meaningful structured contract.
 * Do not compare error strings in production code when `errors.Is`, `errors.As`, or a typed error can express the contract.
-* Distinguish cancellation, invalid client input, missing state, stale state, dependency failures, transport failures, and internal invariants where callers need different behavior.
+* Distinguish cancellation, invalid input, missing state, stale state, dependency failures, transport failures, runtime or domain failures, and internal invariant violations where callers need different behavior.
+* Do not collapse expected user or domain failures and internal invariant violations into the same conceptual error class.
 * Do not log and return the same error at every layer. The owning process or transport boundary should decide how to report it.
 * Never write errors to protocol stdout.
+
+## Go design and API ownership
+
+Use [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments), and standard-library conventions as the general baseline. The repository-specific ownership, lifecycle, protocol, and formatting rules in this guide take precedence where they make a deliberate choice.
+
+### Semantic types
+
+* Introduce a named type when it can own meaningful semantics, invariants, behavior, validation, conversion, lifecycle, or API safety. Otherwise prefer the underlying type.
+* APIs for an established semantic type should normally accept or return that type instead of bypassing it with the underlying primitive. For example, URI parsing, validation, and conversion should normally flow through the semantic URI type when one exists.
+* Do not add a wrapper merely for naming, and do not leave a meaningful domain type disconnected from all intrinsic behavior while free functions continue to operate on primitive representations.
+
+### Dependencies and nil semantics
+
+* Required peer-service dependencies must be explicit. Domain-service constructors must not interpret a nil required dependency as a request to construct a hidden default.
+* Construct required services once at a clear composition root and pass them into dependents. Tests should construct the same required dependency graph explicitly.
+* Optional callbacks, options, or dependencies may have defaults only when their optional nature and default behavior are intentional and documented.
+* Avoid service locators, hidden globals, implicit initialization, and invisible dependency construction when explicit construction is practical.
+* Require non-nil `context.Context` values at operation boundaries. Do not silently replace a nil caller context with `context.Background()`.
+* Do not normally make nil receivers valid domain objects or map them to lifecycle states such as closed. Use nil semantics only when nil is genuinely part of the documented contract.
+
+### Resources, enums, and options
+
+* Make resource ownership and cleanup visible in APIs. A type that owns a closable resource should normally provide the lifecycle operation rather than expose a DTO-like field that callers must discover and close manually.
+* State whether resources are owned, borrowed, leased, or transferred when the distinction affects cleanup. Release partially acquired resources on every failure path.
+* Keep cleanup correct on success, errors, cancellation, early returns, partial initialization, and repeated close or shutdown when idempotency is part of the contract.
+* Do not eagerly materialize, retain, copy, or promote expensive resources without a concrete need. Make ownership transitions explicit when values escape their current execution or ownership scope.
+* Unless zero has a natural and safe domain meaning, reserve it as the unspecified or invalid value for enum-like types and begin meaningful values after it. Keep sibling packages consistent and document intentional meaningful-zero exceptions.
+* Keep option validation, trimming, and defaulting close to the option-owning type or constructor. Do not repeat normalization across managers, services, and adapters.
 
 ## Go type and file structure rules
 
@@ -378,6 +425,7 @@ These rules are mandatory unless the task explicitly requires otherwise.
 * If a helper gains methods and would create another method-bearing struct in the file, extract it into its own file.
 * Methods should live with their struct unless a strong concern-based split makes the result clearer.
 * Do not place a new method-bearing struct in an existing file merely because the code compiles.
+* A file centered on a behavioral type should remain centered on that type.
 
 Allowed:
 
@@ -409,22 +457,36 @@ type (
 
 ## Function and method ownership rules
 
+* Prefer a method when behavior belongs intrinsically to a semantic type, depends on its invariants, is a natural query or transformation of its value, or manages resources that value owns.
+* Prefer a package-level function when behavior constructs a value, combines unrelated values, performs a package-wide conversion, or has no natural receiver.
+* Do not turn every helper into a method for stylistic uniformity. Conversely, do not introduce a meaningful domain type and leave its intrinsic behavior in free functions that accept primitive representations.
 * A file centered on a method-bearing type should contain that type, its methods, and its constructors.
 * Constructors are the normally allowed package-level functions in a type-centered file.
-* If logic conceptually belongs to the primary type, implement it as a method.
-* If logic is genuinely package-level, place it in a separate helper-focused file.
 * Do not mix unrelated package-level helpers into a type-centered file.
 * Keep protocol conversion helpers near the adapter concern they serve.
 * Keep Ferret-to-protocol-neutral conversion in the language or source layer, not in process setup.
 * Prefer the narrowest ownership level that keeps behavior testable and avoids duplicate semantics.
-* Do not introduce interfaces until there are meaningful alternate implementations, a required test seam, or an external contract.
+
+## Package, file, and abstraction design
+
+* Do not use `helpers.go`, `utils.go`, or similarly generic files as long-term containers for unrelated functionality. A small helper file is acceptable while its contents remain one cohesive concern.
+* As a concern grows, organize files around responsibilities a reader can predict, such as lifecycle, conversion, snapshots, parameters, identifiers, or protocol state.
+* Keep package boundaries domain-oriented. Do not create a package solely to shorten files, remove a few repeated lines, or create an abstract layer.
+* Prefer cohesive private implementation types and files over package fragmentation. Keep symbols unexported until another package has a real need for them.
+* Prefer concrete types until multiple meaningful implementations, an actual substitution boundary, a focused consumer-side contract, or a concrete test seam that materially improves the design justifies an interface. Interfaces are usually most useful at the point of consumption.
+* Prefer deletion and simplification over new abstractions. Similar-looking code is not sufficient reason to share an implementation.
+* Extract shared behavior when the duplicated code represents the same concept with the same semantics, ownership, and lifecycle. Keep domain-specific types domain-specific.
+* Give duplicated synchronization and lifecycle state machines extra scrutiny, but preserve clear ownership when extracting a shared mechanism. Do not create a generic session manager merely because execution and debug coordination have structural similarities.
+* Do not introduce interfaces, wrappers, managers, factories, generic types, or layers for aesthetic symmetry, a few repeated lines, easier mocking alone, shorter files, or hypothetical future requirements.
+* Avoid speculative generalization for future adapters, services, protocols, or lifecycle models. An abstraction must make this repository easier to reason about and earn its complexity.
+* Avoid both oversized responsibilities and fragmentation across excessive helpers, files, interfaces, or packages. Behavioral ownership should be predictable from the organization.
 
 ## Comment rules
 
 * Do not add comments to every function or method by default.
 * Exported declarations should have useful doc comments, even in `internal` packages, when they define package-facing contracts.
-* Comment unexported code only when it carries non-obvious behavior, invariants, side effects, ownership, synchronization, lifecycle, protocol, or compatibility constraints.
-* Explain why the code exists, what must remain true, or how ownership works.
+* Comment unexported code only when it carries non-obvious behavior, invariants, side effects, ownership, synchronization, lifecycle, cleanup, recovery, protocol, or compatibility constraints.
+* Explain why the code exists, what must remain true, what the contract guarantees, how ownership works, or why ordering matters.
 * Do not restate names or signatures.
 * Keep future plans out of code comments unless the comment describes a deliberate current boundary.
 * Update or remove comments when implementation makes them obsolete.
@@ -433,7 +495,7 @@ type (
 Preferred:
 
 ```go
-// OffsetToPosition converts a Ferret rune offset to a zero-based UTF-16
+// OffsetToPosition converts a Ferret UTF-8 byte offset to a zero-based UTF-16
 // position suitable for protocol adapters.
 func (m *Mapper) OffsetToPosition(offset int) Position
 ```
@@ -545,17 +607,16 @@ Prefer a package-level unexported type when the type:
 
 Do not promote a tiny throwaway struct merely for consistency, and do not hide a meaningful state or protocol concept inside a long function merely to avoid another declaration.
 
+Choose between local and package scope based on readability, conceptual ownership, and expected evolution.
+
 ## Naming and API style
 
 * Follow standard Go initialism and package naming conventions.
 * Keep package names short, lowercase, and responsibility-oriented.
-* Avoid package names such as `util`, `common`, or `helpers` that obscure ownership.
 * Name protocol-neutral concepts independently from a specific transport.
 * Use `New` when a package has one primary construction path; use a qualified constructor when multiple meanings would otherwise be ambiguous.
 * Keep receiver names short and consistent within a type.
 * Avoid stutter between package and exported names.
-* Prefer concrete types until an interface is required by a real boundary.
-* Do not export symbols from internal packages without a package-to-package need.
 * Treat newly introduced protobuf and CLI names as long-lived contracts.
 
 ## Test style and placement
@@ -568,7 +629,10 @@ Do not promote a tiny throwaway struct merely for consistency, and do not hide a
 * Use `t.Cleanup` for restoring globals, closing resources, canceling contexts, or stopping goroutines.
 * Avoid sleeps as synchronization. Use channels, contexts, deadlines, or observable state.
 * Keep timeouts bounded and generous enough for CI while still detecting leaks or deadlocks.
-* Verify both success and failure paths, including error identity when it is part of the contract.
+* Cover relevant positive, negative, boundary, invalid-input, cancellation, cleanup, repeated-operation, idempotency, stale-state, error-identity, and concurrency cases.
+* Assertions must verify meaningful observable behavior strongly enough that plausible regressions fail.
+* Include integration coverage when behavior crosses meaningful package or external boundaries instead of relying exclusively on direct method tests.
+* Avoid redundant tests with little behavioral value and brittle tests unnecessarily coupled to implementation details.
 * Avoid network-dependent tests unless the task explicitly requires integration coverage and the repository provides a deterministic fixture.
 
 Place coverage according to ownership:
@@ -583,79 +647,127 @@ Place coverage according to ownership:
 
 For bug fixes, add a regression test that fails without the fix whenever practical. For concurrency changes, add deterministic lifecycle tests and run the race detector on affected packages.
 
+A passing test suite is evidence of correctness, not evidence that the design is good.
+
 ## Development practice expectations
 
 ### Core principles
 
 * Preserve correctness and protocol compatibility first.
+* Preserve existing observable behavior unless the task explicitly requires changing it.
 * Preserve ownership boundaries and lifecycle invariants.
 * Prefer the smallest local change that fully solves the task.
-* Adapt an existing repository pattern before introducing a new abstraction.
+* Prefer straightforward, idiomatic Go over clever implementation.
+* Reuse an existing repository pattern only after verifying that it follows this guide and fits the same semantics, ownership, and lifecycle. Existing technical debt is not precedent.
+* Avoid abstraction, indirection, and generalization without a concrete need.
 * Avoid speculative implementation of planned architecture.
 * Do not optimize by intuition alone; measure performance-sensitive work.
-* Keep behavior, state ownership, cancellation, and cleanup obvious.
+* Keep behavior, state ownership, dependencies, cancellation, cleanup, and resource lifetimes obvious.
+* Leave already-correct code alone.
 * Do not treat the first compiling implementation as complete.
 
 ### Required workflow for non-trivial changes
 
-1. Identify the owning package and observable contract.
-2. Identify the current invariant, lifecycle, protocol behavior, or compatibility surface being preserved or changed.
-3. Choose the smallest implementation that fits the current architecture.
-4. Determine whether the change is performance-significant or concurrency-sensitive.
-5. Add or update focused correctness tests.
-6. Add or update benchmarks when the change is performance-significant.
-7. Run the narrowest relevant validation first, then broaden as appropriate.
-8. Perform the mandatory final self-review described below.
-9. Correct issues found during self-review without widening scope.
-10. Re-run validation affected by review-driven corrections.
-11. Inspect the complete final diff as a whole.
-12. Report implementation, tests, benchmarks, review, and limitations accurately.
+1. Identify the subsystem, package, type, or layer that owns the behavior.
+2. Identify the observable contract, invariants, lifecycle, resource ownership, error semantics, and compatibility surface being preserved or changed.
+3. Read the current source and tests before relying on architecture prose, historical discussion, or assumptions.
+4. Choose the smallest coherent design that fits the current ownership boundaries.
+5. Determine whether the change is concurrency-, lifecycle-, compatibility-, or performance-sensitive.
+6. Establish and retain a focused pre-change benchmark baseline when performance is significant.
+7. Add or update correctness tests for the observable behavior.
+8. Implement the focused change without collateral cleanup.
+9. Run the narrowest validation that directly exercises the change.
+10. Broaden validation according to risk with integration, race, lint, build, generation, or repository-wide checks as appropriate.
+11. Perform the mandatory final self-review described below.
+12. Correct issues introduced by the task and appropriate directly adjacent findings under the scope rules below.
+13. Re-run every validation invalidated by review-driven changes.
+14. Re-run relevant benchmark comparisons when corrections affect benchmarked code.
+15. Inspect the complete final diff as one coherent change.
+16. Report implementation, preserved invariants, tests, measurements, review, and unresolved limitations accurately.
 
-Do not perform opportunistic refactors, dependency upgrades, formatting churn, generated-file changes, or documentation rewrites unrelated to the task.
+Do not perform opportunistic refactors, dependency upgrades, formatting churn, API redesign, package reshuffling, abstraction creation, generated-file changes, documentation rewrites, or implementation of future features unrelated to the task.
 
 ## Mandatory final self-review
 
-After implementation and initial validation for every non-trivial task, review the complete change before considering the task finished. The review must evaluate the implementation, not merely confirm that tests pass.
+Every coding task must end with a design and style self-review before it is considered finished. After implementation and initial validation, review all changed and directly adjacent code against this guide as though reviewing another engineer's pull request; for non-trivial work, also inspect the complete diff as a coherent change. The review must evaluate the implementation and design, not merely confirm that compilation, tests, or lint pass.
 
 Review the final change for:
 
 ### Correctness
 
-* Verify every requested behavior and explicit non-goal.
-* Look for missing cases, regressions, invalid assumptions, boundary conditions, and partial state changes.
-* Check cancellation, cleanup, idempotency, error identity, version ordering, and lifecycle transitions where applicable.
-* Check concurrency behavior, lock scope, goroutine termination, and callback ordering where applicable.
+* Verify every requested behavior, explicit non-goal, and existing behavior that must remain unchanged.
+* Look for missing cases, regressions, invalid assumptions, boundary conditions, failure paths, and partial state changes.
+* Check error identity and context, cancellation, resource cleanup on every path, and close or shutdown idempotency where required.
+* Check lifecycle transitions, stale state, version ordering, and externally visible event ordering where applicable.
+* Check concurrency behavior, lock scope, goroutine termination, re-entrancy, and callback ordering where applicable.
 * Verify protocol conversions, URI handling, source ranges, Unicode behavior, and output-channel purity when touched.
+* Verify public and externally observable behavior matches the intended contract.
 * Ensure tests would detect plausible regressions rather than merely repeat implementation structure.
 
-### Code clarity and Go practices
+### Code clarity and cleanliness
 
-* Look for unnecessary abstraction, duplication, nesting, misleading names, awkward control flow, and hidden state ownership.
-* Prefer straightforward idiomatic Go over clever implementations.
-* Check error wrapping, context propagation, synchronization, resource ownership, and cleanup.
+* Look for unnecessary complexity, duplicated behavior or semantics, excessive nesting, awkward control flow, misleading names, oversized functions, and difficult-to-follow execution paths.
+* Look for hidden state transitions, hidden ownership, unnecessary mutation, unnecessary indirection, and unrelated responsibilities.
 * Remove temporary code, debugging output, dead branches, obsolete helpers, and comments describing abandoned approaches.
+* Keep the primary execution path easy to follow and prefer straightforward code whose behavior can be understood locally.
+* Simplify only when the result is clearly equivalent and easier to reason about; do not perform optional stylistic rewrites.
+
+### Go design and API quality
+
+* Check API consistency, naming, semantic-type grounding, method-versus-function ownership, constructor behavior, dependency construction, nil semantics, resource lifetimes, enum zero values, and option normalization.
+* Check context propagation, error wrapping, synchronization, lock scope, goroutine ownership, lifecycle visibility, and cleanup behavior.
+* Look for semantic types bypassed by primitive APIs, free functions containing type-owned behavior, methods with unnatural receivers, required dependencies hidden behind nil defaults, ambiguous resource ownership, repeated normalization, and competing lifecycle representations.
 * Verify compliance with the type/file, method ownership, comment, and control-flow rules in this guide.
 
-### Architecture and organization
+### Abstraction quality
+
+* Review every new interface, wrapper, helper, manager, factory, generic type, and layer for a concrete current need.
+* Verify an abstraction represents a real concept, clarifies ownership, reduces meaningful duplication, and simplifies reasoning.
+* Prefer direct concrete code when it is clearer; remove abstractions that do not earn their complexity.
+* Do not generalize concepts whose semantics, ownership, or lifecycle differ merely because their implementations look similar.
+
+### Architecture and code organization
 
 * Verify behavior remains in the owning package and dependency direction remains clear.
 * Keep protocol types in adapters and protocol-neutral behavior in shared services.
 * Keep Ferret-owned semantics in Ferret.
 * Avoid exposing new APIs or wire contracts unless the task requires them.
-* Check that files, types, methods, helpers, and packages each have a coherent responsibility without excessive fragmentation.
+* Check that packages, files, types, methods, functions, helpers, and options each have coherent and predictable responsibilities.
+* Look for files or types doing too much, package-level helpers mixed into type-centered files, generic dumping grounds, meaningful concepts hidden locally, excessive extraction, forwarding-only layers, and package fragmentation.
+* Keep tightly related behavior cohesive and helpers at the narrowest appropriate ownership level.
 * Distinguish implemented behavior from placeholder or planned architecture.
 
-### Tests and performance
+### Comments and documentation
 
-* Review positive, negative, boundary, cancellation, cleanup, stale-state, and concurrency coverage as relevant.
-* Check assertions for meaningful observable behavior and error classification.
-* Look for flaky timing, leaked goroutines, mutable global state, or unnecessary dependence on implementation details.
-* For significant changes, inspect allocations, repeated conversions, lock contention, blocking work, and hot-path overhead.
-* Compare relevant benchmark results against a baseline when performance is in scope.
+* Re-read comments and documentation directly exposed by the change and correct stale statements within scope.
+* Verify comments describe current contracts, invariants, ownership, ordering, and lifecycle rather than abandoned approaches or speculative future architecture.
+* Remove obsolete comments instead of adding narration to compensate for confusing code.
+* Evaluate user-visible, integration-facing, and public behavior for required documentation synchronization without widening into unrelated cleanup.
 
-When review finds a problem, fix it, add or improve coverage where necessary, and re-run affected validation. Do not leave known correctness, lifecycle, protocol, ownership, architecture, or significant test-coverage issues unresolved merely because initial tests passed.
+### Tests
 
-Do not use self-review to justify unrelated cleanup, speculative refactoring, broad package reshuffling, dependency upgrades, or implementation of future features.
+* Review positive, negative, boundary, invalid-input, cancellation, cleanup, repeated-operation, idempotency, stale-state, error-classification, concurrency, and integration coverage as relevant.
+* Check assertions for meaningful observable behavior rather than implementation structure or error strings when identity is the contract.
+* Look for weak or redundant coverage, brittle internal coupling, flaky timing, sleeps used for synchronization, leaked goroutines or resources, and mutable global state.
+* Ensure deterministic lifecycle coverage for concurrency and appropriate boundary coverage for behavior spanning layers.
+
+### Performance
+
+* For performance-significant changes, inspect allocations, repeated work, copying, conversions, materialization, synchronization, lock contention, blocking work, memory retention, and hot-path overhead.
+* Compare final benchmark results against the pre-change baseline under comparable conditions and investigate meaningful regressions.
+* Do not rationalize a regression because correctness tests pass or trade clear correctness and maintainability for speculative micro-optimization.
+
+When review finds a problem in the task's change, fix it, add or improve coverage where necessary, and re-run affected validation. Do not leave correctness, lifecycle, protocol, ownership, architecture, or significant test-coverage issues introduced by the task unresolved merely because initial tests passed.
+
+### Scope discipline for review findings
+
+Classify review findings before changing adjacent code:
+
+1. Fix every meaningful deviation introduced by the task.
+2. Fix a pre-existing deviation only when the correction is small, local, low-risk, clearly understood, directly within the affected area, and relevant to correctness, ownership, lifecycle, architecture, or maintainability.
+3. Report broader architectural cleanup or unrelated technical debt explicitly and leave the implementation unchanged for a separate task.
+
+Do not copy an existing pattern merely because it already exists when that pattern conflicts with this guide. Equally, do not use self-review to justify unrelated cleanup, speculative refactoring, broad package reshuffling, dependency upgrades, or implementation of future features. Distinguish concrete problems from optional preferences and leave clear, correct, idiomatic, appropriately organized code alone. If correcting a discovered issue would materially expand the task, preserve current behavior and call it out in the completion report.
 
 ### Final diff inspection
 
@@ -663,12 +775,14 @@ Immediately before finishing, inspect the complete final diff and verify that:
 
 * every changed line belongs to the requested task or a necessary supporting change;
 * unrelated user changes remain intact;
-* no debugging or temporary artifacts remain;
-* no accidental behavior, API, protocol, dependency, generated-file, or documentation changes slipped in;
+* no debugging, temporary, dead, or abandoned implementation remains;
+* no accidental behavior, public API, protocol, compatibility, dependency, generated-file, or documentation changes slipped in;
+* generated files changed only because their source inputs required regeneration;
 * tests describe intended behavior;
 * comments describe current contracts and invariants;
-* package, file, type, and function ownership remains coherent;
+* package, file, type, method, and function responsibilities and ownership remain coherent;
 * cancellation, concurrency, cleanup, and resource lifetimes remain correct;
+* formatting churn and unrelated whitespace changes are absent;
 * the result is the smallest coherent change that fully solves the task.
 
 If final inspection causes another edit, repeat the affected validation afterward.
@@ -680,9 +794,13 @@ A change is significant when it could reasonably affect:
 * request or diagnostic latency;
 * repeated source mapping or compilation cost;
 * allocation patterns for open documents or protocol payloads;
+* memory usage, retention, caching, pooling, or materialization cost;
 * lock contention or concurrency throughput;
+* resource cleanup or lifetime;
 * daemon startup, shutdown, or long-running memory behavior;
 * execution or debug-session throughput.
+
+When uncertain whether a change affects a hot path, treat it as performance-significant and measure it.
 
 For significant changes:
 
@@ -693,7 +811,9 @@ For significant changes:
 * investigate meaningful regressions;
 * report the command and comparison accurately.
 
-Documentation-only, test-only, pure rename, and narrow non-hot-path refactoring changes are normally not significant. If benchmark tooling or the environment is unavailable, state that explicitly rather than claiming benchmark validation.
+Inspect significant changes for accidental allocations, unnecessary copying, repeated conversions or computation, avoidable materialization or synchronization, lock contention, blocking work, hot-path overhead, and resources retained longer than necessary. Do not trade clear correctness or maintainability for speculative micro-optimization.
+
+Documentation-only, test-only, pure rename, formatting-only, and narrow non-hot-path refactoring changes are normally not significant. If benchmark tooling or the environment is unavailable, state that explicitly rather than claiming benchmark validation.
 
 ## Command matrix
 
@@ -723,35 +843,45 @@ The release target creates and pushes a tag. Run `make release <version>` only w
 
 Run the narrowest validation that proves the changed behavior, then broaden according to risk.
 
+* Handwritten Go changes: format the affected code, inspect formatting churn, and keep unrelated files untouched.
 * Package-local Go changes: run `go test` for the affected package first.
 * Cross-package language or LSP changes: run affected package tests, then `go test ./...`.
-* Shared-state or goroutine changes: run affected tests with `-race`, then broader tests as appropriate.
+* Shared-state or goroutine changes: run every affected domain and adapter package with `-race`, then broader tests as appropriate; do not assume the current CI race-package list covers a newly affected package.
 * CLI or daemon lifecycle changes: run the relevant package tests and compile the binary.
 * Lint-sensitive or exported-contract changes: run `make lint` when the required tools are available.
 * Broad or release-facing changes: finish with `make build` when the environment supports the toolchain.
+* After focused validation, run `go test ./...` for Go changes when practical; explain material environment or scope limitations when it is omitted.
 * Documentation-only changes: validate exact scope, referenced commands and paths, Markdown structure, whitespace, and the complete diff. Do not run unrelated code tests merely to create validation theater.
 
+Do not run unrelated expensive validation merely to create evidence. Conversely, do not stop at a narrow unit test when the change affects behavior across packages or external boundaries.
+
 After review-driven code changes, re-run every command whose result may have been invalidated.
+
+If validation cannot be completed because of tooling, environment, permissions, or external dependencies, report the limitation explicitly.
 
 When finishing a non-trivial change, report:
 
 * owning subsystem;
 * files changed;
-* behavior and invariants changed or preserved;
+* behavior changed and important behavior or invariants preserved;
 * tests added or updated;
 * validation commands actually run;
-* benchmarks and baseline comparison, if applicable;
+* race-detector validation, if applicable;
+* benchmarks, commands, and baseline comparison, if applicable;
 * final self-review completion and meaningful corrections;
-* remaining limitations or environmental failures.
+* noteworthy pre-existing design or style issues intentionally left outside scope;
+* remaining concerns, limitations, or environmental and tooling failures.
 
-Never claim tests, lint, builds, benchmarks, generation, or review succeeded unless the work was actually completed.
+Never claim tests, lint, builds, race detection, benchmarks, generation, or review succeeded unless the work was actually completed. Accuracy of the completion report is part of engineering quality.
 
 ## Editing and change-discipline rules
 
 * Preserve unrelated dirty or untracked files.
 * Keep the diff focused on the requested behavior.
+* Do not modify unrelated code merely to make it conform stylistically or use an implementation task as an excuse to clean up the surrounding repository.
 * Do not update dependencies unless the task requires a dependency change.
 * Do not edit files under `gen/` manually; update protobuf sources/configuration and regenerate.
+* Inspect generated diffs whenever generation is required.
 * Do not add protocol, session, workspace, or debug abstractions for hypothetical future use.
 * Avoid changing CLI, LSP, or protobuf contracts as collateral cleanup.
 * Keep documentation statements precise about current versus planned support.
@@ -784,3 +914,20 @@ When uncertain:
 * measure before optimizing;
 * treat CLI, LSP, and protobuf changes as compatibility-sensitive;
 * leave already-correct code alone.
+
+## Definition of done
+
+A non-trivial coding task is complete only when:
+
+* ownership, contracts, invariants, lifecycle, and compatibility were understood;
+* the requested behavior is implemented and relevant existing behavior is preserved;
+* meaningful tests and risk-appropriate validation have passed;
+* race detection and performance measurement were completed when applicable;
+* the implementation underwent mandatory design and style self-review;
+* problems introduced by the task were corrected;
+* affected validation and benchmarks were repeated after corrections;
+* the complete final diff was inspected as one coherent change;
+* the final change is focused, comprehensible, and appropriately designed;
+* results, limitations, and unresolved follow-up work are reported accurately.
+
+Compiling is not completion. Passing tests is not completion. The standard is a correct, clean, appropriately designed, well-tested, deliberately reviewed change.
