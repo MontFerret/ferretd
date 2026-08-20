@@ -272,15 +272,28 @@ type workspaceClose struct {
 
 ### Functions, methods, packages, and abstractions
 
-* Prefer a method for behavior intrinsic to a semantic type, its invariants, or
-  resources it owns. Prefer a package function for construction, package-wide
+* Prefer a method for behavior intrinsic to a semantic type, its state,
+  invariants, lifecycle, synchronization, or resources it owns.
+* Prefer a package-level function only for construction, package-wide
   conversion, or behavior with no natural receiver.
 * Organize files around cohesive responsibilities rather than individual types.
   A file may contain multiple related types and their methods when they
   participate in the same narrow concern.
-* Keep methods close to the types they belong to. Split a file when it contains
-  multiple distinct responsibilities, not merely because it contains multiple
-  behavioral or method-bearing types.
+* Keep methods close to the types they belong to.
+* A file containing methods must not also contain regular package-level
+  functions unless those functions are constructors for types owned by that
+  file.
+* Constructors include conventional `New...` functions and other explicit
+  construction functions whose primary responsibility is creating or
+  initializing one of the file's types.
+* Do not keep a regular helper function beside methods merely because those
+  methods are its only callers.
+* If behavior belongs to a type's state, invariants, lifecycle,
+  synchronization, or owned resources, make it a method.
+* If package-level behavior genuinely has no natural receiver, place it in a
+  separate responsibility-focused file.
+* Split files when responsibilities diverge, not merely because several types
+  have methods.
 * Keep protocol conversions with their adapter concern and Ferret-to-neutral
   conversions in the language, diagnostic, or source layer.
 * Keep package boundaries domain-oriented. Do not create packages merely to
@@ -298,6 +311,55 @@ type workspaceClose struct {
   and the primary execution path easy to follow.
 * Do not split cohesive behavior across files merely to enforce one type or one
   method-bearing type per file.
+
+Preferred:
+
+```go
+type (
+	sessionRegistry struct {
+		entries map[SessionID]*sessionEntry
+	}
+
+	sessionEntry struct {
+		session *Session
+		state   registryState
+	}
+)
+
+func newSessionRegistry() *sessionRegistry {
+	return &sessionRegistry{
+		entries: make(map[SessionID]*sessionEntry),
+	}
+}
+
+func (r *sessionRegistry) add(session *Session) {
+	// ...
+}
+
+func (r *sessionRegistry) close() error {
+	// ...
+}
+```
+
+Avoid:
+
+```go
+func (r *sessionRegistry) add(session *Session) {
+	// ...
+}
+
+func resolveWorkspaceGroup(id workspace.ID) *workspaceGroup {
+	// ...
+}
+
+func (r *sessionRegistry) close() error {
+	// ...
+}
+```
+
+If `resolveWorkspaceGroup` belongs to registry state or lifecycle, make it a
+method. If it is genuinely package-level behavior, move it to an appropriately
+named responsibility-focused file.
 
 ### Comments
 
