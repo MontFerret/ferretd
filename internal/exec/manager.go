@@ -1,3 +1,4 @@
+// Package exec coordinates daemon-owned Ferret Plans and one-shot Executions.
 package exec
 
 import (
@@ -6,10 +7,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2/pkg/runtime"
-
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
+	daemonparams "github.com/MontFerret/ferretd/internal/params"
 	"github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -190,7 +190,7 @@ func (m *Manager) CreateExecution(
 		return ExecutionSnapshot{}, err
 	}
 
-	params, err := runtime.NewParamsFrom(parameters)
+	runtimeParams, retainedParameters, err := daemonparams.Prepare(parameters)
 	if err != nil {
 		return ExecutionSnapshot{}, fmt.Errorf("%w: %v", ErrInvalidParameters, err)
 	}
@@ -216,7 +216,7 @@ func (m *Manager) CreateExecution(
 		return ExecutionSnapshot{}, ErrSessionNotFound
 	}
 
-	execution := newExecution(id, session, params, parameters, options)
+	execution := newExecution(id, session, runtimeParams, retainedParameters, options)
 	if err := session.addExecution(execution); err != nil {
 		m.mu.Unlock()
 

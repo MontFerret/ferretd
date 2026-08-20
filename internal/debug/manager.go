@@ -1,3 +1,4 @@
+// Package debug coordinates retained Ferret debugger sessions.
 package debug
 
 import (
@@ -7,9 +8,9 @@ import (
 	"sync"
 
 	"github.com/MontFerret/ferret/v2"
-	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
+	daemonparams "github.com/MontFerret/ferretd/internal/params"
 )
 
 type (
@@ -61,7 +62,7 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, err
 	}
 
-	params, err := runtime.NewParamsFrom(parameters)
+	runtimeParams, retainedParameters, err := daemonparams.Prepare(parameters)
 	if err != nil {
 		return SessionSnapshot{}, fmt.Errorf("%w: %v", exec.ErrInvalidParameters, err)
 	}
@@ -83,7 +84,7 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, err
 	}
 
-	sessionOptions := []ferret.SessionOption{ferret.WithSessionRuntimeParams(params)}
+	sessionOptions := []ferret.SessionOption{ferret.WithSessionRuntimeParams(runtimeParams)}
 	if options.OutputContentType != "" {
 		sessionOptions = append(sessionOptions, ferret.WithOutputContentType(options.OutputContentType))
 	}
@@ -95,7 +96,7 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, err
 	}
 
-	created := newSession(id, target, ferretSession, parameters, options)
+	created := newSession(id, target, ferretSession, retainedParameters, options)
 	m.mu.Lock()
 	group := m.groups[parentID]
 	if m.closed || group == nil || !group.gate.Accepting() {

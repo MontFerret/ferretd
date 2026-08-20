@@ -23,3 +23,17 @@ func canonicalRoot(root string) (string, error) {
 
 	return canonical, nil
 }
+
+func pathWithinRoot(root, candidate string) (string, bool) {
+	relative, err := filepath.Rel(root, candidate)
+	if err != nil || relative == "." || relative == ".." || filepath.IsAbs(relative) {
+		return "", false
+	}
+
+	prefix := ".." + string(filepath.Separator)
+	if len(relative) >= len(prefix) && relative[:len(prefix)] == prefix {
+		return "", false
+	}
+
+	return filepath.ToSlash(relative), true
+}

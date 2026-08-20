@@ -455,6 +455,16 @@ type (
 )
 ```
 
+```go
+type Type1 struct {
+    // ...
+}
+
+type Type2 struct {
+// ...
+}
+```
+
 ## Function and method ownership rules
 
 * Prefer a method when behavior belongs intrinsically to a semantic type, depends on its invariants, is a natural query or transformation of its value, or manages resources that value owns.

@@ -62,7 +62,7 @@ func newExecution(
 		sourceURI:      session.source.URI,
 		sourceText:     session.text,
 		params:         params,
-		parameterInput: cloneParameters(parameterInput),
+		parameterInput: parameterInput,
 		options:        options,
 		state:          StateCreated,
 		ctx:            ctx,

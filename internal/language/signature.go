@@ -64,7 +64,7 @@ func (s *Service) SignatureHelp(
 	}
 
 	if function.variadic {
-		parameters := placeholderParameters(maxInt(active+1, 1), true)
+		parameters := placeholderParameters(max(active+1, 1), true)
 		result.Signatures = append(result.Signatures, Signature{
 			Label:      signatureLabel(function.name, parameters),
 			Parameters: parameters,
@@ -113,12 +113,4 @@ func placeholderParameters(arity int, variadic bool) []string {
 
 func signatureLabel(name string, parameters []string) string {
 	return name + "(" + strings.Join(parameters, ", ") + ")"
-}
-
-func maxInt(left, right int) int {
-	if left > right {
-		return left
-	}
-
-	return right
 }

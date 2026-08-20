@@ -42,32 +42,3 @@ func convertVariables(values []ferret.DebugVariable) []Variable {
 
 	return result
 }
-
-func cloneParameters(values map[string]any) map[string]any {
-	if values == nil {
-		return nil
-	}
-
-	result := make(map[string]any, len(values))
-	for key, value := range values {
-		result[key] = cloneParameterValue(value)
-	}
-
-	return result
-}
-
-func cloneParameterValue(value any) any {
-	switch typed := value.(type) {
-	case []any:
-		result := make([]any, len(typed))
-		for index := range typed {
-			result[index] = cloneParameterValue(typed[index])
-		}
-
-		return result
-	case map[string]any:
-		return cloneParameters(typed)
-	default:
-		return typed
-	}
-}

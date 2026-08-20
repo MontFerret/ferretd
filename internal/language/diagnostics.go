@@ -44,8 +44,8 @@ func (s *Service) Diagnostics(ctx context.Context, uri source.URI) (DiagnosticRe
 		Snapshot: document.snapshot.id,
 	}
 
-	for _, diagnostic := range diagnostics {
-		result.Items = append(result.Items, convertFerretDiagnostic(uri, document.mapper, diagnostic))
+	for _, item := range diagnostics {
+		result.Items = append(result.Items, diagnostic.Convert(uri, document.mapper, item))
 	}
 
 	return result, nil

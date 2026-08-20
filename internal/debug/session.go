@@ -68,7 +68,7 @@ func newSession(
 		debugger:        debuggerSession,
 		sourceURI:       source.URI,
 		sourceText:      target.SourceText(),
-		parameters:      cloneParameters(parameters),
+		parameters:      parameters,
 		options:         options,
 		state:           StateCreated,
 		breakpoints:     make(map[string][]ferret.DebugBreakpoint),

@@ -1,6 +1,34 @@
 package exec
 
-import "github.com/MontFerret/ferretd/internal/diagnostic"
+import (
+	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/params"
+)
+
+// FailureCategory classifies a failed execution phase.
+type FailureCategory uint8
+
+// Output is a defensively copied encoded Ferret result.
+type Output struct {
+	ContentType string
+	Content     []byte
+}
+
+// Failure retains useful execution failure information.
+type Failure struct {
+	Category    FailureCategory
+	Message     string
+	Diagnostics []diagnostic.Diagnostic
+}
+
+const (
+	// FailureSessionCreation identifies Plan.NewSession failure.
+	FailureSessionCreation FailureCategory = iota + 1
+	// FailureRuntime identifies Ferret Session.Run failure.
+	FailureRuntime
+	// FailureCleanup identifies Ferret Session cleanup failure.
+	FailureCleanup
+)
 
 // ExecutionSnapshot is an immutable view of one daemon Execution.
 type ExecutionSnapshot struct {
@@ -13,10 +41,11 @@ type ExecutionSnapshot struct {
 	Failure    *Failure
 }
 
-// Clone returns a deep copy of the snapshot's mutable data.
+// Clone returns an independent copy of the snapshot's retained mutable data.
+// Parameter copying follows the recursive container contract in internal/params.
 func (s ExecutionSnapshot) Clone() ExecutionSnapshot {
 	result := s
-	result.Parameters = cloneParameters(s.Parameters)
+	result.Parameters = params.Clone(s.Parameters)
 
 	if s.Output != nil {
 		result.Output = &Output{
@@ -33,11 +62,7 @@ func (s ExecutionSnapshot) Clone() ExecutionSnapshot {
 		}
 
 		for index, item := range s.Failure.Diagnostics {
-			result.Failure.Diagnostics[index] = item
-			result.Failure.Diagnostics[index].RelatedInformation = append(
-				[]diagnostic.RelatedInformation(nil),
-				item.RelatedInformation...,
-			)
+			result.Failure.Diagnostics[index] = item.Clone()
 		}
 	}
 

@@ -18,12 +18,6 @@ type (
 		End   Position
 	}
 
-	// Span identifies a half-open range using UTF-8 byte offsets.
-	Span struct {
-		Start int
-		End   int
-	}
-
 	// Mapper converts between UTF-8 byte offsets and zero-based UTF-16 positions.
 	Mapper struct {
 		text       string
@@ -153,11 +147,27 @@ func (m *Mapper) Text() string {
 }
 
 func (m *Mapper) clampOffset(offset int) int {
-	offset = clamp(offset, 0, len(m.text))
+	if offset < 0 {
+		offset = 0
+	} else if offset > len(m.text) {
+		offset = len(m.text)
+	}
 
 	for offset > 0 && offset < len(m.text) && !utf8.RuneStart(m.text[offset]) {
 		offset--
 	}
 
 	return offset
+}
+
+func utf16Width(text string) uint32 {
+	var width uint32
+	for _, r := range text {
+		width++
+		if r > 0xffff {
+			width++
+		}
+	}
+
+	return width
 }

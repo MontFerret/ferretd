@@ -3,7 +3,20 @@ package debug
 import (
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/params"
 )
+
+// Output is the encoded terminal result of a completed debug Session.
+type Output struct {
+	ContentType string
+	Content     []byte
+}
+
+// Failure retains durable debugger failure information.
+type Failure struct {
+	Message     string
+	Diagnostics []diagnostic.Diagnostic
+}
 
 // SessionSnapshot is an immutable view of one daemon debug Session.
 type SessionSnapshot struct {
@@ -19,11 +32,12 @@ type SessionSnapshot struct {
 	Failure          *Failure
 }
 
-// Clone returns a deep copy of the snapshot's mutable data.
+// Clone returns an independent copy of the snapshot's retained mutable data.
+// Parameter copying follows the recursive container contract in internal/params.
 func (s SessionSnapshot) Clone() SessionSnapshot {
 	result := s
 	result.HitBreakpointIDs = append([]uint64(nil), s.HitBreakpointIDs...)
-	result.Parameters = cloneParameters(s.Parameters)
+	result.Parameters = params.Clone(s.Parameters)
 
 	if s.Output != nil {
 		result.Output = &Output{
@@ -39,11 +53,7 @@ func (s SessionSnapshot) Clone() SessionSnapshot {
 		}
 
 		for index, item := range s.Failure.Diagnostics {
-			result.Failure.Diagnostics[index] = item
-			result.Failure.Diagnostics[index].RelatedInformation = append(
-				[]diagnostic.RelatedInformation(nil),
-				item.RelatedInformation...,
-			)
+			result.Failure.Diagnostics[index] = item.Clone()
 		}
 	}
 

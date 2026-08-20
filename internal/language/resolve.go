@@ -47,7 +47,7 @@ func resolveAnalyzed(document analyzedDocument, position source.Position) Resolu
 	if symbol, ok := document.analysis.SymbolAt(offset); ok {
 		result.Symbol = &symbol
 		if symbol.HasDeclaration {
-			declaration := document.mapper.SpanToRange(toSourceSpan(symbol.SelectionSpan))
+			declaration := document.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan))
 			result.Range = declaration
 			result.Declaration = &declaration
 		}
@@ -55,20 +55,20 @@ func resolveAnalyzed(document analyzedDocument, position source.Position) Resolu
 
 	if reference, ok := document.analysis.ReferenceAt(offset); ok {
 		result.Reference = &reference
-		result.Range = document.mapper.SpanToRange(toSourceSpan(reference.Span))
+		result.Range = document.mapper.SpanToRange(source.SpanFromFerret(reference.Span))
 	}
 
 	if call, ok := document.analysis.CallAt(offset); ok {
 		result.Call = &call
 		if offset >= call.CalleeSpan.Start && offset < call.CalleeSpan.End {
-			result.Range = document.mapper.SpanToRange(toSourceSpan(call.CalleeSpan))
+			result.Range = document.mapper.SpanToRange(source.SpanFromFerret(call.CalleeSpan))
 		}
 	}
 
 	if fact, ok := document.analysis.TypeAt(offset); ok {
 		result.Type = &fact
 		if result.Range == (source.Range{}) {
-			result.Range = document.mapper.SpanToRange(toSourceSpan(fact.Span))
+			result.Range = document.mapper.SpanToRange(source.SpanFromFerret(fact.Span))
 		}
 	}
 

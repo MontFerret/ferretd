@@ -87,6 +87,51 @@ func TestManagerCloseSettlesMultipleParentGroups(t *testing.T) {
 	}
 }
 
+func TestCreateSessionCopiesParameters(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+	input := map[string]any{
+		"value":  7,
+		"nested": map[string]any{"items": []any{"one", "two"}},
+	}
+
+	created, err := fixture.manager.CreateSession(
+		context.Background(),
+		fixture.session.ID,
+		input,
+		SessionOptions{},
+	)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	input["value"] = 99
+	input["nested"].(map[string]any)["items"].([]any)[0] = "caller"
+	created.Parameters["nested"].(map[string]any)["items"].([]any)[1] = "snapshot"
+
+	stored, err := fixture.manager.GetSession(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if stored.Parameters["value"] != 7 ||
+		stored.Parameters["nested"].(map[string]any)["items"].([]any)[0] != "one" ||
+		stored.Parameters["nested"].(map[string]any)["items"].([]any)[1] != "two" {
+		t.Fatalf("stored parameters = %#v, want immutable copy", stored.Parameters)
+	}
+}
+
+func TestCreateSessionRejectsInvalidParameters(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+
+	if _, err := fixture.manager.CreateSession(
+		context.Background(),
+		fixture.session.ID,
+		map[string]any{"invalid": make(chan int)},
+		SessionOptions{},
+	); !errors.Is(err, exec.ErrInvalidParameters) {
+		t.Fatalf("CreateSession error = %v, want exec.ErrInvalidParameters", err)
+	}
+}
+
 func TestDebugManagerRequiresContexts(t *testing.T) {
 	t.Run("operation", func(t *testing.T) {
 		fixture := newDebugFixture(t, "RETURN 1")

@@ -1,6 +1,12 @@
 package exec
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/workspace"
+)
 
 var (
 	errNilWorkspaceManager = errors.New("execution: nil workspace manager")
@@ -27,3 +33,20 @@ var (
 	// ErrDebugSourceChanged reports debug compilation from a different source snapshot.
 	ErrDebugSourceChanged = errors.New("debug compilation source changed")
 )
+
+// CompilationError retains structured Ferret compiler diagnostics.
+type CompilationError struct {
+	Source      workspace.SourceSnapshot
+	Diagnostics []diagnostic.Diagnostic
+	Cause       error
+}
+
+// Error describes a failed compilation while preserving its stable classification.
+func (e *CompilationError) Error() string {
+	return fmt.Sprintf("%v: %s", ErrCompilationFailed, e.Source.RelativePath)
+}
+
+// Unwrap exposes the compiler cause and stable classification.
+func (e *CompilationError) Unwrap() []error {
+	return []error{ErrCompilationFailed, e.Cause}
+}

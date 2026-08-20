@@ -44,6 +44,14 @@ const (
 	SeverityError Severity = 1
 )
 
+// Clone returns an independent copy of the diagnostic's mutable data.
+func (d Diagnostic) Clone() Diagnostic {
+	result := d
+	result.RelatedInformation = append([]RelatedInformation(nil), d.RelatedInformation...)
+
+	return result
+}
+
 // Convert projects one Ferret diagnostic through the supplied source mapper.
 func Convert(uri source.URI, mapper *source.Mapper, value *ferretdiagnostics.Diagnostic) Diagnostic {
 	if value == nil {
