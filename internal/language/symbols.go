@@ -5,8 +5,6 @@ import (
 	"sort"
 
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
-	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
-
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -149,9 +147,4 @@ func (s *Service) References(
 	})
 
 	return locations, nil
-}
-
-func spanContainsSpan(container, contained ferretsource.Span) bool {
-	return container.End > container.Start && contained.End >= contained.Start &&
-		contained.Start >= container.Start && contained.End <= container.End
 }

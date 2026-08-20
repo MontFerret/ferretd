@@ -9,6 +9,7 @@ This file is the canonical operating guide for coding agents working in this rep
 * `ferretd` is the experimental long-running developer service for Ferret.
 * The current executable provides `serve`, `lsp`, `dap`, and version/help behavior.
 * The current language server tracks open `.fql` documents and publishes Ferret parser and compiler diagnostics over LSP stdio.
+* Standard Library completion, signature help, and hover merge runtime registry facts with the embedded version-matched Ferret API Reference.
 * `serve` exposes daemon information, API negotiation, graceful shutdown, workspace lifecycle, and execution sessions over a local gRPC transport.
 * Opening a workspace synchronously discovers `.fql` files, retains daemon-owned source, syntax state, and document diagnostics, and constructs one rooted read-write Ferret engine until explicit close.
 * The execution manager owns compiled Sessions and one-shot Executions, the debug manager owns retained DebugSessions, and `dap` is a single-session stdio adapter over both protocol-neutral models.
@@ -60,6 +61,7 @@ Agents should reason about changes by ownership boundary:
 * `internal/transport` owns default endpoint discovery and Unix-socket/named-pipe I/O.
 * `internal/lsp` owns LSP translation and transport behavior, not language semantics.
 * `internal/language` owns protocol-neutral open-document state and language-service behavior built on Ferret.
+* `internal/language/stdlib` owns the embedded Ferret Standard Library API Reference, strict Specs-backed parsing, and immutable metadata lookup.
 * `internal/source` owns protocol-neutral source locations, file-URI conversion, and source-position conversion.
 * `internal/workspace` owns workspace state as that capability is implemented.
 * `internal/exec` owns compiled execution Sessions, ordinary Executions, lazy debug Plans, and leased immutable debug targets.
@@ -132,6 +134,10 @@ Begin with the package that owns the requested behavior. Do not move logic into 
     * Preserve stable error identity through `errors.Is` when adding context to document lifecycle errors.
     * Do not introduce LSP types into this package.
     * Do not reimplement parser, compiler, or diagnostic semantics already owned by Ferret.
+* `internal/language/stdlib`
+    * Embeds checked-in generated `api.json` and parses it with `github.com/MontFerret/specs/pkg/api`.
+    * Keeps API-reference schema and raw JSON handling out of language handlers.
+    * Treats invalid embedded data as a programming defect and performs no runtime network access.
 
 ### LSP adapter
 
@@ -204,6 +210,8 @@ Buf v2 configuration at the repository root pins generation through `make genera
     * Derives the development/build version and Ferret dependency version used by the linker flags.
 * `scripts/release.sh`
     * Creates and pushes a release tag from a clean working tree. Run release operations only when explicitly requested.
+* `tools/stdlibref`
+    * Resolves the selected Ferret module version through `go list`, synchronizes the matching published API Reference, and checks checked-in version consistency.
 
 ## Implemented and planned behavior
 
@@ -231,6 +239,7 @@ Currently implemented:
 * in-memory open-document snapshots and version checks;
 * Ferret parser/compiler diagnostics for open documents;
 * source-span to UTF-16 range conversion;
+* runtime-backed completion, hover, and signature help enriched by an embedded version-matched Standard Library API Reference;
 * pinned protobuf generation for daemon/workspace/execution v1;
 * placeholder debug protobuf source contract.
 
@@ -242,7 +251,7 @@ Not currently implemented:
 * LSP document loading from daemon workspaces or disk;
 * filesystem watching, editor overlays, background reload, create/delete/rename discovery, and incremental workspace parsing;
 * incremental document synchronization;
-* completion, hover, formatting, navigation, semantic tokens, or code actions.
+* code actions, rename, workspace symbols, or cross-file navigation;
 
 Do not claim planned capabilities are supported. When implementing one, update the relevant current-status documentation and remove only the corresponding obsolete limitation.
 
@@ -707,13 +716,13 @@ Run commands from the repository root.
 * Format Go code: `make fmt`
 * Run the broad local build gate: `make build`
 * Install lint and formatting tools: `make install-tools`
-* Generate daemon/workspace/execution protobuf code: `make generate`
+* Generate the embedded Standard Library API Reference and daemon/workspace/execution protobuf code: `make generate`
 * Lint all protobuf sources: `make proto-lint`
 * Verify checked-in generated code: `make check-generate`
 
 `make build` runs vet, lint, tests, and compilation. It therefore requires `staticcheck`, `revive`, and the normal Go toolchain in addition to project dependencies.
 
-`make generate` uses the pinned Buf CLI and pinned Go protobuf plugins declared by the repository. It intentionally generates only implemented daemon/workspace/execution contracts. Always inspect generated diffs and run `make check-generate` when contracts or generation configuration change.
+`make generate` first derives the Ferret version from the module graph, downloads and validates the matching published Standard Library API Reference, and then uses the pinned Buf CLI and protobuf plugins to generate only implemented daemon/workspace/execution contracts. The checked-in `internal/language/stdlib/api.json` is generated content and must not be edited manually. `make check-generate` verifies its version before refreshing artifacts and checking for tracked or untracked differences. Always inspect generated diffs after Ferret dependency, protobuf contract, or generation configuration changes.
 
 `make fmt` mutates Go files. Use it only when formatting changes are within task scope, and inspect the resulting diff for unrelated churn.
 
@@ -751,7 +760,7 @@ Never claim tests, lint, builds, benchmarks, generation, or review succeeded unl
 * Preserve unrelated dirty or untracked files.
 * Keep the diff focused on the requested behavior.
 * Do not update dependencies unless the task requires a dependency change.
-* Do not edit files under `gen/` manually; update protobuf sources/configuration and regenerate.
+* Do not edit files under `gen/` or `internal/language/stdlib/api.json` manually; update the owning dependency or protobuf sources/configuration and regenerate.
 * Do not add protocol, session, workspace, or debug abstractions for hypothetical future use.
 * Avoid changing CLI, LSP, or protobuf contracts as collateral cleanup.
 * Keep documentation statements precise about current versus planned support.

@@ -2,8 +2,6 @@ package language
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 
@@ -32,15 +30,15 @@ func (s *Service) SignatureHelp(ctx context.Context, uri string, position source
 		}
 
 		parameters := document.analysis.FunctionParameters(call.Target)
-		names := make([]string, 0, len(parameters))
+		values := make([]FunctionParameter, 0, len(parameters))
 
 		for _, parameter := range parameters {
-			names = append(names, parameter.Name)
+			values = append(values, FunctionParameter{Name: parameter.Name})
 		}
 
 		result.Signatures = []Signature{{
-			Label:      signatureLabel(function.Name, names),
-			Parameters: names,
+			Label:      signatureLabel(function.Name, values),
+			Parameters: values,
 		}}
 
 		return result, nil
@@ -51,22 +49,7 @@ func (s *Service) SignatureHelp(ctx context.Context, uri string, position source
 		return nil, nil
 	}
 
-	for _, arity := range function.arities {
-		parameters := placeholderParameters(arity, false)
-		result.Signatures = append(result.Signatures, Signature{
-			Label:      signatureLabel(function.name, parameters),
-			Parameters: parameters,
-		})
-	}
-
-	if function.variadic {
-		parameters := placeholderParameters(maxInt(active+1, 1), true)
-		result.Signatures = append(result.Signatures, Signature{
-			Label:      signatureLabel(function.name, parameters),
-			Parameters: parameters,
-			Variadic:   true,
-		})
-	}
+	result.Signatures = cloneSignatures(function.signatures)
 
 	if len(result.Signatures) == 0 {
 		return nil, nil
@@ -80,41 +63,10 @@ func (s *Service) SignatureHelp(ctx context.Context, uri string, position source
 		}
 	}
 
+	selected := result.Signatures[result.ActiveSignature]
+	if selected.Variadic && len(selected.Parameters) > 0 && active >= len(selected.Parameters) {
+		result.ActiveParameter = uint32(len(selected.Parameters) - 1)
+	}
+
 	return result, nil
-}
-
-func activeArgument(call compiler.Call, offset int) int {
-	for index, span := range call.ArgumentSpans {
-		if offset <= span.End {
-			return index
-		}
-	}
-
-	return len(call.ArgumentSpans)
-}
-
-func placeholderParameters(arity int, variadic bool) []string {
-	parameters := make([]string, arity)
-
-	for index := range parameters {
-		parameters[index] = fmt.Sprintf("arg%d", index+1)
-	}
-
-	if variadic && len(parameters) > 0 {
-		parameters[len(parameters)-1] += "..."
-	}
-
-	return parameters
-}
-
-func signatureLabel(name string, parameters []string) string {
-	return name + "(" + strings.Join(parameters, ", ") + ")"
-}
-
-func maxInt(left, right int) int {
-	if left > right {
-		return left
-	}
-
-	return right
 }

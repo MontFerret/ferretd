@@ -1,66 +1,41 @@
 package language
 
-import "github.com/MontFerret/ferret/v2/pkg/runtime"
+import (
+	"sync"
+
+	"github.com/MontFerret/ferret/v2/pkg/runtime"
+)
 
 type (
 	registeredFunction struct {
-		name     string
-		identity string
-		arities  []int
-		variadic bool
+		name       string
+		namespace  string
+		identity   string
+		signatures []Signature
+		detail     string
+		deprecated bool
 	}
 
 	functionIndex struct {
 		ordered []registeredFunction
 		byName  map[string]int
 	}
+
+	functionMetadata struct {
+		name       string
+		namespace  string
+		signatures []Signature
+		detail     string
+		deprecated bool
+	}
+
+	functionMetadataIndex map[string]functionMetadata
 )
 
-func newFunctionIndex(functions *runtime.Functions) functionIndex {
-	if functions == nil {
-		functions = runtime.NewFunctions()
-	}
-
-	names := functions.List()
-	result := functionIndex{
-		ordered: make([]registeredFunction, 0, len(names)),
-		byName:  make(map[string]int, len(names)),
-	}
-
-	for _, name := range names {
-		identity := runtime.NormalizeRegisteredName(name)
-		if _, ok := result.byName[identity]; ok {
-			continue
-		}
-
-		entry := registeredFunction{name: name, identity: identity}
-		if functions.A0().Has(name) {
-			entry.arities = append(entry.arities, 0)
-		}
-
-		if functions.A1().Has(name) {
-			entry.arities = append(entry.arities, 1)
-		}
-
-		if functions.A2().Has(name) {
-			entry.arities = append(entry.arities, 2)
-		}
-
-		if functions.A3().Has(name) {
-			entry.arities = append(entry.arities, 3)
-		}
-
-		if functions.A4().Has(name) {
-			entry.arities = append(entry.arities, 4)
-		}
-
-		entry.variadic = functions.Var().Has(name)
-		result.byName[identity] = len(result.ordered)
-		result.ordered = append(result.ordered, entry)
-	}
-
-	return result
-}
+var (
+	defaultMetadataOnce sync.Once
+	defaultMetadata     functionMetadataIndex
+)
 
 func (i functionIndex) lookup(name string) (registeredFunction, bool) {
 	identity := runtime.NormalizeRegisteredName(name)

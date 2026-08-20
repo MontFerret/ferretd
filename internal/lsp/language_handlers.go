@@ -124,9 +124,23 @@ func (s *Server) signatureHelp(
 			Label:      signature.Label,
 			Parameters: make([]protocol.ParameterInformation, 0, len(signature.Parameters)),
 		}
+		if documentation := renderSignatureDocumentation(signature); documentation != "" {
+			information.Documentation = protocol.MarkupContent{
+				Kind:  protocol.MarkupKindMarkdown,
+				Value: documentation,
+			}
+		}
 
 		for _, parameter := range signature.Parameters {
-			information.Parameters = append(information.Parameters, protocol.ParameterInformation{Label: parameter})
+			parameterInformation := protocol.ParameterInformation{Label: parameter.Name}
+			if documentation := renderParameterDocumentation(parameter); documentation != "" {
+				parameterInformation.Documentation = protocol.MarkupContent{
+					Kind:  protocol.MarkupKindMarkdown,
+					Value: documentation,
+				}
+			}
+
+			information.Parameters = append(information.Parameters, parameterInformation)
 		}
 
 		result.Signatures = append(result.Signatures, information)
@@ -190,10 +204,124 @@ func renderHoverMarkdown(value language.Hover) string {
 		}
 
 		sections = append(sections, "```fql\n"+strings.Join(labels, "\n")+"\n```")
+
+		for _, signature := range value.RegisteredSignatures {
+			metadata := renderHoverSignatureMetadata(signature, len(value.RegisteredSignatures) > 1)
+			if metadata != "" {
+				sections = append(sections, metadata)
+			}
+		}
 	}
 
 	if value.Type != nil {
 		sections = append(sections, "Type: `"+valueTypeName(*value.Type)+"`")
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+func renderHoverSignatureMetadata(signature language.Signature, identifyOverload bool) string {
+	var sections []string
+	if identifyOverload {
+		sections = append(sections, "**`"+signature.Label+"`**")
+	}
+
+	if signature.Description != "" {
+		sections = append(sections, signature.Description)
+	}
+
+	if len(signature.Parameters) > 0 {
+		parameters := make([]string, 0, len(signature.Parameters))
+		for _, parameter := range signature.Parameters {
+			label := "`" + parameter.Name + "`"
+			if parameter.Type != "" {
+				label += " (`" + parameter.Type + "`)"
+			}
+
+			if parameter.Description != "" {
+				label += ": " + parameter.Description
+			}
+
+			parameters = append(parameters, "- "+label)
+		}
+
+		sections = append(sections, "**Parameters**\n\n"+strings.Join(parameters, "\n"))
+	}
+
+	if signature.Return != nil {
+		value := "`" + signature.Return.Type + "`"
+		if signature.Return.Description != "" {
+			value += ": " + signature.Return.Description
+		}
+
+		sections = append(sections, "**Returns**\n\n"+value)
+	}
+
+	if len(signature.Throws) > 0 {
+		throws := make([]string, 0, len(signature.Throws))
+		for _, thrown := range signature.Throws {
+			value := "`" + thrown.Error + "`"
+			if thrown.Description != "" {
+				value += ": " + thrown.Description
+			}
+
+			throws = append(throws, "- "+value)
+		}
+
+		sections = append(sections, "**Throws**\n\n"+strings.Join(throws, "\n"))
+	}
+
+	if signature.Deprecated != "" {
+		sections = append(sections, "**Deprecated:** "+signature.Deprecated)
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+func renderSignatureDocumentation(signature language.Signature) string {
+	var sections []string
+	if signature.Description != "" {
+		sections = append(sections, signature.Description)
+	}
+
+	if signature.Return != nil {
+		value := "Returns `" + signature.Return.Type + "`"
+		if signature.Return.Description != "" {
+			value += ": " + signature.Return.Description
+		}
+
+		sections = append(sections, value)
+	}
+
+	if len(signature.Throws) > 0 {
+		throws := make([]string, 0, len(signature.Throws))
+		for _, thrown := range signature.Throws {
+			value := "`" + thrown.Error + "`"
+			if thrown.Description != "" {
+				value += ": " + thrown.Description
+			}
+
+			throws = append(throws, "- "+value)
+		}
+
+		sections = append(sections, "Throws:\n\n"+strings.Join(throws, "\n"))
+	}
+
+	if signature.Deprecated != "" {
+		sections = append(sections, "**Deprecated:** "+signature.Deprecated)
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+func renderParameterDocumentation(parameter language.FunctionParameter) string {
+	var sections []string
+	if parameter.Type != "" {
+		sections = append(sections, "Type: `"+parameter.Type+"`")
+	}
+
+	if parameter.Description != "" {
+		sections = append(sections, parameter.Description)
 	}
 
 	return strings.Join(sections, "\n\n")
@@ -288,10 +416,18 @@ func toProtocolCompletionItem(value language.CompletionItem) protocol.Completion
 		kind = protocol.CompletionItemKindOperator
 	}
 
-	return protocol.CompletionItem{
+	result := protocol.CompletionItem{
 		Label:      value.Label,
 		Kind:       &kind,
 		Detail:     &value.Detail,
 		InsertText: &value.InsertText,
 	}
+
+	if value.Deprecated {
+		deprecated := true
+		result.Tags = []protocol.CompletionItemTag{protocol.CompletionItemTagDeprecated}
+		result.Deprecated = &deprecated
+	}
+
+	return result
 }

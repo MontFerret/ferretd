@@ -42,13 +42,37 @@ type (
 		Detail     string
 		InsertText string
 		Kind       CompletionKind
+		Deprecated bool
 	}
 
 	// Signature describes one callable overload.
 	Signature struct {
-		Label      string
-		Parameters []string
-		Variadic   bool
+		Label       string
+		Parameters  []FunctionParameter
+		Variadic    bool
+		Description string
+		Return      *FunctionReturn
+		Throws      []FunctionThrow
+		Deprecated  string
+	}
+
+	// FunctionParameter describes one callable parameter.
+	FunctionParameter struct {
+		Name        string
+		Type        string
+		Description string
+	}
+
+	// FunctionReturn describes one callable result.
+	FunctionReturn struct {
+		Type        string
+		Description string
+	}
+
+	// FunctionThrow describes one callable failure.
+	FunctionThrow struct {
+		Error       string
+		Description string
 	}
 
 	// SignatureHelp describes overloads and the active call argument.

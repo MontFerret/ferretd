@@ -5,6 +5,9 @@ BUF = go run github.com/bufbuild/buf/cmd/buf@v1.72.0
 CLIENT_DIR = ./client
 CMD_DIR = ./cmd
 INTERNAL_DIR = ./internal
+STDLIB_REFERENCE = ./internal/language/stdlib/api.json
+
+.PHONY: build check-generate compile default fmt generate generate-stdlib install install-tools lint proto-lint test vet
 
 default: build
 
@@ -29,15 +32,20 @@ compile:
 test:
 	go test ./...
 
-generate:
+generate: generate-stdlib
 	$(BUF) generate
+
+generate-stdlib:
+	go run -mod=readonly ./tools/stdlibref -output ${STDLIB_REFERENCE}
 
 proto-lint:
 	$(BUF) lint
 
-check-generate: generate
-	git diff --exit-code -- gen && \
-	test -z "$$(git status --porcelain --untracked-files=all -- gen)"
+check-generate:
+	go run -mod=readonly ./tools/stdlibref -check -output ${STDLIB_REFERENCE}
+	$(MAKE) generate
+	git diff --exit-code -- gen ${STDLIB_REFERENCE} && \
+	test -z "$$(git status --porcelain --untracked-files=all -- gen ${STDLIB_REFERENCE})"
 
 fmt:
 	go fmt ./... && \

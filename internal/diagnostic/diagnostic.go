@@ -11,11 +11,6 @@ import (
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
-// runtimeErrorSet matches Ferret's aggregate VM error without importing its internal concrete type.
-type runtimeErrorSet interface {
-	Errors() iter.Seq2[int, *vm.RuntimeError]
-}
-
 type (
 	// Severity identifies the importance of a diagnostic.
 	Severity uint8
@@ -36,6 +31,11 @@ type (
 		URI     string
 		Range   source.Range
 		Message string
+	}
+
+	// runtimeErrorSet matches Ferret's aggregate VM error without importing its internal concrete type.
+	runtimeErrorSet interface {
+		Errors() iter.Seq2[int, *vm.RuntimeError]
 	}
 )
 

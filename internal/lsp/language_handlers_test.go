@@ -261,6 +261,109 @@ func TestCompletionPreservesCanonicalLowercaseText(t *testing.T) {
 	}
 }
 
+func TestStdlibMetadataMapsToCompletionSignatureHelpAndHover(t *testing.T) {
+	service := language.New(language.Options{})
+	server := New(service)
+	uri := documentURI(t, "stdlib-metadata.fql")
+	query := "RETURN average([1, 2])"
+	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, query); err != nil {
+		t.Fatal(err)
+	}
+	mapper := source.NewMapper(query)
+
+	completionValue, err := server.completion(nil, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position:     toProtocolPosition(mapper.OffsetToPosition(len("RETURN "))),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	completionItems := completionValue.([]protocol.CompletionItem)
+	var averageCompletion *protocol.CompletionItem
+	for index := range completionItems {
+		if completionItems[index].Label == "average" {
+			averageCompletion = &completionItems[index]
+
+			break
+		}
+	}
+
+	if averageCompletion == nil || averageCompletion.Detail == nil ||
+		!strings.Contains(*averageCompletion.Detail, "average(") || strings.Contains(*averageCompletion.Detail, "arg1") {
+		t.Fatalf("average completion = %+v", averageCompletion)
+	}
+
+	signature, err := server.signatureHelp(nil, &protocol.SignatureHelpParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position:     toProtocolPosition(mapper.OffsetToPosition(strings.Index(query, "[1, 2]") + 1)),
+		},
+	})
+	if err != nil || signature == nil || len(signature.Signatures) != 1 || len(signature.Signatures[0].Parameters) != 1 {
+		t.Fatalf("average signature = %+v, %v", signature, err)
+	}
+
+	if _, ok := signature.Signatures[0].Documentation.(protocol.MarkupContent); !ok {
+		t.Fatalf("signature documentation = %#v", signature.Signatures[0].Documentation)
+	}
+
+	parameter := signature.Signatures[0].Parameters[0]
+	if label, ok := parameter.Label.(string); !ok || label == "arg1" {
+		t.Fatalf("parameter label = %#v", parameter.Label)
+	}
+
+	if documentation, ok := parameter.Documentation.(protocol.MarkupContent); !ok ||
+		documentation.Kind != protocol.MarkupKindMarkdown || !strings.Contains(documentation.Value, "Type:") {
+		t.Fatalf("parameter documentation = %#v", parameter.Documentation)
+	}
+
+	hover, err := server.hover(nil, &protocol.HoverParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		Position:     toProtocolPosition(mapper.OffsetToPosition(strings.Index(query, "average"))),
+	}})
+	if err != nil || hover == nil {
+		t.Fatalf("average hover = %+v, %v", hover, err)
+	}
+
+	content, ok := hover.Contents.(protocol.MarkupContent)
+	if !ok || content.Kind != protocol.MarkupKindMarkdown ||
+		!strings.Contains(content.Value, "**Parameters**") || !strings.Contains(content.Value, "**Returns**") {
+		t.Fatalf("average hover Markdown = %#v", hover.Contents)
+	}
+}
+
+func TestDeprecationMetadataMapsWithoutDiagnostics(t *testing.T) {
+	item := toProtocolCompletionItem(language.CompletionItem{
+		Label:      "old_function",
+		Detail:     "old_function(value)",
+		InsertText: "old_function",
+		Kind:       language.CompletionKindFunction,
+		Deprecated: true,
+	})
+	if item.Deprecated == nil || !*item.Deprecated ||
+		!reflect.DeepEqual(item.Tags, []protocol.CompletionItemTag{protocol.CompletionItemTagDeprecated}) {
+		t.Fatalf("deprecated completion = %+v", item)
+	}
+
+	signature := language.Signature{
+		Label:       "old_function(value)",
+		Parameters:  []language.FunctionParameter{{Name: "value", Type: "Any", Description: "Legacy value."}},
+		Description: "Processes a legacy value.",
+		Return:      &language.FunctionReturn{Type: "Any", Description: "Legacy result."},
+		Throws:      []language.FunctionThrow{{Error: "TypeError", Description: "The value is invalid."}},
+		Deprecated:  "Use new_function instead.",
+	}
+	markdown := renderHoverMarkdown(language.Hover{RegisteredSignatures: []language.Signature{signature}})
+	for _, expected := range []string{"**Parameters**", "**Returns**", "**Throws**", "**Deprecated:** Use new_function instead."} {
+		if !strings.Contains(markdown, expected) {
+			t.Errorf("hover Markdown %q does not contain %q", markdown, expected)
+		}
+	}
+}
+
 func toProtocolPosition(value source.Position) protocol.Position {
 	return protocol.Position{Line: value.Line, Character: value.Character}
 }

@@ -13,3 +13,11 @@ func terminalName(name string) string {
 
 	return name
 }
+
+func namespaceName(name string) string {
+	if index := strings.LastIndex(name, runtime.NamespaceSeparator); index >= 0 {
+		return name[:index]
+	}
+
+	return ""
+}

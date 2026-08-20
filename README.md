@@ -47,6 +47,21 @@ make generate
 make proto-lint
 ```
 
+## Generated artifacts
+
+`make generate` refreshes both checked-in protobuf output and the embedded
+Ferret Standard Library API Reference. The reference is generated content at
+`internal/language/stdlib/api.json`; do not edit it manually. Its version is
+resolved with Go tooling from the selected `github.com/MontFerret/ferret/v2`
+module dependency, then downloaded from Ferret's published machine-readable API
+artifacts and validated with the shared Specs model.
+
+After updating Ferret with `go get`, run `make generate` and commit the updated
+reference with the module files. `make check-generate` verifies that the
+checked-in reference matches the selected Ferret version and that regeneration
+produces no changes. Network access is required for generation, but installed
+`ferretd` binaries use only the embedded artifact and remain fully offline.
+
 ## Commands
 
 ```sh

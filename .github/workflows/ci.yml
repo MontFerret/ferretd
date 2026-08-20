@@ -55,7 +55,7 @@ jobs:
       - name: Lint protobuf contracts
         run: make proto-lint
 
-      - name: Verify generated protobuf code
+      - name: Verify generated artifacts
         run: make check-generate
 
       - name: Race test shared state

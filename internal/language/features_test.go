@@ -249,7 +249,7 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		Params:    configuredParams,
 	})
 	configuredParams["AddedLater"] = runtime.Int(2)
-	query := "RETURN CuStOm" + runtime.NamespaceSeparator + "DoThing(@Known)"
+	query := "RETURN CuStOm" + runtime.NamespaceSeparator + "DoThing(@Known, 2)"
 	uri := documentURI(t, "registry.fql")
 	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, query); err != nil {
 		t.Fatal(err)
@@ -276,11 +276,11 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		t.Fatalf("bind parameter completion = %+v, %v", bindItems, err)
 	}
 
-	signature, err := service.SignatureHelp(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "@Known")))
+	signature, err := service.SignatureHelp(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, ", 2")+2))
 	if err != nil || signature == nil || len(signature.Signatures) != 3 ||
 		signature.Signatures[0].Label != "CuStOm::DoThing(arg1)" ||
 		signature.Signatures[1].Label != "CuStOm::DoThing(arg1, arg2)" ||
-		!signature.Signatures[2].Variadic {
+		!signature.Signatures[2].Variadic || signature.ActiveSignature != 1 || signature.ActiveParameter != 1 {
 		t.Fatalf("registered signature = %+v, %v", signature, err)
 	}
 
@@ -300,6 +300,65 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 	params, err := paramService.Completion(context.Background(), paramURI, source.Position{Character: 8})
 	if err != nil || !hasCompletion(params, "Configured") {
 		t.Fatalf("configured parameter completion = %+v, %v", params, err)
+	}
+}
+
+func TestEmbeddedStdlibReferenceEnrichesLanguageFeatures(t *testing.T) {
+	query := `RETURN [average([1, 2]), concat("a", "b", "c")]`
+	service, uri := openLanguageDocument(t, query)
+	mapper := source.NewMapper(query)
+
+	items, err := service.Completion(context.Background(), uri, mapper.OffsetToPosition(len("RETURN [")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	averageCompletion, ok := completionByLabel(items, "average")
+	if !ok || !strings.Contains(averageCompletion.Detail, "average(") || strings.Contains(averageCompletion.Detail, "arg1") {
+		t.Fatalf("average completion = %+v, found %t", averageCompletion, ok)
+	}
+
+	averageSignature, err := service.SignatureHelp(
+		context.Background(),
+		uri,
+		mapper.OffsetToPosition(strings.Index(query, "[1, 2]")+1),
+	)
+	if err != nil || averageSignature == nil || len(averageSignature.Signatures) != 1 {
+		t.Fatalf("average signature = %+v, %v", averageSignature, err)
+	}
+
+	average := averageSignature.Signatures[0]
+	if len(average.Parameters) != 1 || average.Parameters[0].Name == "arg1" || average.Parameters[0].Type == "" ||
+		average.Parameters[0].Description == "" || average.Description == "" || average.Return == nil || average.Return.Type == "" {
+		t.Fatalf("enriched average signature = %+v", average)
+	}
+	averageSignature.Signatures[0].Parameters[0].Name = "changed"
+	averageSignature.Signatures[0].Return.Type = "Changed"
+
+	repeatedAverage, err := service.SignatureHelp(
+		context.Background(),
+		uri,
+		mapper.OffsetToPosition(strings.Index(query, "[1, 2]")+1),
+	)
+	if err != nil || repeatedAverage == nil || repeatedAverage.Signatures[0].Parameters[0].Name == "changed" ||
+		repeatedAverage.Signatures[0].Return.Type == "Changed" {
+		t.Fatalf("signature help exposed mutable catalog metadata: %+v, %v", repeatedAverage, err)
+	}
+
+	concatSignature, err := service.SignatureHelp(
+		context.Background(),
+		uri,
+		mapper.OffsetToPosition(strings.Index(query, `"c"`)+1),
+	)
+	if err != nil || concatSignature == nil || len(concatSignature.Signatures) != 1 ||
+		!concatSignature.Signatures[0].Variadic || concatSignature.ActiveParameter != 0 {
+		t.Fatalf("variadic concat signature = %+v, %v", concatSignature, err)
+	}
+
+	hover, err := service.Hover(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "average")))
+	if err != nil || hover == nil || len(hover.RegisteredSignatures) != 1 ||
+		hover.RegisteredSignatures[0].Description == "" || hover.RegisteredSignatures[0].Return == nil {
+		t.Fatalf("enriched average hover = %+v, %v", hover, err)
 	}
 }
 

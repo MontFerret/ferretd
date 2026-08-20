@@ -32,6 +32,15 @@ Language-word completions use canonical lowercase labels and insertion text.
 Source-defined names, namespace aliases, bind parameters, and registered
 functions retain their declared spelling.
 
+Standard Library completion details, signature help, and hover use the
+machine-readable Ferret API Reference embedded for the exact Ferret dependency
+selected when this repository was generated. Signature help exposes authored
+parameter names and documentation; hover includes descriptions, parameter and
+return information, documented failures, and deprecation messages where
+available. Runtime-registered host functions that are not in the Standard
+Library reference remain available with runtime-derived signatures. These
+features never fetch documentation or require ferretlang.org at LSP runtime.
+
 Formatting delegates to Ferret's canonical formatter. `tabSize` selects its
 indent width, but canonical output remains space-indented even when the client
 sets `insertSpaces` to false. Invalid source receives no formatting edit.

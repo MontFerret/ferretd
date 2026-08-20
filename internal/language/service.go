@@ -54,7 +54,7 @@ func New(options Options) *Service {
 		cache:         make(map[string]*analysisEntry),
 		compiler:      compilerInstance,
 		workspaces:    workspaces,
-		functionIndex: newFunctionIndex(functions),
+		functionIndex: newFunctionIndex(functions, defaultStdlibMetadata()),
 		params:        options.Params.Clone(),
 	}
 	result.analyze = compilerInstance.Analyze

@@ -39,38 +39,3 @@ func (s *Service) resolveAt(
 
 	return document, resolveAnalyzed(document, position), nil
 }
-
-func resolveAnalyzed(document analyzedDocument, position source.Position) Resolution {
-	offset := document.mapper.PositionToOffset(position)
-	result := Resolution{Offset: offset, Snapshot: document.snapshot.id}
-
-	if symbol, ok := document.analysis.SymbolAt(offset); ok {
-		result.Symbol = &symbol
-		if symbol.HasDeclaration {
-			declaration := document.mapper.SpanToRange(toSourceSpan(symbol.SelectionSpan))
-			result.Range = declaration
-			result.Declaration = &declaration
-		}
-	}
-
-	if reference, ok := document.analysis.ReferenceAt(offset); ok {
-		result.Reference = &reference
-		result.Range = document.mapper.SpanToRange(toSourceSpan(reference.Span))
-	}
-
-	if call, ok := document.analysis.CallAt(offset); ok {
-		result.Call = &call
-		if offset >= call.CalleeSpan.Start && offset < call.CalleeSpan.End {
-			result.Range = document.mapper.SpanToRange(toSourceSpan(call.CalleeSpan))
-		}
-	}
-
-	if fact, ok := document.analysis.TypeAt(offset); ok {
-		result.Type = &fact
-		if result.Range == (source.Range{}) {
-			result.Range = document.mapper.SpanToRange(toSourceSpan(fact.Span))
-		}
-	}
-
-	return result
-}

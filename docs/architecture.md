@@ -31,7 +31,12 @@ daemon document snapshots, retained Ferret syntax state, and one rooted
 read-write Ferret engine per open workspace. The protocol-neutral language
 service owns versioned editor overlays, per-document
 analysis scheduling and caching, and Ferret-backed language features for
-protocol adapters and other integrations. The execution manager owns compiled
+protocol adapters and other integrations. Its immutable function catalog merges
+executable facts from the configured Ferret runtime registry with presentation
+metadata from the version-matched embedded Standard Library API Reference.
+Runtime registrations remain authoritative for callable functions and arities;
+the reference supplies signatures, documentation, return information, and
+deprecation metadata without runtime network access. The execution manager owns compiled
 Plan Sessions, isolated one-shot Executions, cancellation, lifecycle events,
 terminal results, lazy debug Plans, target leases, and workspace-to-session
 cleanup. The debug manager owns retained DebugSessions, debugger commands,
@@ -72,7 +77,9 @@ The stdio LSP server constructs a shared workspace manager and language service.
 Initialization roots populate static workspace baselines, while client-supplied
 open-document text is retained as an overlay. The LSP adapter owns protocol
 translation, lifecycle ordering, request cancellation, diagnostic publication,
-and stdio framing rather than language semantics.
+Markdown rendering, and stdio framing rather than language semantics. Future
+Registry module metadata can enrich the same language-owned function catalog;
+Registry discovery and resolution are not implemented.
 
 The stdio DAP server constructs in-process workspace, execution, and debug
 managers and owns one launched program, execution Session, and DebugSession.
