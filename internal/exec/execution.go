@@ -138,7 +138,7 @@ func (e *Execution) Cancel() ExecutionSnapshot {
 // Subscribe returns the latest lifecycle event and future bounded observations.
 func (e *Execution) Subscribe() Subscription {
 	e.mu.Lock()
-	current := cloneEvent(e.lastEvent)
+	current := e.lastEvent.clone()
 	if e.state.Terminal() {
 		events := make(chan Event)
 		errors := make(chan error)
@@ -265,15 +265,15 @@ func (e *Execution) completeClose() {
 }
 
 func (e *Execution) snapshotLocked() ExecutionSnapshot {
-	return ExecutionSnapshot{
+	return (ExecutionSnapshot{
 		ID:         e.id,
 		Session:    e.session,
 		State:      e.state,
-		Parameters: cloneParameters(e.parameterInput),
+		Parameters: e.parameterInput,
 		Options:    e.options,
-		Output:     cloneOutput(e.output),
-		Failure:    cloneFailure(e.failure),
-	}
+		Output:     e.output,
+		Failure:    e.failure,
+	}).Clone()
 }
 
 func (e *Execution) publishLocked(kind EventKind, terminal bool) {
@@ -287,7 +287,7 @@ func (e *Execution) publishLocked(kind EventKind, terminal bool) {
 
 	for id, watcher := range e.watchers {
 		select {
-		case watcher.events <- cloneEvent(e.lastEvent):
+		case watcher.events <- e.lastEvent.clone():
 			if terminal {
 				e.closeWatcherLocked(id, watcher, nil)
 			}

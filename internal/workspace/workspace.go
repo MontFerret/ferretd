@@ -71,28 +71,16 @@ func newWorkspace(id ID, root string) *Workspace {
 
 // ID returns the workspace's opaque identifier.
 func (w *Workspace) ID() ID {
-	if w == nil {
-		return ""
-	}
-
 	return w.id
 }
 
 // Root returns the canonical workspace root.
 func (w *Workspace) Root() string {
-	if w == nil {
-		return ""
-	}
-
 	return w.root
 }
 
 // State returns the workspace's current lifecycle state.
 func (w *Workspace) State() State {
-	if w == nil {
-		return StateClosed
-	}
-
 	w.mu.RLock()
 	state := w.state
 	w.mu.RUnlock()
@@ -105,10 +93,6 @@ func (w *Workspace) State() State {
 
 // Failure returns the retained cause of a failed initial load.
 func (w *Workspace) Failure() error {
-	if w == nil {
-		return nil
-	}
-
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -117,10 +101,6 @@ func (w *Workspace) Failure() error {
 
 // Files returns deterministic value snapshots of discovered source files.
 func (w *Workspace) Files() []File {
-	if w == nil {
-		return nil
-	}
-
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -132,10 +112,6 @@ func (w *Workspace) Files() []File {
 
 // Documents returns deterministic daemon-owned document snapshots.
 func (w *Workspace) Documents() []Document {
-	if w == nil {
-		return nil
-	}
-
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -149,10 +125,6 @@ func (w *Workspace) Documents() []Document {
 
 // Document returns a document by its workspace-relative path.
 func (w *Workspace) Document(relativePath string) (Document, bool) {
-	if w == nil {
-		return Document{}, false
-	}
-
 	key, ok := documentKey(relativePath)
 	if !ok {
 		return Document{}, false
@@ -167,10 +139,6 @@ func (w *Workspace) Document(relativePath string) (Document, bool) {
 
 // Diagnostics returns copies of all document diagnostics in document order.
 func (w *Workspace) Diagnostics() []*ferretdiagnostics.Diagnostic {
-	if w == nil {
-		return nil
-	}
-
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -199,7 +167,7 @@ func (w *Workspace) CompileDocument(ctx context.Context, document Document) (Com
 		return Compilation{}, err
 	}
 
-	if w == nil || w.closing.Load() {
+	if w.closing.Load() {
 		return Compilation{}, ErrClosed
 	}
 
@@ -235,7 +203,7 @@ func (w *Workspace) CompileDebugSnapshot(
 		return Compilation{}, err
 	}
 
-	if w == nil || w.closing.Load() || snapshot.Workspace != w.id {
+	if w.closing.Load() || snapshot.Workspace != w.id {
 		return Compilation{}, ErrClosed
 	}
 

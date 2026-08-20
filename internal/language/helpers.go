@@ -1,7 +1,6 @@
 package language
 
 import (
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -12,10 +11,6 @@ import (
 	diagnosticprojection "github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/source"
 )
-
-func fmtDocumentNotOpen(uri source.URI) error {
-	return fmt.Errorf("%w: %s", ErrDocumentNotOpen, uri)
-}
 
 func convertFerretDiagnostic(
 	uri source.URI,

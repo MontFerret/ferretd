@@ -20,7 +20,7 @@ func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (D
 		return Document{}, err
 	}
 
-	if w == nil || w.closing.Load() {
+	if w.closing.Load() {
 		return Document{}, ErrClosed
 	}
 

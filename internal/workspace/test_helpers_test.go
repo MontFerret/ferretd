@@ -17,3 +17,15 @@ func newTestManager(t *testing.T) *Manager {
 
 	return manager
 }
+
+func assertPanics(t testing.TB, call func()) {
+	t.Helper()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("call did not panic")
+		}
+	}()
+
+	call()
+}

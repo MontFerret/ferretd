@@ -1,19 +1,6 @@
 package debug
 
-import (
-	"context"
-
-	"github.com/MontFerret/ferret/v2"
-	"github.com/MontFerret/ferretd/internal/diagnostic"
-)
-
-func contextError(ctx context.Context) error {
-	if ctx == nil {
-		return nil
-	}
-
-	return ctx.Err()
-}
+import "github.com/MontFerret/ferret/v2"
 
 func convertLocation(value ferret.DebugLocation) Location {
 	return Location{File: value.File, Line: value.Line, Column: value.Column}
@@ -56,50 +43,6 @@ func convertVariables(values []ferret.DebugVariable) []Variable {
 	return result
 }
 
-func cloneFailure(value *Failure) *Failure {
-	if value == nil {
-		return nil
-	}
-
-	result := &Failure{
-		Message:     value.Message,
-		Diagnostics: make([]diagnostic.Diagnostic, len(value.Diagnostics)),
-	}
-	for index, item := range value.Diagnostics {
-		result.Diagnostics[index] = item
-		result.Diagnostics[index].RelatedInformation = append(
-			[]diagnostic.RelatedInformation(nil),
-			item.RelatedInformation...,
-		)
-	}
-
-	return result
-}
-
-func cloneSnapshot(value SessionSnapshot) SessionSnapshot {
-	return SessionSnapshot{
-		ID:               value.ID,
-		Session:          value.Session,
-		State:            value.State,
-		Reason:           value.Reason,
-		Location:         value.Location,
-		HitBreakpointIDs: append([]uint64(nil), value.HitBreakpointIDs...),
-		Parameters:       cloneParameters(value.Parameters),
-		Options:          value.Options,
-		Output:           cloneOutput(value.Output),
-		Failure:          cloneFailure(value.Failure),
-	}
-}
-
-func cloneEvent(value Event) Event {
-	return Event{
-		Session:  value.Session,
-		Sequence: value.Sequence,
-		Kind:     value.Kind,
-		Snapshot: cloneSnapshot(value.Snapshot),
-	}
-}
-
 func cloneParameters(values map[string]any) map[string]any {
 	if values == nil {
 		return nil
@@ -126,16 +69,5 @@ func cloneParameterValue(value any) any {
 		return cloneParameters(typed)
 	default:
 		return typed
-	}
-}
-
-func cloneOutput(value *Output) *Output {
-	if value == nil {
-		return nil
-	}
-
-	return &Output{
-		ContentType: value.ContentType,
-		Content:     append([]byte(nil), value.Content...),
 	}
 }

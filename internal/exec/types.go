@@ -25,17 +25,6 @@ type (
 		Parameters []string
 	}
 
-	// ExecutionSnapshot is an immutable view of one daemon Execution.
-	ExecutionSnapshot struct {
-		ID         ExecutionID
-		Session    SessionID
-		State      State
-		Parameters map[string]any
-		Options    ExecutionOptions
-		Output     *Output
-		Failure    *Failure
-	}
-
 	// Output is a defensively copied encoded Ferret result.
 	Output struct {
 		ContentType string
@@ -47,22 +36,6 @@ type (
 		Category    FailureCategory
 		Message     string
 		Diagnostics []diagnostic.Diagnostic
-	}
-
-	// Event is one ordered lifecycle observation for an Execution.
-	Event struct {
-		Execution ExecutionID
-		Sequence  uint64
-		Kind      EventKind
-		Snapshot  ExecutionSnapshot
-	}
-
-	// Subscription provides the current event and bounded future observations.
-	Subscription struct {
-		Current Event
-		Events  <-chan Event
-		Errors  <-chan error
-		Cancel  func()
 	}
 
 	// CompilationError retains structured Ferret compiler diagnostics.
@@ -123,38 +96,6 @@ func (s State) Terminal() bool {
 	return s == StateCompleted || s == StateFailed || s == StateCancelled
 }
 
-func cloneOutput(value *Output) *Output {
-	if value == nil {
-		return nil
-	}
-
-	return &Output{
-		ContentType: value.ContentType,
-		Content:     append([]byte(nil), value.Content...),
-	}
-}
-
-func cloneFailure(value *Failure) *Failure {
-	if value == nil {
-		return nil
-	}
-
-	result := &Failure{
-		Category:    value.Category,
-		Message:     value.Message,
-		Diagnostics: make([]diagnostic.Diagnostic, len(value.Diagnostics)),
-	}
-	for i, item := range value.Diagnostics {
-		result.Diagnostics[i] = item
-		result.Diagnostics[i].RelatedInformation = append(
-			[]diagnostic.RelatedInformation(nil),
-			item.RelatedInformation...,
-		)
-	}
-
-	return result
-}
-
 func cloneParameters(values map[string]any) map[string]any {
 	if values == nil {
 		return nil
@@ -181,17 +122,5 @@ func cloneParameterValue(value any) any {
 		return cloneParameters(typed)
 	default:
 		return typed
-	}
-}
-
-func cloneExecutionSnapshot(value ExecutionSnapshot) ExecutionSnapshot {
-	return ExecutionSnapshot{
-		ID:         value.ID,
-		Session:    value.Session,
-		State:      value.State,
-		Parameters: cloneParameters(value.Parameters),
-		Options:    value.Options,
-		Output:     cloneOutput(value.Output),
-		Failure:    cloneFailure(value.Failure),
 	}
 }

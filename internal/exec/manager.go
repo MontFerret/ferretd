@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
@@ -134,7 +135,7 @@ func (m *Manager) CreateSession(
 	if m.closed || group == nil || group.closing {
 		m.mu.Unlock()
 
-		return SessionSnapshot{}, errors.Join(ErrWorkspaceClosed, compilation.Close())
+		return SessionSnapshot{}, errors.Join(workspace.ErrClosed, compilation.Close())
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -193,7 +194,7 @@ func (m *Manager) CreateExecution(
 
 	params, err := runtime.NewParamsFrom(parameters)
 	if err != nil {
-		return ExecutionSnapshot{}, invalidParametersError(err)
+		return ExecutionSnapshot{}, fmt.Errorf("%w: %v", ErrInvalidParameters, err)
 	}
 
 	id, err := newExecutionID()
@@ -207,7 +208,7 @@ func (m *Manager) CreateExecution(
 	if m.closed {
 		m.mu.Unlock()
 
-		return ExecutionSnapshot{}, ErrManagerClosed
+		return ExecutionSnapshot{}, ErrClosed
 	}
 
 	session, ok := m.sessions[sessionID]
@@ -371,7 +372,7 @@ func (m *Manager) beginSessionCreate(id workspace.ID) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return ErrManagerClosed
+		return ErrClosed
 	}
 
 	group := m.groups[id]
@@ -381,7 +382,7 @@ func (m *Manager) beginSessionCreate(id workspace.ID) error {
 	}
 
 	if group.closing {
-		return ErrWorkspaceClosed
+		return workspace.ErrClosed
 	}
 
 	if group.creating == 0 {

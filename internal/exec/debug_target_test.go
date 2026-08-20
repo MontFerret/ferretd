@@ -107,6 +107,11 @@ func TestAcquireDebugTargetCoordinatesCachesAndRetries(t *testing.T) {
 	})
 }
 
+func TestDebugTargetReleaseRequiresReceiver(t *testing.T) {
+	var target *DebugTarget
+	assertPanics(t, target.Release)
+}
+
 func TestAcquireDebugTargetRejectsChangedSourceAndCachesFailure(t *testing.T) {
 	var closes atomic.Int32
 	manager, snapshot, engine := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {

@@ -57,6 +57,13 @@ func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND,
 		},
 		{
+			name:      "workspace closed",
+			err:       workspace.ErrClosed,
+			code:      codes.FailedPrecondition,
+			resource:  executionv1.ResourceKind_RESOURCE_KIND_WORKSPACE,
+			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
+		},
+		{
 			name:      "session not found",
 			err:       exec.ErrSessionNotFound,
 			code:      codes.NotFound,
@@ -69,6 +76,13 @@ func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 			code:      codes.FailedPrecondition,
 			resource:  executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
 			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_STATE,
+		},
+		{
+			name:      "execution service closed",
+			err:       exec.ErrClosed,
+			code:      codes.FailedPrecondition,
+			resource:  executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
+			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
 		},
 		{
 			name:      "watcher lag",

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferretd/internal/diagnostic"
 )
 
 func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
@@ -486,8 +487,8 @@ func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 		context.Background(),
 		fixture.workspace.ID(),
 		"query.fql",
-	); !errors.Is(err, ErrManagerClosed) {
-		t.Fatalf("CreateSession after Close error = %v, want ErrManagerClosed", err)
+	); !errors.Is(err, ErrClosed) {
+		t.Fatalf("CreateSession after Close error = %v, want ErrClosed", err)
 	}
 }
 
@@ -539,13 +540,30 @@ func TestExecutionSnapshotClone(t *testing.T) {
 	value := ExecutionSnapshot{
 		Parameters: map[string]any{"nested": []any{map[string]any{"key": "value"}}},
 		Output:     &Output{Content: []byte("one")},
-		Failure:    &Failure{Diagnostics: nil},
+		Failure: &Failure{
+			Message: "failure",
+			Diagnostics: []diagnostic.Diagnostic{{
+				Message: "diagnostic",
+				RelatedInformation: []diagnostic.RelatedInformation{{
+					Message: "related",
+				}},
+			}},
+		},
 	}
-	cloned := cloneExecutionSnapshot(value)
+	cloned := value.Clone()
 	cloned.Parameters["nested"].([]any)[0].(map[string]any)["key"] = "changed"
 	cloned.Output.Content[0] = 't'
+	cloned.Failure.Message = "changed"
+	cloned.Failure.Diagnostics[0].Message = "changed"
+	cloned.Failure.Diagnostics[0].RelatedInformation[0].Message = "changed"
 
+	if value.Parameters["nested"].([]any)[0].(map[string]any)["key"] != "value" ||
+		string(value.Output.Content) != "one" || value.Failure.Message != "failure" ||
+		value.Failure.Diagnostics[0].Message != "diagnostic" ||
+		value.Failure.Diagnostics[0].RelatedInformation[0].Message != "related" {
+		t.Fatalf("clone mutated original snapshot: %+v", value)
+	}
 	if reflect.DeepEqual(value, cloned) {
-		t.Fatal("clone shares mutable state")
+		t.Fatal("clone did not retain independent mutable data")
 	}
 }

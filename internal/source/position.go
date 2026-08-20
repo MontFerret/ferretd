@@ -68,10 +68,6 @@ func NewMapper(text string) *Mapper {
 
 // OffsetToPosition converts a UTF-8 byte offset to a zero-based UTF-16 position.
 func (m *Mapper) OffsetToPosition(offset int) Position {
-	if m == nil {
-		return Position{}
-	}
-
 	offset = m.clampOffset(offset)
 	line := sort.Search(len(m.lineStarts), func(i int) bool {
 		return m.lineStarts[i] > offset
@@ -94,7 +90,7 @@ func (m *Mapper) OffsetToPosition(offset int) Position {
 
 // PositionToOffset converts a zero-based UTF-16 position to a UTF-8 byte offset.
 func (m *Mapper) PositionToOffset(position Position) int {
-	if m == nil || len(m.lineStarts) == 0 {
+	if len(m.lineStarts) == 0 {
 		return 0
 	}
 
@@ -129,10 +125,6 @@ func (m *Mapper) PositionToOffset(position Position) int {
 
 // SpanToRange converts a half-open UTF-8 byte span to a UTF-16 range.
 func (m *Mapper) SpanToRange(span Span) Range {
-	if m == nil {
-		return Range{}
-	}
-
 	start := m.clampOffset(span.Start)
 	end := m.clampOffset(span.End)
 
@@ -145,10 +137,6 @@ func (m *Mapper) SpanToRange(span Span) Range {
 
 // RangeToSpan converts a UTF-16 range to a half-open UTF-8 byte span.
 func (m *Mapper) RangeToSpan(value Range) Span {
-	if m == nil {
-		return Span{}
-	}
-
 	start := m.PositionToOffset(value.Start)
 	end := m.PositionToOffset(value.End)
 
@@ -161,10 +149,6 @@ func (m *Mapper) RangeToSpan(value Range) Span {
 
 // Text returns the mapper's immutable source text.
 func (m *Mapper) Text() string {
-	if m == nil {
-		return ""
-	}
-
 	return m.text
 }
 

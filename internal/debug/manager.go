@@ -59,7 +59,7 @@ func (m *Manager) CreateSession(
 	parameters map[string]any,
 	options SessionOptions,
 ) (SessionSnapshot, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
 
@@ -107,7 +107,7 @@ func (m *Manager) CreateSession(
 		closeErr := ferretSession.Close()
 		target.Release()
 		if managerClosed {
-			return SessionSnapshot{}, errors.Join(ErrManagerClosed, closeErr)
+			return SessionSnapshot{}, errors.Join(ErrClosed, closeErr)
 		}
 
 		return SessionSnapshot{}, errors.Join(exec.ErrSessionClosed, closeErr)
@@ -307,7 +307,7 @@ func (m *Manager) Close(ctx context.Context) error {
 }
 
 func (m *Manager) session(ctx context.Context, id SessionID) (*Session, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -326,7 +326,7 @@ func (m *Manager) beginCreate(parentID exec.SessionID) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return ErrManagerClosed
+		return ErrClosed
 	}
 
 	group := m.groups[parentID]
@@ -461,10 +461,6 @@ func (m *Manager) finishExecutionSessionClose(parentID exec.SessionID, group *se
 }
 
 func waitForDone(ctx context.Context, done <-chan struct{}, result func() error) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

@@ -144,7 +144,7 @@ func (s *Service) resolveSnapshot(ctx context.Context, uri source.URI) (document
 	}
 
 	if !ok {
-		return documentSnapshot{}, fmtDocumentNotOpen(uri)
+		return documentSnapshot{}, fmt.Errorf("%w: %s", ErrDocumentNotOpen, uri)
 	}
 
 	return documentSnapshot{

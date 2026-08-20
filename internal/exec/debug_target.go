@@ -61,10 +61,6 @@ func (t *DebugTarget) NewDebugSession(
 
 // Release idempotently releases the target's Plan lifetime lease.
 func (t *DebugTarget) Release() {
-	if t == nil {
-		return
-	}
-
 	t.once.Do(t.release)
 }
 
@@ -79,7 +75,7 @@ func (m *Manager) AcquireDebugTarget(ctx context.Context, id SessionID) (*DebugT
 	closed := m.closed
 	m.mu.RUnlock()
 	if closed {
-		return nil, ErrManagerClosed
+		return nil, ErrClosed
 	}
 
 	if session == nil {

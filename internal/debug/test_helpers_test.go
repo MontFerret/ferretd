@@ -40,6 +40,18 @@ func mustNewManager(t testing.TB, executions *exec.Manager) *Manager {
 	return manager
 }
 
+func assertPanics(t testing.TB, call func()) {
+	t.Helper()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("call did not panic")
+		}
+	}()
+
+	call()
+}
+
 func newDebugFixture(t *testing.T, query string) debugFixture {
 	t.Helper()
 

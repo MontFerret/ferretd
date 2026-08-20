@@ -532,3 +532,32 @@ func TestOperationsRespectCancellation(t *testing.T) {
 		t.Fatalf("idempotent Close error = %v, want nil", err)
 	}
 }
+
+func TestCloseAndClearRequireContexts(t *testing.T) {
+	t.Run("Close", func(t *testing.T) {
+		manager := New()
+		opened, err := manager.Open(context.Background(), t.TempDir())
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		t.Cleanup(func() { _ = manager.Close(context.Background(), opened.ID()) })
+
+		assertPanics(t, func() {
+			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			_ = manager.Close(nil, opened.ID())
+		})
+	})
+
+	t.Run("Clear", func(t *testing.T) {
+		manager := New()
+		if _, err := manager.Open(context.Background(), t.TempDir()); err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		t.Cleanup(func() { _ = manager.Clear(context.Background()) })
+
+		assertPanics(t, func() {
+			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			_ = manager.Clear(nil)
+		})
+	})
+}

@@ -6,10 +6,8 @@ var (
 	errNilWorkspaceManager = errors.New("execution: nil workspace manager")
 	errExecutionCanceled   = errors.New("execution cancellation requested")
 
-	// ErrManagerClosed reports an execution manager that is shutting down.
-	ErrManagerClosed = errors.New("execution manager closed")
-	// ErrWorkspaceClosed reports a workspace whose execution children are closing.
-	ErrWorkspaceClosed = errors.New("workspace closed")
+	// ErrClosed reports an execution service that is shutting down.
+	ErrClosed = errors.New("execution service closed")
 	// ErrSessionNotFound reports an unknown daemon Session ID.
 	ErrSessionNotFound = errors.New("session not found")
 	// ErrSessionClosed reports a daemon Session that cannot create new Executions.

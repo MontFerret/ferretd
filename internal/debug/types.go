@@ -1,10 +1,7 @@
 // Package debug coordinates retained Ferret debugger sessions.
 package debug
 
-import (
-	"github.com/MontFerret/ferretd/internal/diagnostic"
-	"github.com/MontFerret/ferretd/internal/exec"
-)
+import "github.com/MontFerret/ferretd/internal/diagnostic"
 
 type (
 	// State identifies a debug Session lifecycle state.
@@ -21,20 +18,6 @@ type (
 
 	// ValueReference identifies an expandable value in one paused state.
 	ValueReference uint64
-
-	// SessionSnapshot is an immutable view of one daemon debug Session.
-	SessionSnapshot struct {
-		ID               SessionID
-		Session          exec.SessionID
-		State            State
-		Reason           StopReason
-		Location         Location
-		HitBreakpointIDs []uint64
-		Parameters       map[string]any
-		Options          SessionOptions
-		Output           *Output
-		Failure          *Failure
-	}
 
 	// Output is the encoded terminal result of a completed debug Session.
 	Output struct {
@@ -98,22 +81,6 @@ type (
 	Failure struct {
 		Message     string
 		Diagnostics []diagnostic.Diagnostic
-	}
-
-	// Event is one ordered lifecycle observation for a debug Session.
-	Event struct {
-		Session  SessionID
-		Sequence uint64
-		Kind     EventKind
-		Snapshot SessionSnapshot
-	}
-
-	// Subscription provides the latest event and bounded future observations.
-	Subscription struct {
-		Current Event
-		Events  <-chan Event
-		Errors  <-chan error
-		Cancel  func()
 	}
 )
 

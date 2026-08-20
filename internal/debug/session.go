@@ -120,7 +120,7 @@ func (d *Session) StepOut(ctx context.Context) (SessionSnapshot, error) {
 
 // Pause requests a safe stop without waiting for the active command.
 func (d *Session) Pause(ctx context.Context) (SessionSnapshot, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
 
@@ -145,7 +145,7 @@ func (d *Session) ReplaceBreakpoints(
 	file string,
 	locations []BreakpointLocation,
 ) ([]Breakpoint, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -198,7 +198,7 @@ func (d *Session) ReplaceBreakpoints(
 
 // Frames returns the paused frame stack in current-to-caller order.
 func (d *Session) Frames(ctx context.Context) ([]Frame, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -228,7 +228,7 @@ func (d *Session) Frames(ctx context.Context) ([]Frame, error) {
 
 // Scopes returns Locals and Parameters for one paused frame.
 func (d *Session) Scopes(ctx context.Context, frame int) ([]Scope, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -261,7 +261,7 @@ func (d *Session) Scopes(ctx context.Context, frame int) ([]Scope, error) {
 
 // Variables expands one value reference from the current paused state.
 func (d *Session) Variables(ctx context.Context, reference ValueReference) ([]Variable, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -282,7 +282,7 @@ func (d *Session) Variables(ctx context.Context, reference ValueReference) ([]Va
 
 // Evaluate evaluates a side-effect-free expression in one paused frame.
 func (d *Session) Evaluate(ctx context.Context, frame int, expression string) (Value, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return Value{}, err
 	}
 
@@ -303,7 +303,7 @@ func (d *Session) Evaluate(ctx context.Context, frame int, expression string) (V
 
 // Terminate idempotently requests Ferret termination while retaining the resource.
 func (d *Session) Terminate(ctx context.Context) (SessionSnapshot, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
 
@@ -315,7 +315,7 @@ func (d *Session) Terminate(ctx context.Context) (SessionSnapshot, error) {
 // Subscribe returns the latest lifecycle event and future bounded observations.
 func (d *Session) Subscribe() Subscription {
 	d.mu.Lock()
-	current := cloneEvent(d.lastEvent)
+	current := d.lastEvent.clone()
 	if d.state.Terminal() {
 		events := make(chan Event)
 		errorsChannel := make(chan error)
@@ -366,14 +366,14 @@ func (d *Session) startCommand(
 	command func() (*ferret.DebugEvent, error),
 	runtimeErrorResume bool,
 ) (SessionSnapshot, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
 
 	d.controlMu.Lock()
 	defer d.controlMu.Unlock()
 
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
 
@@ -609,18 +609,18 @@ func (d *Session) closeResult() error {
 }
 
 func (d *Session) snapshotLocked() SessionSnapshot {
-	return SessionSnapshot{
+	return (SessionSnapshot{
 		ID:               d.id,
 		Session:          d.session,
 		State:            d.state,
 		Reason:           d.reason,
 		Location:         d.location,
-		HitBreakpointIDs: append([]uint64(nil), d.hitBreakpointIDs...),
-		Parameters:       cloneParameters(d.parameters),
+		HitBreakpointIDs: d.hitBreakpointIDs,
+		Parameters:       d.parameters,
 		Options:          d.options,
-		Output:           cloneOutput(d.output),
-		Failure:          cloneFailure(d.failure),
-	}
+		Output:           d.output,
+		Failure:          d.failure,
+	}).Clone()
 }
 
 func (d *Session) publishLocked(kind EventKind, terminal bool) {
@@ -634,7 +634,7 @@ func (d *Session) publishLocked(kind EventKind, terminal bool) {
 
 	for id, watcher := range d.watchers {
 		select {
-		case watcher.events <- cloneEvent(d.lastEvent):
+		case watcher.events <- d.lastEvent.clone():
 			if terminal {
 				d.closeWatcherLocked(id, watcher, nil)
 			}

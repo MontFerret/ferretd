@@ -280,6 +280,14 @@ func TestCloseSessionRunsPlanCloseOnceAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCloseSessionRequiresContext(t *testing.T) {
+	fixture := newExecutionFixture(t, "RETURN 1")
+	assertPanics(t, func() {
+		//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+		_ = fixture.manager.CloseSession(nil, fixture.session.ID)
+	})
+}
+
 func TestSessionCloseCallerTimeoutDoesNotStopCleanup(t *testing.T) {
 	closeStarted := make(chan struct{})
 	releaseClose := make(chan struct{})
@@ -313,6 +321,9 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 	cancel()
 	if err := manager.CloseWorkspace(ctx, workspaceID); !errors.Is(err, context.Canceled) {
 		t.Fatalf("CloseWorkspace error = %v, want context.Canceled", err)
+	}
+	if err := manager.beginSessionCreate(workspaceID); !errors.Is(err, workspace.ErrClosed) {
+		t.Fatalf("beginSessionCreate during workspace close error = %v, want workspace.ErrClosed", err)
 	}
 	manager.finishSessionCreate(workspaceID)
 	if err := manager.CloseWorkspace(context.Background(), workspaceID); err != nil {

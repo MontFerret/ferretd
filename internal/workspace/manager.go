@@ -237,10 +237,6 @@ func (m *Manager) List(ctx context.Context) ([]*Workspace, error) {
 
 // Close removes a workspace and releases its retained source state.
 func (m *Manager) Close(ctx context.Context, id ID) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	operation, owner := m.beginClose(id)
 	if operation == nil {
 		return nil
@@ -255,10 +251,6 @@ func (m *Manager) Close(ctx context.Context, id ID) error {
 
 // Clear removes and closes all retained workspace state.
 func (m *Manager) Clear(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	m.mu.Lock()
 	operations := make([]*closeOperation, 0, len(m.byID)+len(m.closing))
 	owned := make(map[ID]*closeOperation, len(m.byID))

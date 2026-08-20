@@ -32,6 +32,42 @@ func TestManagerDoesNotOwnExecutionManager(t *testing.T) {
 	if _, err := fixture.executions.GetSession(context.Background(), fixture.session.ID); err != nil {
 		t.Fatalf("execution Session after debug manager Close: %v", err)
 	}
+	if _, err := fixture.manager.CreateSession(
+		context.Background(),
+		fixture.session.ID,
+		nil,
+		SessionOptions{},
+	); !errors.Is(err, ErrClosed) {
+		t.Fatalf("CreateSession after Close error = %v, want ErrClosed", err)
+	}
+}
+
+func TestDebugManagerRequiresContexts(t *testing.T) {
+	t.Run("operation", func(t *testing.T) {
+		fixture := newDebugFixture(t, "RETURN 1")
+		assertPanics(t, func() {
+			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			_, _ = fixture.manager.CreateSession(nil, fixture.session.ID, nil, SessionOptions{})
+		})
+	})
+
+	t.Run("close wait", func(t *testing.T) {
+		fixture := newDebugFixture(t, "RETURN 1")
+		created, err := fixture.manager.CreateSession(
+			context.Background(),
+			fixture.session.ID,
+			nil,
+			SessionOptions{},
+		)
+		if err != nil {
+			t.Fatalf("CreateSession: %v", err)
+		}
+
+		assertPanics(t, func() {
+			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			_ = fixture.manager.CloseSession(nil, created.ID)
+		})
+	})
 }
 
 func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T) {
@@ -304,6 +340,9 @@ func TestParentCloseWaitsForInFlightDebugCreation(t *testing.T) {
 	cancel()
 	if err := fixture.manager.closeExecutionSession(ctx, parentID); !errors.Is(err, context.Canceled) {
 		t.Fatalf("closeExecutionSession error = %v, want context.Canceled", err)
+	}
+	if err := fixture.manager.beginCreate(parentID); !errors.Is(err, exec.ErrSessionClosed) {
+		t.Fatalf("beginCreate during parent close error = %v, want exec.ErrSessionClosed", err)
 	}
 
 	fixture.manager.mu.RLock()

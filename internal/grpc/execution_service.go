@@ -336,14 +336,14 @@ func toExecutionStatusError(err error) error {
 			executionv1.ResourceKind_RESOURCE_KIND_SOURCE,
 			executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
 		)
-	case errors.Is(err, workspace.ErrClosed), errors.Is(err, exec.ErrWorkspaceClosed):
+	case errors.Is(err, workspace.ErrClosed):
 		return resourceStatusError(
 			codes.FailedPrecondition,
 			err,
 			executionv1.ResourceKind_RESOURCE_KIND_WORKSPACE,
 			executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
 		)
-	case errors.Is(err, exec.ErrManagerClosed):
+	case errors.Is(err, exec.ErrClosed):
 		return resourceStatusError(
 			codes.FailedPrecondition,
 			err,
