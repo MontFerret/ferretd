@@ -34,8 +34,8 @@ func (s *Service) Hover(ctx context.Context, uri source.URI, position source.Pos
 	}
 
 	if resolved.Call != nil && resolved.Offset >= resolved.Call.CalleeSpan.Start && resolved.Offset < resolved.Call.CalleeSpan.End && resolved.Call.Kind != compiler.CallKindUDF {
-		if function, ok := s.functionIndex.lookup(resolved.Call.Identity); ok {
-			result.RegisteredSignatures = function.signatures(1)
+		if function, ok := s.functions.lookup(resolved.Call.Identity); ok {
+			result.RegisteredSignatures = function.renderedSignatures(1)
 		}
 	}
 

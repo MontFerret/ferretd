@@ -20,13 +20,15 @@ func TestNewRequiresDependencies(t *testing.T) {
 	}{
 		{
 			name: "workspace manager",
-			new:  func() (*Service, error) { return New(nil, runtime.NewFunctions(), Options{}) },
+			new: func() (*Service, error) {
+				return New(nil, newTestRuntimeCatalog(t, runtime.NewFunctions()), Options{})
+			},
 			want: errNilWorkspaceManager,
 		},
 		{
-			name: "functions",
+			name: "function catalog",
 			new:  func() (*Service, error) { return New(workspace.New(), nil, Options{}) },
-			want: errNilFunctions,
+			want: errNilFunctionCatalog,
 		},
 	}
 
@@ -45,22 +47,29 @@ func TestNewRequiresDependencies(t *testing.T) {
 
 func TestNewUsesSuppliedDependencies(t *testing.T) {
 	workspaces := workspace.New()
-	service, err := New(workspaces, runtime.NewFunctions(), Options{})
+	catalog := newTestRuntimeCatalog(t, runtime.NewFunctions())
+	service, err := New(workspaces, catalog, Options{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if service.workspaces != workspaces {
 		t.Fatal("New did not retain the supplied workspace manager")
 	}
+	if service.functions != catalog {
+		t.Fatal("New did not retain the supplied function catalog")
+	}
 }
 
-func TestNewDefaultFunctions(t *testing.T) {
-	functions, err := NewDefaultFunctions()
+func TestNewDefaultFunctionCatalog(t *testing.T) {
+	functions, warnings, err := NewDefaultFunctionCatalog()
 	if err != nil {
-		t.Fatalf("NewDefaultFunctions: %v", err)
+		t.Fatalf("NewDefaultFunctionCatalog: %v", err)
 	}
-	if functions.Size() == 0 {
-		t.Fatal("NewDefaultFunctions returned an empty function registry")
+	if len(warnings) != 0 {
+		t.Fatalf("NewDefaultFunctionCatalog warnings = %+v", warnings)
+	}
+	if len(functions.ordered) == 0 {
+		t.Fatal("NewDefaultFunctionCatalog returned an empty catalog")
 	}
 }
 
@@ -145,7 +154,7 @@ func TestOpenDocumentRejectsNonFileURI(t *testing.T) {
 	}
 }
 
-func documentURI(t *testing.T, name string) source.URI {
+func documentURI(t testing.TB, name string) source.URI {
 	t.Helper()
 
 	uri, err := source.URIFromPath(filepath.Join(t.TempDir(), name))

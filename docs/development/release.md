@@ -39,7 +39,33 @@ The CI race list documents current coverage, not an exemption for another
 package whose shared state changes. Add affected packages to local race
 validation and update CI when ongoing coverage is required.
 
-## Protobuf generation
+## Generated artifacts
+
+### Standard Library API Reference
+
+The repository also checks in the Standard Library API Reference consumed by
+language tooling. Its version is derived from the selected
+`github.com/MontFerret/ferret/v2` module with `go list`; there is no separate
+version constant. After updating Ferret, refresh every generated artifact with:
+
+```sh
+go get github.com/MontFerret/ferret/v2@<version>
+make generate
+```
+
+`make generate` downloads the exact versioned API Reference selected through
+the published index, validates it through Specs, verifies the canonical
+`montferret/core` identity and Ferret version, writes it atomically, and then
+runs protobuf generation. Do not edit
+`internal/language/stdlib/api.json` manually.
+
+`make check-generate` performs no API Reference network request. It validates
+the embedded artifact and its dependency version locally, regenerates the
+deterministic protobuf output, and fails when either generated area is stale or
+untracked. CI therefore catches a Ferret bump whose matching reference was not
+refreshed without depending on the artifact host during ordinary validation.
+
+### Protobuf generation
 
 The generation target invokes the pinned Buf CLI configuration. Generation
 cleans and recreates checked-in daemon, workspace, and execution outputs below

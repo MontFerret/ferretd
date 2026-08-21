@@ -2,6 +2,8 @@ VERSION ?= $(shell sh scripts/versions.sh)
 DIR_BIN = ./bin
 NAME = ferretd
 BUF = go run github.com/bufbuild/buf/cmd/buf@v1.72.0
+STDLIB_REF = go run -mod=readonly ./tools/stdlibref
+STDLIB_REF_PATH = ./internal/language/stdlib/api.json
 CLIENT_DIR = ./client
 CMD_DIR = ./cmd
 INTERNAL_DIR = ./internal
@@ -30,14 +32,17 @@ test:
 	go test ./...
 
 generate:
+	$(STDLIB_REF) sync -output $(STDLIB_REF_PATH)
 	$(BUF) generate
 
 proto-lint:
 	$(BUF) lint
 
-check-generate: generate
-	git diff --exit-code -- gen && \
-	test -z "$$(git status --porcelain --untracked-files=all -- gen)"
+check-generate:
+	$(STDLIB_REF) check -output $(STDLIB_REF_PATH)
+	$(BUF) generate
+	git diff --exit-code -- gen $(STDLIB_REF_PATH) && \
+	test -z "$$(git status --porcelain --untracked-files=all -- gen $(STDLIB_REF_PATH))"
 
 fmt:
 	go fmt ./... && \

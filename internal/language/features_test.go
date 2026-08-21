@@ -32,7 +32,7 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 	if _, err := manager.Open(ctx, root); err != nil {
 		t.Fatal(err)
 	}
-	service := mustNewService(t, manager, newTestDefaultFunctions(t), Options{})
+	service := mustNewService(t, manager, newTestDefaultCatalog(t), Options{})
 	uri, err := source.URIFromPath(path)
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ RETURN [outer(shared), shared]`
 	hover, err := service.Hover(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "outer(param)")))
 	if err != nil || hover == nil || !reflect.DeepEqual(hover.Signature, &Signature{
 		Label:      "outer(param)",
-		Parameters: []string{"param"},
+		Parameters: testSignatureParameters("param"),
 	}) {
 		t.Fatalf("UDF hover = %+v, %v", hover, err)
 	}
@@ -185,7 +185,7 @@ RETURN add(value, 2)`
 	}
 	if !reflect.DeepEqual(signature.Signatures, []Signature{{
 		Label:      "add(left, right)",
-		Parameters: []string{"left", "right"},
+		Parameters: testSignatureParameters("left", "right"),
 	}}) || signature.ActiveSignature != 0 || signature.ActiveParameter != 1 {
 		t.Fatalf("signature = %+v", signature)
 	}
@@ -251,7 +251,7 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuredParams := runtime.Params{"Configured": runtime.Int(1)}
-	service := mustNewService(t, workspace.New(), functions, Options{Parameters: configuredParams})
+	service := mustNewService(t, workspace.New(), newTestRuntimeCatalog(t, functions), Options{Parameters: configuredParams})
 	configuredParams["AddedLater"] = runtime.Int(2)
 	query := "RETURN CuStOm" + runtime.NamespaceSeparator + "DoThing(@Known)"
 	uri := documentURI(t, "registry.fql")
@@ -282,9 +282,9 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 
 	signature, err := service.SignatureHelp(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "@Known")))
 	wantSignatures := []Signature{
-		{Label: "CuStOm::DoThing(arg1)", Parameters: []string{"arg1"}},
-		{Label: "CuStOm::DoThing(arg1, arg2)", Parameters: []string{"arg1", "arg2"}},
-		{Label: "CuStOm::DoThing(arg1...)", Parameters: []string{"arg1..."}, Variadic: true},
+		{Label: "CuStOm::DoThing(arg1)", Parameters: testSignatureParameters("arg1")},
+		{Label: "CuStOm::DoThing(arg1, arg2)", Parameters: testSignatureParameters("arg1", "arg2")},
+		{Label: "CuStOm::DoThing(arg1...)", Parameters: []SignatureParameter{{Name: "arg1", Label: "arg1...", Variadic: true}}, Variadic: true},
 	}
 	if err != nil || signature == nil || !reflect.DeepEqual(signature.Signatures, wantSignatures) ||
 		signature.ActiveSignature != 0 || signature.ActiveParameter != 0 {
@@ -299,7 +299,7 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 	paramService := mustNewService(
 		t,
 		workspace.New(),
-		functions,
+		newTestRuntimeCatalog(t, functions),
 		Options{Parameters: runtime.Params{"Configured": runtime.Int(1)}},
 	)
 	paramURI := documentURI(t, "params.fql")

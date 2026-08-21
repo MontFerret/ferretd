@@ -38,17 +38,44 @@ type (
 
 	// CompletionItem describes a candidate visible at a source position.
 	CompletionItem struct {
-		Label      string
-		Detail     string
-		InsertText string
-		Kind       CompletionKind
+		Label         string
+		Detail        string
+		InsertText    string
+		Kind          CompletionKind
+		Documentation string
+		Deprecated    bool
 	}
 
 	// Signature describes one callable overload.
 	Signature struct {
-		Label      string
-		Parameters []string
-		Variadic   bool
+		Label       string
+		Parameters  []SignatureParameter
+		Variadic    bool
+		Description string
+		Return      *SignatureReturn
+		Throws      []SignatureThrow
+		Deprecated  string
+	}
+
+	// SignatureParameter describes one callable parameter.
+	SignatureParameter struct {
+		Name        string
+		Label       string
+		Type        string
+		Description string
+		Variadic    bool
+	}
+
+	// SignatureReturn describes one documented callable result.
+	SignatureReturn struct {
+		Type        string
+		Description string
+	}
+
+	// SignatureThrow describes one documented callable failure.
+	SignatureThrow struct {
+		Error       string
+		Description string
 	}
 
 	// SignatureHelp describes overloads and the active call argument.

@@ -26,13 +26,7 @@ func renderHoverMarkdown(value language.Hover) string {
 	}
 
 	if len(value.RegisteredSignatures) > 0 {
-		labels := make([]string, 0, len(value.RegisteredSignatures))
-
-		for _, signature := range value.RegisteredSignatures {
-			labels = append(labels, signature.Label)
-		}
-
-		sections = append(sections, "```fql\n"+strings.Join(labels, "\n")+"\n```")
+		sections = append(sections, language.RenderSignaturesMarkdown(value.RegisteredSignatures))
 	}
 
 	if value.Type != nil {

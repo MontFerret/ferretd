@@ -39,22 +39,39 @@ func (s *Service) SignatureHelp(
 		return result, nil
 	}
 
-	function, ok := s.functionIndex.lookup(call.Identity)
+	function, ok := s.functions.lookup(call.Identity)
 	if !ok {
 		return nil, nil
 	}
 
-	result.Signatures = function.signatures(max(active+1, 1))
+	result.Signatures = function.renderedSignatures(max(active+1, 1))
 
 	if len(result.Signatures) == 0 {
 		return nil, nil
 	}
 
+	variadic := -1
 	for index, signature := range result.Signatures {
-		if signature.Variadic || len(signature.Parameters) > active {
+		if signature.Variadic {
+			if variadic < 0 {
+				variadic = index
+			}
+
+			continue
+		}
+
+		if len(signature.Parameters) > active {
 			result.ActiveSignature = uint32(index)
 
-			break
+			return result, nil
+		}
+	}
+
+	if variadic >= 0 {
+		result.ActiveSignature = uint32(variadic)
+		parameters := result.Signatures[variadic].Parameters
+		if len(parameters) > 0 && active >= len(parameters) {
+			result.ActiveParameter = uint32(len(parameters) - 1)
 		}
 	}
 

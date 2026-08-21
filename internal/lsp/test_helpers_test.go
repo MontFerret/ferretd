@@ -27,9 +27,12 @@ func mustNewServer(t testing.TB, service *language.Service) *Server {
 func newTestLanguageService(t testing.TB) *language.Service {
 	t.Helper()
 
-	functions, err := language.NewDefaultFunctions()
+	functions, warnings, err := language.NewDefaultFunctionCatalog()
 	if err != nil {
-		t.Fatalf("NewDefaultFunctions: %v", err)
+		t.Fatalf("NewDefaultFunctionCatalog: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("NewDefaultFunctionCatalog warnings = %+v", warnings)
 	}
 
 	service, err := language.New(workspace.New(), functions, language.Options{})

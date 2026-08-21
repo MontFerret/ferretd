@@ -3,8 +3,9 @@ package language
 import "errors"
 
 var (
-	errNilWorkspaceManager = errors.New("language: nil workspace manager")
-	errNilFunctions        = errors.New("language: nil functions")
+	errNilWorkspaceManager      = errors.New("language: nil workspace manager")
+	errNilFunctionCatalog       = errors.New("language: nil function catalog")
+	errNilFunctionCatalogSource = errors.New("language: nil function catalog source")
 
 	// ErrDocumentNotOpen indicates that an operation requires an open document.
 	ErrDocumentNotOpen = errors.New("document is not open")

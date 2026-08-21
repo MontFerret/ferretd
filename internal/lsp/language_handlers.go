@@ -4,6 +4,7 @@ import (
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
+	"github.com/MontFerret/ferretd/internal/language"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -127,8 +128,20 @@ func (s *Server) signatureHelp(
 			Parameters: make([]protocol.ParameterInformation, 0, len(signature.Parameters)),
 		}
 
+		if documentation := language.RenderSignatureDocumentation(signature); documentation != "" {
+			information.Documentation = protocol.MarkupContent{
+				Kind:  protocol.MarkupKindMarkdown,
+				Value: documentation,
+			}
+		}
+
 		for _, parameter := range signature.Parameters {
-			information.Parameters = append(information.Parameters, protocol.ParameterInformation{Label: parameter})
+			value := protocol.ParameterInformation{Label: parameter.Label}
+			if parameter.Description != "" {
+				value.Documentation = parameter.Description
+			}
+
+			information.Parameters = append(information.Parameters, value)
 		}
 
 		result.Signatures = append(result.Signatures, information)
