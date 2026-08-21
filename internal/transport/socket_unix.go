@@ -16,6 +16,7 @@ func ensureSocketPathAvailable(path string) error {
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
+
 	if err != nil {
 		return fmt.Errorf("inspect endpoint: %w", err)
 	}

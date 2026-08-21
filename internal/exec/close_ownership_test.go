@@ -221,6 +221,49 @@ func TestConcurrentCloseExecutionUsesOneCleanupOwner(t *testing.T) {
 	assertCloseCounts(t, fixture)
 }
 
+func TestConcurrentCloseExecutionRetainsCleanupFailureForParent(t *testing.T) {
+	want := errors.New("runtime Session close failed")
+	fixture := newCloseOwnershipFixtureWithRuntimeCloseError(t, want)
+
+	ownerResult := make(chan error, 1)
+	go func() {
+		ownerResult <- fixture.manager.CloseExecution(context.Background(), fixture.executionID)
+	}()
+	waitForSignal(t, fixture.runtimeCloseStarted, "runtime Session close")
+
+	const waiters = 4
+	waiterResults := make(chan error, waiters)
+	for range waiters {
+		ctx := newObservedDoneContext()
+		go func() {
+			waiterResults <- fixture.manager.CloseExecution(ctx, fixture.executionID)
+		}()
+		waitForSignal(t, ctx.observed, "concurrent Execution close waiter")
+	}
+
+	sessionResult := make(chan error, 1)
+	go func() {
+		sessionResult <- fixture.manager.CloseSession(context.Background(), fixture.sessionID)
+	}()
+	waitForSessionClosing(t, fixture.session)
+	assertNoSignal(t, fixture.planCloseStarted, "Plan close before Execution cleanup")
+
+	fixture.releaseClose()
+	waitForExpectedError(t, ownerResult, "owner Execution close", want)
+	for range waiters {
+		waitForExpectedError(t, waiterResults, "concurrent Execution close", want)
+	}
+	waitForExpectedError(t, sessionResult, "parent Session close", want)
+	assertCloseCounts(t, fixture)
+	if state := fixture.execution.snapshot().State; state != StateCancelled {
+		t.Fatalf("Execution state after failed cleanup = %v, want cancelled", state)
+	}
+
+	if err := fixture.manager.CloseExecution(context.Background(), fixture.executionID); err != nil {
+		t.Fatalf("late idempotent CloseExecution: %v", err)
+	}
+}
+
 func TestConcurrentCloseSessionSharesFailureAndOneOwner(t *testing.T) {
 	const waiters = 8
 
@@ -272,6 +315,13 @@ func TestConcurrentCloseSessionSharesFailureAndOneOwner(t *testing.T) {
 }
 
 func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
+	return newCloseOwnershipFixtureWithRuntimeCloseError(t, nil)
+}
+
+func newCloseOwnershipFixtureWithRuntimeCloseError(
+	t *testing.T,
+	runtimeCloseErr error,
+) *closeOwnershipFixture {
 	t.Helper()
 
 	fixture := &closeOwnershipFixture{
@@ -298,7 +348,7 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 			fixture.runtimeCloseStartOnce.Do(func() { close(fixture.runtimeCloseStarted) })
 			<-fixture.releaseRuntimeClose
 
-			return nil
+			return runtimeCloseErr
 		}),
 		ferret.WithPlanCloseHook(func() error {
 			fixture.planCloseCalls.Add(1)

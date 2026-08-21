@@ -67,3 +67,25 @@ func (i functionIndex) lookup(name string) (registeredFunction, bool) {
 
 	return i.ordered[index], true
 }
+
+func (f registeredFunction) signatures(variadicArity int) []Signature {
+	result := make([]Signature, 0, len(f.arities)+1)
+	for _, arity := range f.arities {
+		parameters := placeholderParameters(arity, false)
+		result = append(result, Signature{
+			Label:      signatureLabel(f.name, parameters),
+			Parameters: parameters,
+		})
+	}
+
+	if f.variadic {
+		parameters := placeholderParameters(variadicArity, true)
+		result = append(result, Signature{
+			Label:      signatureLabel(f.name, parameters),
+			Parameters: parameters,
+			Variadic:   true,
+		})
+	}
+
+	return result
+}

@@ -3,10 +3,12 @@ package daemon
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/MontFerret/ferretd/internal/transport"
+	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 func TestNew(t *testing.T) {
@@ -73,6 +75,77 @@ func TestStopIsIdempotentBeforeStart(t *testing.T) {
 		if err := d.Stop(context.Background()); err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
+	}
+}
+
+func TestConcurrentStopBeforeStartSharesCommittedCleanup(t *testing.T) {
+	d, err := New(Options{Endpoint: testEndpoint(t)})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	opened, err := d.workspaces.Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("Open workspace: %v", err)
+	}
+
+	cleanupStarted := make(chan struct{})
+	releaseCleanup := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseCleanup) })
+	}
+	t.Cleanup(release)
+	d.workspaces.RegisterCloseHook(func(context.Context, workspace.ID) error {
+		close(cleanupStarted)
+		<-releaseCleanup
+
+		return nil
+	})
+
+	ownerResult := make(chan error, 1)
+	go func() {
+		ownerResult <- d.Stop(context.Background())
+	}()
+
+	select {
+	case <-cleanupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("pre-start cleanup did not begin")
+	}
+
+	waiterContext, cancelWaiter := context.WithCancel(context.Background())
+	cancelWaiter()
+	waiterResult := make(chan error, 1)
+	go func() {
+		waiterResult <- d.Stop(waiterContext)
+	}()
+
+	select {
+	case err := <-waiterResult:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("concurrent Stop error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled concurrent Stop remained blocked by cleanup")
+	}
+
+	release()
+	select {
+	case err := <-ownerResult:
+		if err != nil {
+			t.Fatalf("owner Stop: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("owner Stop did not finish after cleanup was released")
+	}
+
+	if err := d.Stop(context.Background()); err != nil {
+		t.Fatalf("late Stop: %v", err)
+	}
+
+	if _, err := d.workspaces.Get(context.Background(), opened.ID()); !errors.Is(err, workspace.ErrNotFound) {
+		t.Fatalf("Get workspace after Stop error = %v, want ErrNotFound", err)
 	}
 }
 

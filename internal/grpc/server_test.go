@@ -36,6 +36,11 @@ func TestNewRequiresDomainServices(t *testing.T) {
 			new:  func() (*Server, error) { return New(workspaces, nil, "dev", "instance", nil) },
 			want: errNilExecutionManager,
 		},
+		{
+			name: "shutdown callback",
+			new:  func() (*Server, error) { return New(workspaces, executions, "dev", "instance", nil) },
+			want: errNilShutdown,
+		},
 	}
 
 	for _, tt := range tests {

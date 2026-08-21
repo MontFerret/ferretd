@@ -23,7 +23,7 @@ type Server struct {
 }
 
 // New constructs the daemon's gRPC adapter over the supplied domain services.
-// It returns an error when either required service is nil.
+// It returns an error when a required service or the shutdown callback is nil.
 func New(
 	workspaces *workspace.Manager,
 	executions *exec.Manager,
@@ -41,7 +41,11 @@ func New(
 		return nil, err
 	}
 
-	daemonAdapter := newDaemonService(version, instanceID, shutdown)
+	daemonAdapter, err := newDaemonService(version, instanceID, shutdown)
+	if err != nil {
+		return nil, err
+	}
+
 	server := grpcgo.NewServer()
 	healthServer := health.NewServer()
 

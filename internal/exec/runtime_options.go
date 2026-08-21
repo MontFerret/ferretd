@@ -4,13 +4,11 @@ import "strings"
 
 const defaultOutputContentType = "application/json"
 
-type (
-	// RuntimeOptions contains per-run Ferret settings shared by ordinary and
-	// debugger execution.
-	RuntimeOptions struct {
-		OutputContentType string
-	}
-)
+// RuntimeOptions contains per-run Ferret settings shared by ordinary and
+// debugger execution.
+type RuntimeOptions struct {
+	OutputContentType string
+}
 
 func (o RuntimeOptions) normalized() RuntimeOptions {
 	o.OutputContentType = strings.TrimSpace(o.OutputContentType)

@@ -105,8 +105,8 @@ entries only.
 
 Each Session owns the gate that admits ordinary and debug runtime creation.
 Session close stops that gate, waits for every admitted creator to publish or
-leave, then detaches the ordinary child set and invokes debug child cleanup. No
-Session-registry lock is held while entering the Execution registry, and no
+leave, then marks the ordinary child set closing and invokes debug child cleanup.
+No Session-registry lock is held while entering the Execution registry, and no
 registry lock is held during compilation, hooks, runtime cleanup, Plan closure,
 or lifecycle waits.
 

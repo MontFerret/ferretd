@@ -51,7 +51,6 @@ func newExecution(
 	return result
 }
 
-// snapshot returns an immutable Execution view.
 func (e *execution) snapshot() ExecutionSnapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -182,10 +181,10 @@ func (e *execution) beginClose() bool {
 	return e.close.Begin()
 }
 
-func (e *execution) settleClose() {
+func (e *execution) settleClose() error {
 	e.cancel()
 	<-e.runDone
-	_ = e.runtime.closeSession()
+	closeErr := e.runtime.closeSession()
 
 	e.mu.Lock()
 	for id, watcher := range e.watchers {
@@ -193,10 +192,12 @@ func (e *execution) settleClose() {
 	}
 
 	e.mu.Unlock()
+
+	return closeErr
 }
 
-func (e *execution) completeClose() {
-	e.close.Finish(nil)
+func (e *execution) completeClose(err error) {
+	e.close.Finish(err)
 }
 
 func (e *execution) snapshotLocked() ExecutionSnapshot {

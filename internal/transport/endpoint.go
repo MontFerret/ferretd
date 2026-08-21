@@ -21,7 +21,9 @@ type (
 )
 
 const (
-	NetworkUnix      Network = "unix"
+	// NetworkUnix identifies a local Unix-domain socket endpoint.
+	NetworkUnix Network = "unix"
+	// NetworkNamedPipe identifies a local Windows named-pipe endpoint.
 	NetworkNamedPipe Network = "npipe"
 )
 

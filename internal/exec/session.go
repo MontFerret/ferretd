@@ -35,28 +35,20 @@ type session struct {
 
 func newSession(
 	id SessionID,
-	parent *workspace.Workspace,
 	compilation workspace.Compilation,
 	text string,
+	compileDebug func(context.Context) (workspace.Compilation, error),
 ) *session {
-	result := &session{
-		id:         id,
-		source:     compilation.Source,
-		parameters: compilation.Plan.Params(),
-		text:       text,
-		plan:       compilation.Plan,
+	return &session{
+		id:           id,
+		source:       compilation.Source,
+		parameters:   compilation.Plan.Params(),
+		text:         text,
+		compileDebug: compileDebug,
+		plan:         compilation.Plan,
 	}
-
-	if parent != nil {
-		result.compileDebug = func(ctx context.Context) (workspace.Compilation, error) {
-			return parent.CompileDebugSnapshot(ctx, compilation.Source, text)
-		}
-	}
-
-	return result
 }
 
-// snapshot returns an immutable Session view.
 func (s *session) snapshot() SessionSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -109,19 +101,6 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 		compileDebug := s.compileDebug
 		source := s.source
 		s.mu.Unlock()
-
-		if compileDebug == nil {
-			compileErr := errors.New("debug compilation is unavailable")
-			s.mu.Lock()
-			s.debugCompiling = false
-			s.debugCompileErr = compileErr
-			s.debugCompileFailed = true
-			close(done)
-			s.debugCompileDone = nil
-			s.mu.Unlock()
-
-			return runtimeTarget{}, compileErr
-		}
 
 		compilation, err := compileDebug(ctx)
 		if err == nil && compilation.Plan == nil {

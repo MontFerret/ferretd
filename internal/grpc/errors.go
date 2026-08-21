@@ -9,6 +9,7 @@ import (
 var (
 	errNilWorkspaceManager = errors.New("grpc: nil workspace manager")
 	errNilExecutionManager = errors.New("grpc: nil execution manager")
+	errNilShutdown         = errors.New("grpc: nil shutdown callback")
 )
 
 // IsStoppedError reports the normal error returned when a gRPC server stops.

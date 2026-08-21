@@ -127,7 +127,13 @@ func (m *Manager) prepareSession(
 		return nil, errors.Join(err, compilation.Close())
 	}
 
-	return newSession(id, parent, compilation, document.Content()), nil
+	text := document.Content()
+	sourceSnapshot := compilation.Source
+	compileDebug := func(ctx context.Context) (workspace.Compilation, error) {
+		return parent.CompileDebugSnapshot(ctx, sourceSnapshot, text)
+	}
+
+	return newSession(id, compilation, text, compileDebug), nil
 }
 
 // GetSession returns an immutable Session snapshot.
@@ -316,6 +322,7 @@ func (m *Manager) finishSessionClose(entry *sessionEntry) {
 	if plan != nil {
 		result = errors.Join(result, plan.Close())
 	}
+
 	if debugPlan != nil {
 		result = errors.Join(result, debugPlan.Close())
 	}
@@ -325,8 +332,8 @@ func (m *Manager) finishSessionClose(entry *sessionEntry) {
 }
 
 func (m *Manager) finishExecutionClose(entry *executionEntry) {
-	entry.execution.settleClose()
-	entry.execution.completeClose()
+	closeErr := entry.execution.settleClose()
+	entry.execution.completeClose(closeErr)
 	m.executions.finishClose(entry)
 }
 

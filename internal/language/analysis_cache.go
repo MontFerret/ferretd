@@ -169,8 +169,9 @@ func (s *Service) snapshotCurrentLocked(snapshot documentSnapshot) bool {
 		return false
 	}
 
-	// This check is cache-owned and contains no I/O: workspace snapshots are
-	// static, and the manager call only reads retained daemon state.
+	// The caller holds Service.mu so an overlay cannot interleave with this
+	// retained-state lookup. Workspace never calls back into language, establishing
+	// the intentional language-to-workspace lock order without a reverse edge.
 	lookup, found, err := s.workspaces.LookupDocument(context.Background(), snapshot.path)
 	if err != nil || !found {
 		return false

@@ -31,6 +31,18 @@ func placeholderParameters(arity int, variadic bool) []string {
 	return parameters
 }
 
+func udfSignature(name string, parameters []compiler.Symbol) Signature {
+	names := make([]string, 0, len(parameters))
+	for _, parameter := range parameters {
+		names = append(names, parameter.Name)
+	}
+
+	return Signature{
+		Label:      signatureLabel(name, names),
+		Parameters: names,
+	}
+}
+
 func signatureLabel(name string, parameters []string) string {
 	return name + "(" + strings.Join(parameters, ", ") + ")"
 }

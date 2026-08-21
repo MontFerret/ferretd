@@ -62,7 +62,6 @@ func newSession(
 	return result
 }
 
-// snapshot returns an immutable Session view.
 func (d *session) snapshot() SessionSnapshot {
 	d.mu.Lock()
 	defer d.mu.Unlock()

@@ -34,16 +34,7 @@ func (s *Service) SignatureHelp(
 		}
 
 		parameters := document.analysis.FunctionParameters(call.Target)
-		names := make([]string, 0, len(parameters))
-
-		for _, parameter := range parameters {
-			names = append(names, parameter.Name)
-		}
-
-		result.Signatures = []Signature{{
-			Label:      signatureLabel(function.Name, names),
-			Parameters: names,
-		}}
+		result.Signatures = []Signature{udfSignature(function.Name, parameters)}
 
 		return result, nil
 	}
@@ -53,22 +44,7 @@ func (s *Service) SignatureHelp(
 		return nil, nil
 	}
 
-	for _, arity := range function.arities {
-		parameters := placeholderParameters(arity, false)
-		result.Signatures = append(result.Signatures, Signature{
-			Label:      signatureLabel(function.name, parameters),
-			Parameters: parameters,
-		})
-	}
-
-	if function.variadic {
-		parameters := placeholderParameters(max(active+1, 1), true)
-		result.Signatures = append(result.Signatures, Signature{
-			Label:      signatureLabel(function.name, parameters),
-			Parameters: parameters,
-			Variadic:   true,
-		})
-	}
+	result.Signatures = function.signatures(max(active+1, 1))
 
 	if len(result.Signatures) == 0 {
 		return nil, nil

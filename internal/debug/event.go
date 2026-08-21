@@ -22,11 +22,17 @@ type (
 )
 
 const (
+	// EventCreated publishes the initial non-running Session snapshot.
 	EventCreated EventKind = iota + 1
+	// EventRunning publishes entry into active debugger execution.
 	EventRunning
+	// EventStopped publishes a debugger-visible suspension and its inspection state.
 	EventStopped
+	// EventCompleted publishes successful terminal execution.
 	EventCompleted
+	// EventFailed publishes terminal execution with a retained runtime failure.
 	EventFailed
+	// EventTerminated publishes explicit terminal cancellation by the debugger owner.
 	EventTerminated
 )
 

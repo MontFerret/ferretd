@@ -23,6 +23,7 @@ func readDocument(ctx context.Context, rootPath string, file File) (documentRead
 	if err != nil {
 		return documentRead{err: fmt.Errorf("inspect %q: %w", file.RelativePath, err)}, nil
 	}
+
 	if err := validateRefreshFile(file.RelativePath, pathInfo); err != nil {
 		return documentRead{err: err}, nil
 	}
@@ -37,16 +38,20 @@ func readDocument(ctx context.Context, rootPath string, file File) (documentRead
 	if err != nil {
 		return documentRead{err: fmt.Errorf("inspect open %q: %w", file.RelativePath, err)}, nil
 	}
+
 	pathInfo, err = root.Lstat(file.RelativePath)
 	if err != nil {
 		return documentRead{err: fmt.Errorf("inspect %q: %w", file.RelativePath, err)}, nil
 	}
+
 	if err := validateRefreshFile(file.RelativePath, pathInfo); err != nil {
 		return documentRead{err: err}, nil
 	}
+
 	if !openedInfo.Mode().IsRegular() {
 		return documentRead{err: fmt.Errorf("inspect %q: source is not a regular file", file.RelativePath)}, nil
 	}
+
 	if !os.SameFile(openedInfo, pathInfo) {
 		return documentRead{err: fmt.Errorf("inspect %q: source changed while opening", file.RelativePath)}, nil
 	}
@@ -55,6 +60,7 @@ func readDocument(ctx context.Context, rootPath string, file File) (documentRead
 	if err != nil {
 		return documentRead{err: fmt.Errorf("read %q: %w", file.RelativePath, err)}, nil
 	}
+
 	if err := ctx.Err(); err != nil {
 		return documentRead{}, err
 	}
@@ -66,6 +72,7 @@ func validateRefreshFile(relativePath string, info os.FileInfo) error {
 	if info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("inspect %q: symbolic links are not supported", relativePath)
 	}
+
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("inspect %q: source is not a regular file", relativePath)
 	}

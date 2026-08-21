@@ -183,7 +183,7 @@ func (w *Workspace) CompileDocument(ctx context.Context, document Document) (Com
 		return Compilation{}, ErrDocumentNotFound
 	}
 
-	return w.compileDocumentLocked(ctx, document, false)
+	return w.compileDocumentLocked(ctx, document)
 }
 
 // CompileDebugSnapshot compiles retained Session source with Ferret debug metadata.
@@ -234,7 +234,6 @@ func (w *Workspace) CompileDebugSnapshot(
 func (w *Workspace) compileDocumentLocked(
 	ctx context.Context,
 	document Document,
-	debug bool,
 ) (Compilation, error) {
 	snapshot := SourceSnapshot{
 		Workspace:    w.id,
@@ -251,13 +250,7 @@ func (w *Workspace) compileDocumentLocked(
 		)
 	}
 
-	var plan *ferret.Plan
-	var err error
-	if debug {
-		plan, err = w.engine.CompileDebug(ctx, document.Source())
-	} else {
-		plan, err = w.engine.Compile(ctx, document.Source())
-	}
+	plan, err := w.engine.Compile(ctx, document.Source())
 	if err != nil {
 		return Compilation{Source: snapshot}, err
 	}

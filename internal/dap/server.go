@@ -23,9 +23,14 @@ type (
 		readerClose io.Closer
 		writer      io.Writer
 
-		writeMu      sync.Mutex
-		eventMu      sync.Mutex
-		stateMu      sync.Mutex
+		// writeMu protects the framed writer and outbound sequence.
+		writeMu sync.Mutex
+		// eventMu preserves ordering between debugger commands and lifecycle events.
+		eventMu sync.Mutex
+		// stateMu protects owned resources, client options, the watch, pending launch,
+		// and request/event lifecycle flags.
+		stateMu sync.Mutex
+		// breakpointMu protects stable and native breakpoint identity state.
 		breakpointMu sync.Mutex
 
 		workspaces            *workspace.Manager
@@ -72,6 +77,7 @@ func New(input io.Reader, output io.Writer) (*Server, error) {
 	if input == nil {
 		return nil, errNilInput
 	}
+
 	if output == nil {
 		return nil, errNilOutput
 	}

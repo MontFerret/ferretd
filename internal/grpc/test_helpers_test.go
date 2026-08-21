@@ -25,12 +25,28 @@ func mustNewServer(
 ) *Server {
 	t.Helper()
 
-	server, err := New(workspaces, executions, "dev", "instance", nil)
+	server, err := New(workspaces, executions, "dev", "instance", func() {})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
 	return server
+}
+
+func mustNewDaemonService(
+	t testing.TB,
+	version string,
+	instanceID string,
+	shutdown func(),
+) *daemonService {
+	t.Helper()
+
+	service, err := newDaemonService(version, instanceID, shutdown)
+	if err != nil {
+		t.Fatalf("newDaemonService: %v", err)
+	}
+
+	return service
 }
 
 func mustNewWorkspaceService(t testing.TB, workspaces *workspace.Manager) *workspaceService {

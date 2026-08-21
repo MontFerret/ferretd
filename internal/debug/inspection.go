@@ -64,6 +64,8 @@ type (
 )
 
 const (
+	// ScopeLocals identifies variables local to the selected frame.
 	ScopeLocals ScopeKind = iota + 1
+	// ScopeParameters identifies caller-supplied execution parameters.
 	ScopeParameters
 )

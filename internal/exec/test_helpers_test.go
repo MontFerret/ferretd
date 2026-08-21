@@ -99,9 +99,13 @@ func newHookedManager(
 	}
 	session := newSession(
 		SessionID("session"),
-		nil,
 		workspace.Compilation{Plan: plan, Source: snapshot},
 		query,
+		func(ctx context.Context) (workspace.Compilation, error) {
+			debugPlan, compileErr := engine.CompileDebug(ctx, ferretsource.New("query.fql", query))
+
+			return workspace.Compilation{Plan: debugPlan, Source: snapshot}, compileErr
+		},
 	)
 	manager := mustNewManager(t, workspace.New())
 	creation, err := manager.sessions.beginCreate(workspaceID)

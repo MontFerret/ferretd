@@ -22,9 +22,9 @@ type daemonService struct {
 	once     sync.Once
 }
 
-func newDaemonService(version, instanceID string, shutdown func()) *daemonService {
+func newDaemonService(version, instanceID string, shutdown func()) (*daemonService, error) {
 	if shutdown == nil {
-		shutdown = func() {}
+		return nil, errNilShutdown
 	}
 
 	result := &daemonService{shutdown: shutdown}
@@ -34,7 +34,7 @@ func newDaemonService(version, instanceID string, shutdown func()) *daemonServic
 		ApiVersion: result.apiVersion(),
 	}
 
-	return result
+	return result, nil
 }
 
 func (s *daemonService) GetInfo(

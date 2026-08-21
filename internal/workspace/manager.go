@@ -291,6 +291,7 @@ func (m *Manager) beginClose(id ID) (*workspaceEntry, bool) {
 	if entry == nil {
 		return nil, false
 	}
+
 	if entry.state == workspaceEntryClosing {
 		return entry, false
 	}

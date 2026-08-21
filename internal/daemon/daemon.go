@@ -151,14 +151,14 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	d.mu.Lock()
 	switch d.state {
 	case stateNew:
-		d.state = stateStopped
-		executionErr := d.executions.Close(ctx)
-		workspaceErr := d.workspaces.Clear(ctx)
-		d.stopErr = errors.Join(executionErr, workspaceErr)
-		close(d.stopDone)
+		d.state = stateStopping
 		d.mu.Unlock()
 
-		return d.stopErr
+		executionErr := d.executions.Close(ctx)
+		workspaceErr := d.workspaces.Clear(ctx)
+		d.finishStop(errors.Join(executionErr, workspaceErr))
+
+		return d.stopResult()
 	case stateStarting:
 		d.state = stateStopping
 		stopDone := d.stopDone

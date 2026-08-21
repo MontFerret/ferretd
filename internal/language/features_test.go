@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -97,7 +98,10 @@ RETURN [outer(shared), shared]`
 	}
 
 	hover, err := service.Hover(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "outer(param)")))
-	if err != nil || hover == nil || hover.Signature == nil || hover.Signature.Label != "outer(param)" {
+	if err != nil || hover == nil || !reflect.DeepEqual(hover.Signature, &Signature{
+		Label:      "outer(param)",
+		Parameters: []string{"param"},
+	}) {
 		t.Fatalf("UDF hover = %+v, %v", hover, err)
 	}
 }
@@ -179,7 +183,10 @@ RETURN add(value, 2)`
 	if err != nil || signature == nil {
 		t.Fatalf("signature = %+v, %v", signature, err)
 	}
-	if len(signature.Signatures) != 1 || signature.Signatures[0].Label != "add(left, right)" || signature.ActiveParameter != 1 {
+	if !reflect.DeepEqual(signature.Signatures, []Signature{{
+		Label:      "add(left, right)",
+		Parameters: []string{"left", "right"},
+	}}) || signature.ActiveSignature != 0 || signature.ActiveParameter != 1 {
 		t.Fatalf("signature = %+v", signature)
 	}
 
@@ -274,18 +281,18 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 	}
 
 	signature, err := service.SignatureHelp(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "@Known")))
-	if err != nil || signature == nil || len(signature.Signatures) != 3 ||
-		signature.Signatures[0].Label != "CuStOm::DoThing(arg1)" ||
-		signature.Signatures[1].Label != "CuStOm::DoThing(arg1, arg2)" ||
-		!signature.Signatures[2].Variadic {
+	wantSignatures := []Signature{
+		{Label: "CuStOm::DoThing(arg1)", Parameters: []string{"arg1"}},
+		{Label: "CuStOm::DoThing(arg1, arg2)", Parameters: []string{"arg1", "arg2"}},
+		{Label: "CuStOm::DoThing(arg1...)", Parameters: []string{"arg1..."}, Variadic: true},
+	}
+	if err != nil || signature == nil || !reflect.DeepEqual(signature.Signatures, wantSignatures) ||
+		signature.ActiveSignature != 0 || signature.ActiveParameter != 0 {
 		t.Fatalf("registered signature = %+v, %v", signature, err)
 	}
 
 	hover, err := service.Hover(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "DoThing")))
-	if err != nil || hover == nil || len(hover.RegisteredSignatures) != 3 ||
-		hover.RegisteredSignatures[0].Label != "CuStOm::DoThing(arg1)" ||
-		hover.RegisteredSignatures[1].Label != "CuStOm::DoThing(arg1, arg2)" ||
-		!hover.RegisteredSignatures[2].Variadic {
+	if err != nil || hover == nil || !reflect.DeepEqual(hover.RegisteredSignatures, wantSignatures) {
 		t.Fatalf("registered hover = %+v, %v", hover, err)
 	}
 
