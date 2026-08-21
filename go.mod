@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/MontFerret/ferret/v2 v2.0.0-alpha.49
+	github.com/MontFerret/ferret/v2 v2.0.0-alpha.50
 	github.com/MontFerret/specs v1.12.0
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/google/go-dap v0.12.0

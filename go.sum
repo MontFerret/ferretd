@@ -2,8 +2,8 @@ github.com/Masterminds/semver/v3 v3.5.0 h1:kQceYJfbupGfZOKZQg0kou0DgAKhzDg2NZPAw
 github.com/Masterminds/semver/v3 v3.5.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/MontFerret/ferret/v2 v2.0.0-alpha.49 h1:HHoytuVL0TTKGae3FMeyvfofJ/VSnlENUwaYEOwJ/AQ=
-github.com/MontFerret/ferret/v2 v2.0.0-alpha.49/go.mod h1:Q6JfAgOzRi9KNLqgQtPIQ9BNsXeAar2ITmcQ0HI4zgM=
+github.com/MontFerret/ferret/v2 v2.0.0-alpha.50 h1:YsrLWckwjEGXmJNDk8dOKl0D8w+5v3A1i0RTSOm7NZ8=
+github.com/MontFerret/ferret/v2 v2.0.0-alpha.50/go.mod h1:Q6JfAgOzRi9KNLqgQtPIQ9BNsXeAar2ITmcQ0HI4zgM=
 github.com/MontFerret/specs v1.12.0 h1:1HaElGLN+tyZIsrb3WVdulxbW5W0LXEdOH0k6F1sFzk=
 github.com/MontFerret/specs v1.12.0/go.mod h1:ENGyEPFjrWVPWOUAsBMc1acUsqpswieTrAJfhcm576E=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
