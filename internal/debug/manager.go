@@ -16,8 +16,8 @@ type (
 		mu sync.RWMutex
 
 		executions *exec.Manager
-		sessions   map[SessionID]*Session
-		closing    map[SessionID]*Session
+		sessions   map[SessionID]*session
+		closing    map[SessionID]*session
 		groups     map[exec.SessionID]*sessionGroup
 		closed     bool
 	}
@@ -26,7 +26,7 @@ type (
 		// Manager.mu is acquired before gate when both are needed. Gate never
 		// calls back into the Manager, so the lock order cannot reverse.
 		gate     lifecycle.Gate
-		sessions map[SessionID]*Session
+		sessions map[SessionID]*session
 	}
 )
 
@@ -39,8 +39,8 @@ func New(executions *exec.Manager) (*Manager, error) {
 
 	result := &Manager{
 		executions: executions,
-		sessions:   make(map[SessionID]*Session),
-		closing:    make(map[SessionID]*Session),
+		sessions:   make(map[SessionID]*session),
+		closing:    make(map[SessionID]*session),
 		groups:     make(map[exec.SessionID]*sessionGroup),
 	}
 	executions.RegisterSessionCloseHook(result.closeExecutionSession)
@@ -52,8 +52,8 @@ func New(executions *exec.Manager) (*Manager, error) {
 func (m *Manager) CreateSession(
 	ctx context.Context,
 	parentID exec.SessionID,
-	parameters map[string]any,
-	options SessionOptions,
+	parameters exec.Parameters,
+	options exec.RuntimeOptions,
 ) (SessionSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
@@ -94,7 +94,7 @@ func (m *Manager) CreateSession(
 	group.sessions[id] = created
 	m.mu.Unlock()
 
-	return created.Snapshot(), nil
+	return created.snapshot(), nil
 }
 
 // GetSession returns an immutable debug Session snapshot.
@@ -104,7 +104,7 @@ func (m *Manager) GetSession(ctx context.Context, id SessionID) (SessionSnapshot
 		return SessionSnapshot{}, err
 	}
 
-	return session.Snapshot(), nil
+	return session.snapshot(), nil
 }
 
 // StartSession starts a debug Session asynchronously.
@@ -114,7 +114,7 @@ func (m *Manager) StartSession(ctx context.Context, id SessionID) (SessionSnapsh
 		return SessionSnapshot{}, err
 	}
 
-	return session.Start(ctx)
+	return session.start(ctx)
 }
 
 // ContinueSession resumes a stopped debug Session.
@@ -124,7 +124,7 @@ func (m *Manager) ContinueSession(ctx context.Context, id SessionID) (SessionSna
 		return SessionSnapshot{}, err
 	}
 
-	return session.Continue(ctx)
+	return session.continueExecution(ctx)
 }
 
 // PauseSession requests a stop from a running debug Session.
@@ -134,7 +134,7 @@ func (m *Manager) PauseSession(ctx context.Context, id SessionID) (SessionSnapsh
 		return SessionSnapshot{}, err
 	}
 
-	return session.Pause(ctx)
+	return session.pause(ctx)
 }
 
 // StepInSession steps into the next logical source location.
@@ -144,7 +144,7 @@ func (m *Manager) StepInSession(ctx context.Context, id SessionID) (SessionSnaps
 		return SessionSnapshot{}, err
 	}
 
-	return session.StepIn(ctx)
+	return session.stepIn(ctx)
 }
 
 // StepOverSession steps over calls at the current depth.
@@ -154,7 +154,7 @@ func (m *Manager) StepOverSession(ctx context.Context, id SessionID) (SessionSna
 		return SessionSnapshot{}, err
 	}
 
-	return session.StepOver(ctx)
+	return session.stepOver(ctx)
 }
 
 // StepOutSession resumes until execution returns to a caller.
@@ -164,7 +164,7 @@ func (m *Manager) StepOutSession(ctx context.Context, id SessionID) (SessionSnap
 		return SessionSnapshot{}, err
 	}
 
-	return session.StepOut(ctx)
+	return session.stepOut(ctx)
 }
 
 // ReplaceBreakpoints replaces all breakpoints for one source.
@@ -179,7 +179,7 @@ func (m *Manager) ReplaceBreakpoints(
 		return nil, err
 	}
 
-	return session.ReplaceBreakpoints(ctx, file, locations)
+	return session.replaceBreakpoints(ctx, file, locations)
 }
 
 // Frames returns the current-to-caller paused frame stack.
@@ -189,7 +189,7 @@ func (m *Manager) Frames(ctx context.Context, id SessionID) ([]Frame, error) {
 		return nil, err
 	}
 
-	return session.Frames(ctx)
+	return session.frames(ctx)
 }
 
 // Scopes returns Locals and Parameters for one paused frame.
@@ -199,7 +199,7 @@ func (m *Manager) Scopes(ctx context.Context, id SessionID, frame int) ([]Scope,
 		return nil, err
 	}
 
-	return session.Scopes(ctx, frame)
+	return session.scopes(ctx, frame)
 }
 
 // Variables expands one paused-state value reference.
@@ -213,7 +213,7 @@ func (m *Manager) Variables(
 		return nil, err
 	}
 
-	return session.Variables(ctx, reference)
+	return session.variables(ctx, reference)
 }
 
 // Evaluate evaluates an expression in one paused frame.
@@ -228,7 +228,7 @@ func (m *Manager) Evaluate(
 		return Value{}, err
 	}
 
-	return session.Evaluate(ctx, frame, expression)
+	return session.evaluate(ctx, frame, expression)
 }
 
 // TerminateSession idempotently requests termination and retains the resource.
@@ -238,7 +238,7 @@ func (m *Manager) TerminateSession(ctx context.Context, id SessionID) (SessionSn
 		return SessionSnapshot{}, err
 	}
 
-	return session.Terminate(ctx)
+	return session.terminateExecution(ctx)
 }
 
 // WatchSession subscribes to current and future lifecycle events.
@@ -248,7 +248,7 @@ func (m *Manager) WatchSession(ctx context.Context, id SessionID) (Subscription,
 		return Subscription{}, err
 	}
 
-	return session.Subscribe(), nil
+	return session.subscribe(), nil
 }
 
 // CloseSession removes a debug Session and guarantees eventual cleanup.
@@ -283,7 +283,7 @@ func (m *Manager) Close(ctx context.Context) error {
 	return result
 }
 
-func (m *Manager) session(ctx context.Context, id SessionID) (*Session, error) {
+func (m *Manager) session(ctx context.Context, id SessionID) (*session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -308,7 +308,7 @@ func (m *Manager) beginCreate(parentID exec.SessionID) error {
 
 	group := m.groups[parentID]
 	if group == nil {
-		group = &sessionGroup{sessions: make(map[SessionID]*Session)}
+		group = &sessionGroup{sessions: make(map[SessionID]*session)}
 		m.groups[parentID] = group
 	}
 
@@ -333,7 +333,7 @@ func (m *Manager) finishCreate(parentID exec.SessionID) {
 	}
 }
 
-func (m *Manager) detachSession(id SessionID) *Session {
+func (m *Manager) detachSession(id SessionID) *session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -352,7 +352,7 @@ func (m *Manager) detachSession(id SessionID) *Session {
 	return session
 }
 
-func (m *Manager) finishSessionClose(session *Session) {
+func (m *Manager) finishSessionClose(session *session) {
 	session.settleClose()
 	session.completeClose()
 

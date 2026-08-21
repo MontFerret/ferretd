@@ -42,9 +42,9 @@ individual failure.
 
 ## Local transport
 
-The daemon is local-only. `internal/transport` accepts Unix-socket endpoints on
-macOS and Linux and named-pipe endpoints on Windows; TCP, TLS, and remote modes
-are not supported.
+The daemon is local-only. `internal/transport` represents endpoint families with
+`Network`, using `NetworkUnix` on macOS and Linux and `NetworkNamedPipe` on
+Windows; TCP, TLS, and remote modes are not supported.
 
 The default Unix endpoint uses the runtime directory when available and falls
 back to the user cache directory. Created directories and sockets are restricted

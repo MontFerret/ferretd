@@ -48,7 +48,7 @@ func BenchmarkManagerExecutionSameSession(b *testing.B) {
 	b.ResetTimer()
 
 	for range b.N {
-		created, err := manager.CreateExecution(ctx, session.ID, map[string]any{"value": 1}, ExecutionOptions{})
+		created, err := manager.CreateExecution(ctx, session.ID, map[string]any{"value": 1}, RuntimeOptions{})
 		if err != nil {
 			b.Fatalf("CreateExecution: %v", err)
 		}
@@ -85,7 +85,7 @@ func BenchmarkManagerExecutionSameSessionConcurrent(b *testing.B) {
 				ctx,
 				session.ID,
 				map[string]any{"value": 1},
-				ExecutionOptions{},
+				RuntimeOptions{},
 			)
 			if err != nil {
 				b.Errorf("CreateExecution: %v", err)

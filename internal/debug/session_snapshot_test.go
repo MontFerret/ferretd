@@ -5,14 +5,15 @@ import (
 	"testing"
 
 	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/exec"
 )
 
 func TestSessionSnapshotClone(t *testing.T) {
 	value := SessionSnapshot{
-		HitBreakpointIDs: []uint64{1},
+		HitBreakpointIDs: []BreakpointID{1},
 		Parameters:       map[string]any{"nested": []any{map[string]any{"key": "value"}}},
-		Output:           &Output{Content: []byte("one")},
-		Failure: &Failure{
+		Output:           &exec.RuntimeOutput{Content: []byte("one")},
+		Failure: &exec.RuntimeFailure{
 			Message: "failure",
 			Diagnostics: []diagnostic.Diagnostic{{
 				Message: "diagnostic",

@@ -16,12 +16,12 @@ import (
 // Service provides protocol-neutral Ferret language behavior.
 type Service struct {
 	mu            sync.RWMutex
-	overlays      map[source.URI]Document
+	overlays      map[source.URI]overlay
 	cache         map[source.URI]*analysisEntry
 	compiler      *compiler.Compiler
 	workspaces    *workspace.Manager
 	functionIndex functionIndex
-	params        runtime.Params
+	parameters    runtime.Params
 	generation    uint64
 	analyze       analyzeFunc
 }
@@ -41,14 +41,15 @@ func New(
 		return nil, errNilFunctions
 	}
 
+	options = options.normalized()
 	compilerInstance := compiler.New()
 	result := &Service{
-		overlays:      make(map[source.URI]Document),
+		overlays:      make(map[source.URI]overlay),
 		cache:         make(map[source.URI]*analysisEntry),
 		compiler:      compilerInstance,
 		workspaces:    workspaces,
 		functionIndex: newFunctionIndex(functions),
-		params:        options.Params.Clone(),
+		parameters:    options.Parameters,
 	}
 	result.analyze = compilerInstance.Analyze
 
@@ -66,7 +67,6 @@ func (s *Service) OpenWorkspace(ctx context.Context, root string) error {
 func (s *Service) OpenDocument(
 	ctx context.Context,
 	uri source.URI,
-	_ string,
 	version int32,
 	text string,
 ) error {
@@ -81,7 +81,7 @@ func (s *Service) OpenDocument(
 
 	s.mu.Lock()
 	s.generation++
-	s.overlays[uri] = Document{
+	s.overlays[uri] = overlay{
 		URI:        uri,
 		Path:       path,
 		Version:    version,
@@ -145,8 +145,7 @@ func (s *Service) CloseDocument(ctx context.Context, uri source.URI) error {
 	return nil
 }
 
-// GetDocument returns a copy of an editor overlay.
-func (s *Service) GetDocument(ctx context.Context, uri source.URI) (*Document, bool) {
+func (s *Service) overlay(ctx context.Context, uri source.URI) (*overlay, bool) {
 	if ctx.Err() != nil {
 		return nil, false
 	}

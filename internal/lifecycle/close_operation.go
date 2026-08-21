@@ -7,19 +7,21 @@ import (
 	"sync"
 )
 
-// CloseOperation coordinates one committed teardown operation. Its zero value
-// is ready for use. Exactly one Begin caller owns teardown, while every waiter
-// observes the result published by Finish. A CloseOperation must not be copied
-// after first use.
-type CloseOperation struct {
-	mu sync.Mutex
+type (
+	// CloseOperation coordinates one committed teardown operation. Its zero value
+	// is ready for use. Exactly one Begin caller owns teardown, while every waiter
+	// observes the result published by Finish. A CloseOperation must not be copied
+	// after first use.
+	CloseOperation struct {
+		mu sync.Mutex
 
-	state closeState
-	done  chan struct{}
-	err   error
-}
+		state closeState
+		done  chan struct{}
+		err   error
+	}
 
-type closeState uint8
+	closeState uint8
+)
 
 const (
 	closeIdle closeState = iota

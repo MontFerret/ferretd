@@ -10,10 +10,10 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// Session owns one immutable reusable Ferret Plan. The child gate orders
+// session owns one immutable reusable Ferret Plan. The child gate orders
 // execution-runtime creation before close; its mutex owns debug compilation and
 // Plan lease state. No operation holds the Session mutex while waiting on the gate.
-type Session struct {
+type session struct {
 	mu sync.Mutex
 
 	id           SessionID
@@ -38,8 +38,8 @@ func newSession(
 	parent *workspace.Workspace,
 	compilation workspace.Compilation,
 	text string,
-) *Session {
-	result := &Session{
+) *session {
+	result := &session{
 		id:         id,
 		source:     compilation.Source,
 		parameters: compilation.Plan.Params(),
@@ -56,8 +56,8 @@ func newSession(
 	return result
 }
 
-// Snapshot returns an immutable Session view.
-func (s *Session) Snapshot() SessionSnapshot {
+// snapshot returns an immutable Session view.
+func (s *session) snapshot() SessionSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -68,7 +68,7 @@ func (s *Session) Snapshot() SessionSnapshot {
 	}
 }
 
-func (s *Session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget, error) {
+func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget, error) {
 	for {
 		s.mu.Lock()
 		if !s.children.Accepting() {
@@ -161,16 +161,16 @@ func (s *Session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 	}
 }
 
-func (s *Session) newDebugRuntimeTargetLocked(plan *ferret.Plan) runtimeTarget {
+func (s *session) newDebugRuntimeTargetLocked(plan *ferret.Plan) runtimeTarget {
 	if s.debugRuntimes == 0 {
 		s.debugRuntimeDone = make(chan struct{})
 	}
 	s.debugRuntimes++
 
-	return runtimeTarget{session: s.id, source: s.source, text: s.text, plan: plan}
+	return runtimeTarget{sessionID: s.id, source: s.source, text: s.text, plan: plan}
 }
 
-func (s *Session) releaseDebugRuntime() {
+func (s *session) releaseDebugRuntime() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -185,32 +185,32 @@ func (s *Session) releaseDebugRuntime() {
 	}
 }
 
-func (s *Session) runtimeTarget() runtimeTarget {
+func (s *session) runtimeTarget() runtimeTarget {
 	return runtimeTarget{
-		session: s.id,
-		source:  s.source,
-		text:    s.text,
-		plan:    s.plan,
+		sessionID: s.id,
+		source:    s.source,
+		text:      s.text,
+		plan:      s.plan,
 	}
 }
 
-func (s *Session) beginRuntimeCreate() bool {
+func (s *session) beginRuntimeCreate() bool {
 	return s.children.BeginCreate()
 }
 
-func (s *Session) finishRuntimeCreate() {
+func (s *session) finishRuntimeCreate() {
 	s.children.EndCreate()
 }
 
-func (s *Session) beginClose() bool {
+func (s *session) beginClose() bool {
 	return s.children.BeginClose()
 }
 
-func (s *Session) waitForRuntimeCreates() {
+func (s *session) waitForRuntimeCreates() {
 	s.children.WaitForCreates()
 }
 
-func (s *Session) releasePlans() (*ferret.Plan, *ferret.Plan) {
+func (s *session) releasePlans() (*ferret.Plan, *ferret.Plan) {
 	s.mu.Lock()
 	compileDone := s.debugCompileDone
 	runtimeDone := s.debugRuntimeDone
@@ -235,19 +235,19 @@ func (s *Session) releasePlans() (*ferret.Plan, *ferret.Plan) {
 	return plan, debugPlan
 }
 
-func (s *Session) finishClose(err error) {
+func (s *session) finishClose(err error) {
 	s.children.FinishClose(err)
 }
 
-func (s *Session) waitClose(ctx context.Context) error {
+func (s *session) waitClose(ctx context.Context) error {
 	return s.children.WaitClose(ctx)
 }
 
-func (s *Session) closeStarted() bool {
+func (s *session) closeStarted() bool {
 	return !s.children.Accepting()
 }
 
-func (s *Session) closeUnpublished() error {
+func (s *session) closeUnpublished() error {
 	s.mu.Lock()
 	plan := s.plan
 	s.plan = nil

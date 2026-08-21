@@ -22,7 +22,7 @@ type (
 	}
 
 	sessionEntry struct {
-		session *Session
+		session *session
 		state   registryState
 	}
 
@@ -32,7 +32,7 @@ type (
 	}
 
 	runtimeCreation struct {
-		parent *Session
+		parent *session
 	}
 
 	workspaceClose struct {
@@ -88,7 +88,7 @@ func (r *sessionRegistry) finishCreate(creation sessionCreation) {
 func (r *sessionRegistry) commitCreate(
 	ctx context.Context,
 	creation sessionCreation,
-	session *Session,
+	session *session,
 ) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -111,7 +111,7 @@ func (r *sessionRegistry) commitCreate(
 	return nil
 }
 
-func (r *sessionRegistry) active(id SessionID) *Session {
+func (r *sessionRegistry) active(id SessionID) *session {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -143,7 +143,7 @@ func (r *sessionRegistry) beginRuntimeCreate(id SessionID) (runtimeCreation, err
 	return runtimeCreation{parent: entry.session}, nil
 }
 
-func (c runtimeCreation) session() *Session {
+func (c runtimeCreation) session() *session {
 	return c.parent
 }
 

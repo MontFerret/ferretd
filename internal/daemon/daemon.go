@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -18,53 +17,30 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-type (
-	// Options configures a daemon instance.
-	Options struct {
-		Version  string
-		Endpoint transport.Endpoint
-		Logger   *slog.Logger
-	}
+// Daemon owns the services and lifecycle that make up ferretd.
+type Daemon struct {
+	workspaces *workspace.Manager
+	executions *exec.Manager
+	grpc       *grpcadapter.Server
 
-	// Daemon owns the services and lifecycle that make up ferretd.
-	Daemon struct {
-		workspaces *workspace.Manager
-		execution  *exec.Manager
-		rpc        *grpcadapter.Server
+	endpoint transport.Endpoint
+	version  string
+	logger   *slog.Logger
+	shutdown chan struct{}
+	stopDone chan struct{}
 
-		endpoint transport.Endpoint
-		version  string
-		logger   *slog.Logger
-		shutdown chan struct{}
-		stopDone chan struct{}
-
-		mu           sync.Mutex
-		state        lifecycleState
-		listener     net.Listener
-		stopErr      error
-		shutdownOnce sync.Once
-	}
-)
+	mu           sync.Mutex
+	state        lifecycleState
+	listener     net.Listener
+	stopErr      error
+	shutdownOnce sync.Once
+}
 
 // New constructs a daemon and its service boundaries.
 func New(options Options) (*Daemon, error) {
-	endpoint := options.Endpoint
-	if endpoint == (transport.Endpoint{}) {
-		var err error
-		endpoint, err = transport.DefaultEndpoint()
-		if err != nil {
-			return nil, fmt.Errorf("resolve daemon endpoint: %w", err)
-		}
-	}
-
-	version := options.Version
-	if version == "" {
-		version = "dev"
-	}
-
-	logger := options.Logger
-	if logger == nil {
-		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	options, err := options.normalized()
+	if err != nil {
+		return nil, err
 	}
 
 	instanceID, err := uuid.NewRandom()
@@ -82,28 +58,30 @@ func New(options Options) (*Daemon, error) {
 
 	result := &Daemon{
 		workspaces: workspaceManager,
-		execution:  executionManager,
-		endpoint:   endpoint,
-		version:    version,
-		logger:     logger,
+		executions: executionManager,
+		endpoint:   options.Endpoint,
+		version:    options.Version,
+		logger:     options.Logger,
 		shutdown:   make(chan struct{}),
 		stopDone:   make(chan struct{}),
 		state:      stateNew,
 	}
-	rpc, err := grpcadapter.New(
+	grpcServer, err := grpcadapter.New(
 		result.workspaces,
-		result.execution,
-		version,
+		result.executions,
+		options.Version,
 		instanceID.String(),
 		result.requestShutdown,
 	)
+
 	if err != nil {
 		ctx := context.Background()
-		cleanupErr := errors.Join(result.execution.Close(ctx), result.workspaces.Clear(ctx))
+		cleanupErr := errors.Join(result.executions.Close(ctx), result.workspaces.Clear(ctx))
 
 		return nil, errors.Join(fmt.Errorf("create gRPC server: %w", err), cleanupErr)
 	}
-	result.rpc = rpc
+
+	result.grpc = grpcServer
 
 	return result, nil
 }
@@ -135,7 +113,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.mu.Unlock()
 
 		closeErr := listener.Close()
-		executionErr := d.execution.Close(context.Background())
+		executionErr := d.executions.Close(context.Background())
 		workspaceErr := d.workspaces.Clear(context.Background())
 		d.finishStop(errors.Join(executionErr, workspaceErr, closeErr))
 
@@ -144,14 +122,14 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	d.listener = listener
 	d.state = stateRunning
-	d.rpc.SetServing()
+	d.grpc.SetServing()
 	d.mu.Unlock()
 
 	d.logger.Info("ferretd started", "endpoint", d.endpoint.String(), "version", d.version)
 
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- d.rpc.Serve(listener)
+		serveDone <- d.grpc.Serve(listener)
 	}()
 
 	select {
@@ -174,7 +152,7 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	switch d.state {
 	case stateNew:
 		d.state = stateStopped
-		executionErr := d.execution.Close(ctx)
+		executionErr := d.executions.Close(ctx)
 		workspaceErr := d.workspaces.Clear(ctx)
 		d.stopErr = errors.Join(executionErr, workspaceErr)
 		close(d.stopDone)
@@ -192,10 +170,10 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		listener := d.listener
 		d.mu.Unlock()
 
-		d.rpc.SetNotServing()
-		executionErr := d.execution.Close(ctx)
+		d.grpc.SetNotServing()
+		executionErr := d.executions.Close(ctx)
 		workspaceErr := d.workspaces.Clear(ctx)
-		stopErr := d.rpc.Stop(ctx)
+		stopErr := d.grpc.Stop(ctx)
 		closeErr := listener.Close()
 		d.finishStop(errors.Join(executionErr, workspaceErr, stopErr, closeErr))
 

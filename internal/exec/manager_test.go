@@ -73,7 +73,7 @@ func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateSession: %v", err)
 		}
-		execution, err := manager.CreateExecution(ctx, session.ID, nil, ExecutionOptions{})
+		execution, err := manager.CreateExecution(ctx, session.ID, nil, RuntimeOptions{})
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
@@ -397,7 +397,7 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 	manager, snapshot, _ := newHookedManager(t, "RETURN 1")
 	closed := make(chan error, 1)
-	var admitted *Execution
+	var admitted *execution
 	func() {
 		creation, err := manager.sessions.beginRuntimeCreate(snapshot.ID)
 		if err != nil {
@@ -421,7 +421,7 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 			context.Background(),
 			snapshot.ID,
 			nil,
-			ExecutionOptions{},
+			RuntimeOptions{},
 		); !errors.Is(err, ErrSessionNotFound) {
 			t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
 		}
@@ -495,7 +495,7 @@ func TestParentCloseDoesNotReadoptSettledExecution(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -521,7 +521,7 @@ func writeSourceFile(t *testing.T, root, relativePath, content string) {
 func runSessionOutput(t *testing.T, manager *Manager, sessionID SessionID) string {
 	t.Helper()
 
-	created, err := manager.CreateExecution(context.Background(), sessionID, nil, ExecutionOptions{})
+	created, err := manager.CreateExecution(context.Background(), sessionID, nil, RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}

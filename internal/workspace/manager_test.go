@@ -199,7 +199,7 @@ func TestConcurrentOpenConverges(t *testing.T) {
 	release := make(chan struct{})
 	var loads atomic.Int32
 
-	manager.load = func(context.Context, string) (workspaceContent, error) {
+	manager.loadWorkspace = func(context.Context, string) (workspaceContent, error) {
 		if loads.Add(1) == 1 {
 			close(started)
 		}
@@ -254,7 +254,7 @@ func TestOpenTransitionsFromOpeningToReady(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	manager.load = func(context.Context, string) (workspaceContent, error) {
+	manager.loadWorkspace = func(context.Context, string) (workspaceContent, error) {
 		close(started)
 		<-release
 
@@ -290,7 +290,7 @@ func TestFailedOpenIsClassifiedRemovedAndRetryable(t *testing.T) {
 	wantErr := errors.New("discovery failed")
 	var failed *Workspace
 
-	manager.load = func(_ context.Context, canonical string) (workspaceContent, error) {
+	manager.loadWorkspace = func(_ context.Context, canonical string) (workspaceContent, error) {
 		manager.mu.RLock()
 		failed = manager.opening[canonical].workspace
 		manager.mu.RUnlock()
@@ -309,7 +309,7 @@ func TestFailedOpenIsClassifiedRemovedAndRetryable(t *testing.T) {
 		t.Fatalf("Get failed error = %v, want ErrNotFound", err)
 	}
 
-	manager.load = loadWorkspace
+	manager.loadWorkspace = loadWorkspace
 	retried, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("retry Open: %v", err)
@@ -325,7 +325,7 @@ func TestCanceledWaiterDoesNotCancelOwner(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	manager.load = func(context.Context, string) (workspaceContent, error) {
+	manager.loadWorkspace = func(context.Context, string) (workspaceContent, error) {
 		close(started)
 		<-release
 
@@ -365,7 +365,7 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 	var attemptsMu sync.Mutex
 	var roots []string
 
-	manager.load = func(ctx context.Context, root string) (workspaceContent, error) {
+	manager.loadWorkspace = func(ctx context.Context, root string) (workspaceContent, error) {
 		attemptsMu.Lock()
 		roots = append(roots, root)
 		attempt := len(roots)
@@ -486,7 +486,7 @@ func TestClearPreventsInFlightOpenFromCommitting(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	manager.load = func(context.Context, string) (workspaceContent, error) {
+	manager.loadWorkspace = func(context.Context, string) (workspaceContent, error) {
 		close(started)
 		<-release
 

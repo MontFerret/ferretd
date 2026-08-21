@@ -4,5 +4,5 @@ package workspace
 type DocumentLookup struct {
 	Document  Document
 	Workspace ID
-	Revision  uint64
+	Revision  Revision
 }

@@ -28,8 +28,6 @@ func TestWorkspaceRequiresReceiver(t *testing.T) {
 		{name: "Documents", call: func() { _ = workspace.Documents() }},
 		{name: "Document", call: func() { _, _ = workspace.Document("query.fql") }},
 		{name: "Diagnostics", call: func() { _ = workspace.Diagnostics() }},
-		{name: "Compile", call: func() { _, _ = workspace.Compile(ctx, "query.fql") }},
-		{name: "CompileDebug", call: func() { _, _ = workspace.CompileDebug(ctx, "query.fql") }},
 		{name: "CompileDocument", call: func() { _, _ = workspace.CompileDocument(ctx, Document{}) }},
 		{name: "CompileDebugSnapshot", call: func() {
 			_, _ = workspace.CompileDebugSnapshot(ctx, SourceSnapshot{}, "")

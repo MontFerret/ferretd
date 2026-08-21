@@ -5,11 +5,12 @@ import (
 
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 
+	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/language"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
-func toProtocolDiagnostic(diagnostic language.Diagnostic) protocol.Diagnostic {
+func toProtocolDiagnostic(diagnostic diagnostic.Diagnostic) protocol.Diagnostic {
 	severity := protocol.DiagnosticSeverityError
 	result := protocol.Diagnostic{
 		Range:    toProtocolRange(diagnostic.Range),
@@ -77,6 +78,31 @@ func toProtocolRange(value source.Range) protocol.Range {
 	return protocol.Range{
 		Start: protocol.Position{Line: value.Start.Line, Character: value.Start.Character},
 		End:   protocol.Position{Line: value.End.Line, Character: value.End.Character},
+	}
+}
+
+func toProtocolCompletionItem(value language.CompletionItem) protocol.CompletionItem {
+	kind := protocol.CompletionItemKindVariable
+	switch value.Kind {
+	case language.CompletionKindFunction:
+		kind = protocol.CompletionItemKindFunction
+	case language.CompletionKindParameter:
+		kind = protocol.CompletionItemKindVariable
+	case language.CompletionKindNamespace:
+		kind = protocol.CompletionItemKindModule
+	case language.CompletionKindKeyword:
+		kind = protocol.CompletionItemKindKeyword
+	case language.CompletionKindLiteral:
+		kind = protocol.CompletionItemKindValue
+	case language.CompletionKindOperator:
+		kind = protocol.CompletionItemKindOperator
+	}
+
+	return protocol.CompletionItem{
+		Label:      value.Label,
+		Kind:       &kind,
+		Detail:     &value.Detail,
+		InsertText: &value.InsertText,
 	}
 }
 

@@ -16,22 +16,22 @@ import (
 type (
 	// Manager owns concurrency-safe, process-local workspace state.
 	Manager struct {
-		mu         sync.RWMutex
-		byID       map[ID]*workspaceEntry
-		byRoot     map[string]ID
-		opening    map[string]*openOperation
-		closeHooks []CloseHook
-		load       loadWorkspaceFunc
-		newEngine  engineFactory
-		generation uint64
+		mu            sync.RWMutex
+		byID          map[ID]*workspaceEntry
+		byRoot        map[string]ID
+		opening       map[string]*openOperation
+		closeHooks    []CloseHook
+		loadWorkspace workspaceLoader
+		newEngine     newEngineFunc
+		generation    uint64
 	}
 
 	// CloseHook releases resources parented by a workspace before its Engine closes.
 	CloseHook func(context.Context, ID) error
 
-	loadWorkspaceFunc func(context.Context, string) (workspaceContent, error)
+	workspaceLoader func(context.Context, string) (workspaceContent, error)
 
-	engineFactory func(string) (*ferret.Engine, error)
+	newEngineFunc func(string) (*ferret.Engine, error)
 
 	openOperation struct {
 		generation uint64
@@ -57,10 +57,10 @@ const (
 // New creates a workspace manager.
 func New() *Manager {
 	return &Manager{
-		byID:    make(map[ID]*workspaceEntry),
-		byRoot:  make(map[string]ID),
-		opening: make(map[string]*openOperation),
-		load:    loadWorkspace,
+		byID:          make(map[ID]*workspaceEntry),
+		byRoot:        make(map[string]ID),
+		opening:       make(map[string]*openOperation),
+		loadWorkspace: loadWorkspace,
 		newEngine: func(root string) (*ferret.Engine, error) {
 			return ferret.New(ferret.WithFSRoot(root))
 		},
@@ -361,7 +361,7 @@ func (m *Manager) beginOpen(candidate *Workspace) (*openOperation, bool) {
 }
 
 func (m *Manager) loadAndCommit(ctx context.Context, operation *openOperation) (*Workspace, error) {
-	content, err := m.load(ctx, operation.workspace.Root())
+	content, err := m.loadWorkspace(ctx, operation.workspace.Root())
 	if err == nil {
 		err = ctx.Err()
 	}

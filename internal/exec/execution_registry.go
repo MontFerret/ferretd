@@ -13,7 +13,7 @@ type (
 	}
 
 	executionEntry struct {
-		execution *Execution
+		execution *execution
 		state     registryState
 	}
 
@@ -35,7 +35,7 @@ func newExecutionRegistry() *executionRegistry {
 	}
 }
 
-func (r *executionRegistry) add(execution *Execution) {
+func (r *executionRegistry) add(execution *execution) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -46,13 +46,13 @@ func (r *executionRegistry) add(execution *Execution) {
 	entry := &executionEntry{execution: execution, state: registryStateActive}
 	r.entries[execution.id] = entry
 
-	group := r.bySession[execution.runtime.target.session]
+	group := r.bySession[execution.runtime.target.sessionID]
 	if group == nil {
 		group = &executionGroup{
 			state:   registryStateActive,
 			entries: make(map[ExecutionID]*executionEntry),
 		}
-		r.bySession[execution.runtime.target.session] = group
+		r.bySession[execution.runtime.target.sessionID] = group
 	}
 
 	if group.state != registryStateActive {
@@ -62,7 +62,7 @@ func (r *executionRegistry) add(execution *Execution) {
 	group.entries[execution.id] = entry
 }
 
-func (r *executionRegistry) active(id ExecutionID) *Execution {
+func (r *executionRegistry) active(id ExecutionID) *execution {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -132,7 +132,7 @@ func (r *executionRegistry) finishClose(entry *executionEntry) {
 		delete(r.entries, execution.id)
 	}
 
-	group := r.bySession[execution.runtime.target.session]
+	group := r.bySession[execution.runtime.target.sessionID]
 	if group == nil {
 		return
 	}
@@ -143,6 +143,6 @@ func (r *executionRegistry) finishClose(entry *executionEntry) {
 	// Active empty groups are reused by later Executions from the same Session.
 	// Parent close removes the group after the last retained child settles.
 	if group.state == registryStateClosing && len(group.entries) == 0 {
-		delete(r.bySession, execution.runtime.target.session)
+		delete(r.bySession, execution.runtime.target.sessionID)
 	}
 }

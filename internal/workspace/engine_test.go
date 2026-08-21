@@ -53,7 +53,7 @@ RETURN TO_STRING(data)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	compilation, err := opened.Compile(context.Background(), "escape.fql")
+	compilation, err := compileWorkspaceDocument(context.Background(), opened, "escape.fql", false)
 	if err != nil {
 		t.Fatalf("Compile escape: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestWorkspaceCloseWaitsForConcurrentCompilation(t *testing.T) {
 	compiled := make(chan Compilation, 1)
 	compileErr := make(chan error, 1)
 	go func() {
-		result, err := opened.Compile(context.Background(), "query.fql")
+		result, err := compileWorkspaceDocument(context.Background(), opened, "query.fql", false)
 		compiled <- result
 		compileErr <- err
 	}()
@@ -265,7 +265,7 @@ func TestWorkspaceCloseWaitsForConcurrentCompilation(t *testing.T) {
 	if err := operation.close.Wait(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := opened.Compile(context.Background(), "query.fql"); !errors.Is(err, ErrClosed) {
+	if _, err := opened.CompileDocument(context.Background(), Document{}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("Compile after close error = %v, want ErrClosed", err)
 	}
 }
@@ -280,7 +280,7 @@ func TestWorkspaceCompilationUsesStaticSourceSnapshot(t *testing.T) {
 	}
 
 	writeWorkspaceSource(t, root, "query.fql", "RETURN 2")
-	compilation, err := opened.Compile(context.Background(), "query.fql")
+	compilation, err := compileWorkspaceDocument(context.Background(), opened, "query.fql", false)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestWorkspaceCompileDebugPreservesSourceSnapshotAndDebuggerMetadata(t *test
 		t.Fatalf("Open: %v", err)
 	}
 
-	compilation, err := opened.CompileDebug(context.Background(), "query.fql")
+	compilation, err := compileWorkspaceDocument(context.Background(), opened, "query.fql", true)
 	if err != nil {
 		t.Fatalf("CompileDebug: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestWorkspaceCompileDebugPreservesSourceSnapshotAndDebuggerMetadata(t *test
 func runWorkspaceCompilation(t *testing.T, opened *Workspace, relativePath string) []byte {
 	t.Helper()
 
-	compilation, err := opened.Compile(context.Background(), relativePath)
+	compilation, err := compileWorkspaceDocument(context.Background(), opened, relativePath, false)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -358,6 +358,31 @@ func runWorkspaceCompilation(t *testing.T, opened *Workspace, relativePath strin
 	}
 
 	return append([]byte(nil), output.Content...)
+}
+
+func compileWorkspaceDocument(
+	ctx context.Context,
+	opened *Workspace,
+	relativePath string,
+	debug bool,
+) (Compilation, error) {
+	document, ok := opened.Document(relativePath)
+	if !ok {
+		return Compilation{}, ErrDocumentNotFound
+	}
+
+	if !debug {
+		return opened.CompileDocument(ctx, document)
+	}
+
+	snapshot := SourceSnapshot{
+		Workspace:    opened.ID(),
+		RelativePath: document.File().RelativePath,
+		URI:          document.File().URI,
+		Revision:     document.Revision(),
+	}
+
+	return opened.CompileDebugSnapshot(ctx, snapshot, document.Content())
 }
 
 func writeWorkspaceSource(t *testing.T, root, relativePath, content string) {

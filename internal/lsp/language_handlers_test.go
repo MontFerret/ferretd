@@ -17,7 +17,7 @@ func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
 	server := mustNewServer(t, service)
 	uri := documentURI(t, "handlers.fql")
 	query := "LET value = 1\nFUNC add(p) => value + p\nRETURN add(value)"
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, query); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
 		t.Fatal(err)
 	}
 	mapper := source.NewMapper(query)
@@ -223,7 +223,7 @@ func TestCompletionPreservesCanonicalLowercaseText(t *testing.T) {
 	service := newTestLanguageService(t)
 	server := mustNewServer(t, service)
 	uri := documentURI(t, "completion.fql")
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "re"); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, "re"); err != nil {
 		t.Fatal(err)
 	}
 

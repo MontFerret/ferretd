@@ -11,10 +11,10 @@ import (
 )
 
 type (
-	// Session owns one exec.DebugRuntime and its retained debugger-specific state.
+	// session owns one exec.DebugRuntime and its retained debugger-specific state.
 	// Its mutex precedes the embedded close operation when both locks are required
 	// for a transition.
-	Session struct {
+	session struct {
 		mu        sync.Mutex
 		controlMu sync.Mutex
 
@@ -23,9 +23,9 @@ type (
 		state            State
 		reason           StopReason
 		location         Location
-		hitBreakpointIDs []uint64
-		output           *Output
-		failure          *Failure
+		hitBreakpointIDs []BreakpointID
+		output           *exec.RuntimeOutput
+		failure          *exec.RuntimeFailure
 		breakpoints      map[string][]ferret.DebugBreakpoint
 		terminating      bool
 		close            lifecycle.CloseOperation
@@ -43,11 +43,13 @@ type (
 	}
 )
 
+const watcherBufferSize = 8
+
 func newSession(
 	id SessionID,
 	runtime *exec.DebugRuntime,
-) *Session {
-	result := &Session{
+) *session {
+	result := &session{
 		id:           id,
 		runtime:      runtime,
 		state:        StateCreated,
@@ -60,45 +62,43 @@ func newSession(
 	return result
 }
 
-const watcherBufferSize = 8
-
-// Snapshot returns an immutable Session view.
-func (d *Session) Snapshot() SessionSnapshot {
+// snapshot returns an immutable Session view.
+func (d *session) snapshot() SessionSnapshot {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.snapshotLocked()
 }
 
-// Start commits RUNNING and asynchronously waits for Ferret's first stop.
-func (d *Session) Start(ctx context.Context) (SessionSnapshot, error) {
+// start commits RUNNING and asynchronously waits for Ferret's first stop.
+func (d *session) start(ctx context.Context) (SessionSnapshot, error) {
 	return d.startCommand(ctx, StateCreated, func() (*ferret.DebugEvent, error) {
 		return d.runtime.Debugger().Start(d.runtime.Context())
 	}, false)
 }
 
-// Continue resumes execution until Ferret reports its next event.
-func (d *Session) Continue(ctx context.Context) (SessionSnapshot, error) {
+// continueExecution resumes execution until Ferret reports its next event.
+func (d *session) continueExecution(ctx context.Context) (SessionSnapshot, error) {
 	return d.resumeCommand(ctx, d.runtime.Debugger().Continue)
 }
 
-// StepIn resumes and stops at the next logical source location.
-func (d *Session) StepIn(ctx context.Context) (SessionSnapshot, error) {
+// stepIn resumes and stops at the next logical source location.
+func (d *session) stepIn(ctx context.Context) (SessionSnapshot, error) {
 	return d.resumeCommand(ctx, d.runtime.Debugger().Step)
 }
 
-// StepOver resumes and stops at the next location in the same or a shallower frame.
-func (d *Session) StepOver(ctx context.Context) (SessionSnapshot, error) {
+// stepOver resumes and stops at the next location in the same or a shallower frame.
+func (d *session) stepOver(ctx context.Context) (SessionSnapshot, error) {
 	return d.resumeCommand(ctx, d.runtime.Debugger().Next)
 }
 
-// StepOut resumes and stops in a caller frame.
-func (d *Session) StepOut(ctx context.Context) (SessionSnapshot, error) {
+// stepOut resumes and stops in a caller frame.
+func (d *session) stepOut(ctx context.Context) (SessionSnapshot, error) {
 	return d.resumeCommand(ctx, d.runtime.Debugger().Out)
 }
 
-// Pause requests a safe stop without waiting for the active command.
-func (d *Session) Pause(ctx context.Context) (SessionSnapshot, error) {
+// pause requests a safe stop without waiting for the active command.
+func (d *session) pause(ctx context.Context) (SessionSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
@@ -115,11 +115,11 @@ func (d *Session) Pause(ctx context.Context) (SessionSnapshot, error) {
 		return SessionSnapshot{}, err
 	}
 
-	return d.Snapshot(), nil
+	return d.snapshot(), nil
 }
 
-// ReplaceBreakpoints replaces every breakpoint for one source file.
-func (d *Session) ReplaceBreakpoints(
+// replaceBreakpoints replaces every breakpoint for one source file.
+func (d *session) replaceBreakpoints(
 	ctx context.Context,
 	file string,
 	locations []BreakpointLocation,
@@ -175,8 +175,8 @@ func (d *Session) ReplaceBreakpoints(
 	return result, nil
 }
 
-// Frames returns the paused frame stack in current-to-caller order.
-func (d *Session) Frames(ctx context.Context) ([]Frame, error) {
+// frames returns the paused frame stack in current-to-caller order.
+func (d *session) frames(ctx context.Context) ([]Frame, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -205,8 +205,8 @@ func (d *Session) Frames(ctx context.Context) ([]Frame, error) {
 	return result, nil
 }
 
-// Scopes returns Locals and Parameters for one paused frame.
-func (d *Session) Scopes(ctx context.Context, frame int) ([]Scope, error) {
+// scopes returns Locals and Parameters for one paused frame.
+func (d *session) scopes(ctx context.Context, frame int) ([]Scope, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -238,8 +238,8 @@ func (d *Session) Scopes(ctx context.Context, frame int) ([]Scope, error) {
 	return []Scope{locals, parameters}, nil
 }
 
-// Variables expands one value reference from the current paused state.
-func (d *Session) Variables(ctx context.Context, reference ValueReference) ([]Variable, error) {
+// variables expands one value reference from the current paused state.
+func (d *session) variables(ctx context.Context, reference ValueReference) ([]Variable, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -259,8 +259,8 @@ func (d *Session) Variables(ctx context.Context, reference ValueReference) ([]Va
 	return convertVariables(variables), nil
 }
 
-// Evaluate evaluates a side-effect-free expression in one paused frame.
-func (d *Session) Evaluate(ctx context.Context, frame int, expression string) (Value, error) {
+// evaluate evaluates a side-effect-free expression in one paused frame.
+func (d *session) evaluate(ctx context.Context, frame int, expression string) (Value, error) {
 	if err := ctx.Err(); err != nil {
 		return Value{}, err
 	}
@@ -280,19 +280,19 @@ func (d *Session) Evaluate(ctx context.Context, frame int, expression string) (V
 	return convertValue(value), nil
 }
 
-// Terminate idempotently requests Ferret termination while retaining the resource.
-func (d *Session) Terminate(ctx context.Context) (SessionSnapshot, error) {
+// terminateExecution idempotently requests Ferret termination while retaining the resource.
+func (d *session) terminateExecution(ctx context.Context) (SessionSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
 
 	d.requestTermination()
 
-	return d.Snapshot(), nil
+	return d.snapshot(), nil
 }
 
-// Subscribe returns the latest lifecycle event and future bounded observations.
-func (d *Session) Subscribe() Subscription {
+// subscribe returns the latest lifecycle event and future bounded observations.
+func (d *session) subscribe() Subscription {
 	d.mu.Lock()
 	current := d.lastEvent.clone()
 	if d.state.Terminal() {
@@ -326,7 +326,7 @@ func (d *Session) Subscribe() Subscription {
 	}
 }
 
-func (d *Session) resumeCommand(
+func (d *session) resumeCommand(
 	ctx context.Context,
 	command func(context.Context) (*ferret.DebugEvent, error),
 ) (SessionSnapshot, error) {
@@ -339,7 +339,7 @@ func (d *Session) resumeCommand(
 	}, runtimeErrorResume)
 }
 
-func (d *Session) startCommand(
+func (d *session) startCommand(
 	ctx context.Context,
 	expected State,
 	command func() (*ferret.DebugEvent, error),
@@ -388,7 +388,7 @@ func (d *Session) startCommand(
 	return snapshot, nil
 }
 
-func (d *Session) runCommand(command func() (*ferret.DebugEvent, error), runtimeErrorResume bool) {
+func (d *session) runCommand(command func() (*ferret.DebugEvent, error), runtimeErrorResume bool) {
 	event, err := command()
 
 	d.mu.Lock()
@@ -414,7 +414,7 @@ func (d *Session) runCommand(command func() (*ferret.DebugEvent, error), runtime
 	d.applyFerretEventLocked(event, runtimeErrorResume)
 }
 
-func (d *Session) applyFerretEventLocked(event *ferret.DebugEvent, runtimeErrorResume bool) {
+func (d *session) applyFerretEventLocked(event *ferret.DebugEvent, runtimeErrorResume bool) {
 	if event == nil {
 		d.failLocked(errors.New("debug execution returned no event"))
 
@@ -426,9 +426,9 @@ func (d *Session) applyFerretEventLocked(event *ferret.DebugEvent, runtimeErrorR
 	case ferret.DebugReasonEntry:
 		d.stopLocked(StopEntry)
 	case ferret.DebugReasonBreakpoint:
-		d.hitBreakpointIDs = make([]uint64, len(event.HitBreakpointIDs))
+		d.hitBreakpointIDs = make([]BreakpointID, len(event.HitBreakpointIDs))
 		for index, id := range event.HitBreakpointIDs {
-			d.hitBreakpointIDs[index] = uint64(id)
+			d.hitBreakpointIDs[index] = BreakpointID(id)
 		}
 		d.stopLocked(StopBreakpoint)
 	case ferret.DebugReasonStep:
@@ -438,11 +438,11 @@ func (d *Session) applyFerretEventLocked(event *ferret.DebugEvent, runtimeErrorR
 	case ferret.DebugReasonRuntimeError:
 		d.reason = StopRuntimeError
 		d.state = StateStopped
-		d.failure = d.runtime.Failure(event.Error)
+		d.failure = d.runtime.MaterializeFailure(event.Error)
 		d.publishLocked(EventStopped, false)
 	case ferret.DebugReasonCompleted:
 		d.state = StateCompleted
-		d.output = d.runtime.Output(event.Output)
+		d.output = d.runtime.MaterializeOutput(event.Output)
 		d.publishLocked(EventCompleted, true)
 	case ferret.DebugReasonTerminated:
 		if runtimeErrorResume && event.Error != nil && !d.terminating {
@@ -456,20 +456,20 @@ func (d *Session) applyFerretEventLocked(event *ferret.DebugEvent, runtimeErrorR
 	}
 }
 
-func (d *Session) stopLocked(reason StopReason) {
+func (d *session) stopLocked(reason StopReason) {
 	d.reason = reason
 	d.failure = nil
 	d.state = StateStopped
 	d.publishLocked(EventStopped, false)
 }
 
-func (d *Session) failLocked(err error) {
+func (d *session) failLocked(err error) {
 	d.state = StateFailed
-	d.failure = d.runtime.Failure(err)
+	d.failure = d.runtime.MaterializeFailure(err)
 	d.publishLocked(EventFailed, true)
 }
 
-func (d *Session) requireInspectable() error {
+func (d *session) requireInspectable() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -484,7 +484,7 @@ func (d *Session) requireInspectable() error {
 	return nil
 }
 
-func (d *Session) requireStopped() error {
+func (d *session) requireStopped() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -499,7 +499,7 @@ func (d *Session) requireStopped() error {
 	return nil
 }
 
-func (d *Session) requestTermination() {
+func (d *session) requestTermination() {
 	d.mu.Lock()
 	if d.state.Terminal() || d.terminating {
 		d.mu.Unlock()
@@ -513,7 +513,7 @@ func (d *Session) requestTermination() {
 	go d.terminate()
 }
 
-func (d *Session) terminate() {
+func (d *session) terminate() {
 	_ = d.runtime.Close()
 
 	d.mu.Lock()
@@ -527,14 +527,14 @@ func (d *Session) terminate() {
 	d.mu.Unlock()
 }
 
-func (d *Session) beginClose() bool {
+func (d *session) beginClose() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.close.Begin()
 }
 
-func (d *Session) settleClose() {
+func (d *session) settleClose() {
 	d.requestTermination()
 	<-d.terminalDone
 	_ = d.runtime.Close()
@@ -546,18 +546,18 @@ func (d *Session) settleClose() {
 	d.mu.Unlock()
 }
 
-func (d *Session) completeClose() {
+func (d *session) completeClose() {
 	d.close.Finish(d.runtime.Close())
 }
 
-func (d *Session) snapshotLocked() SessionSnapshot {
+func (d *session) snapshotLocked() SessionSnapshot {
 	return SessionSnapshot{
 		ID:               d.id,
-		Session:          d.runtime.SessionID(),
+		ExecutionSession: d.runtime.SessionID(),
 		State:            d.state,
 		Reason:           d.reason,
 		Location:         d.location,
-		HitBreakpointIDs: append([]uint64(nil), d.hitBreakpointIDs...),
+		HitBreakpointIDs: append([]BreakpointID(nil), d.hitBreakpointIDs...),
 		Parameters:       d.runtime.Parameters(),
 		Options:          d.runtime.Options(),
 		Output:           d.output.Clone(),
@@ -565,7 +565,7 @@ func (d *Session) snapshotLocked() SessionSnapshot {
 	}
 }
 
-func (d *Session) publishLocked(kind EventKind, terminal bool) {
+func (d *session) publishLocked(kind EventKind, terminal bool) {
 	d.sequence++
 	d.lastEvent = Event{
 		Session:  d.id,
@@ -590,7 +590,7 @@ func (d *Session) publishLocked(kind EventKind, terminal bool) {
 	}
 }
 
-func (d *Session) unsubscribe(id uint64) {
+func (d *session) unsubscribe(id uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -602,7 +602,7 @@ func (d *Session) unsubscribe(id uint64) {
 	d.closeWatcherLocked(id, watcher, nil)
 }
 
-func (d *Session) closeWatcherLocked(id uint64, watcher *debugEventWatcher, err error) {
+func (d *session) closeWatcherLocked(id uint64, watcher *debugEventWatcher, err error) {
 	if watcher.closed {
 		return
 	}

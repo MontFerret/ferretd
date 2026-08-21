@@ -32,7 +32,7 @@ func TestParseEndpoint(t *testing.T) {
 
 func TestListenDial(t *testing.T) {
 	endpoint := Endpoint{
-		Network: "npipe",
+		Network: NetworkNamedPipe,
 		Address: fmt.Sprintf(`\\.\pipe\ferretd-test-%d`, time.Now().UnixNano()),
 	}
 	listener, err := Listen(endpoint)
@@ -64,7 +64,7 @@ func TestListenDial(t *testing.T) {
 
 func TestListenRefusesActiveEndpoint(t *testing.T) {
 	endpoint := Endpoint{
-		Network: "npipe",
+		Network: NetworkNamedPipe,
 		Address: fmt.Sprintf(`\\.\pipe\ferretd-test-%d`, time.Now().UnixNano()),
 	}
 	listener, err := Listen(endpoint)

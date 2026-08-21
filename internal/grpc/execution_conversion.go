@@ -26,7 +26,7 @@ func toProtoSourceSnapshot(value workspace.SourceSnapshot) *executionv1.SourceSn
 		WorkspaceId:  &workspacev1.WorkspaceId{Value: value.Workspace.String()},
 		RelativePath: value.RelativePath,
 		Uri:          value.URI.String(),
-		Revision:     value.Revision,
+		Revision:     uint64(value.Revision),
 	}
 }
 

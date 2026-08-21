@@ -24,10 +24,11 @@ consistently with the Session's source snapshot.
 
 `internal/exec` creates a DebugRuntime through the same lower-level machinery as
 ordinary execution. The common runtime owns prepared parameters, normalized
-options, immutable source/Plan data, manager-owned cancellation, the concrete
-Ferret session, shared output/failure conversion, and idempotent cleanup. The
-DebugRuntime exposes the Ferret debugger capability and owns the debug-Plan
-lease. It does not expose mutable Session maps, locks, or child state.
+`exec.RuntimeOptions`, immutable source/Plan data, manager-owned cancellation,
+the concrete Ferret session, shared `RuntimeOutput` and `RuntimeFailure`
+materialization, and idempotent cleanup. The DebugRuntime exposes the Ferret
+debugger capability and owns the debug-Plan lease. It does not expose mutable
+Session maps, locks, or child state.
 
 ## Retained DebugSessions
 
@@ -37,6 +38,12 @@ plus breakpoints, authoritative debugger lifecycle state, asynchronous command
 coordination, event watchers, paused-state inspection, and terminal debugger
 data. It does not prepare runtime values, construct Ferret sessions, translate
 runtime failures, or release Plan leases independently.
+
+The concrete debug Session implementation is package-private; adapters consume
+`debug.Manager` operations and immutable `SessionSnapshot` values.
+
+Resolved breakpoint identities and reported hits use `debug.BreakpointID`; DAP
+owns the projection from those identities to stable protocol breakpoint IDs.
 
 Supported commands include start, continue, pause, step-in, step-over, step-out,
 and terminate. Inspection includes threads, stack frames, scopes, variables, and

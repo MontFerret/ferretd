@@ -42,7 +42,7 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 		t.Fatalf("workspace diagnostics = %+v, %v", report, err)
 	}
 
-	if err := service.OpenDocument(ctx, uri, "ferret", 1, "RETURN 1"); err != nil {
+	if err := service.OpenDocument(ctx, uri, 1, "RETURN 1"); err != nil {
 		t.Fatal(err)
 	}
 	report, err = service.Diagnostics(ctx, uri)
@@ -244,11 +244,11 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuredParams := runtime.Params{"Configured": runtime.Int(1)}
-	service := mustNewService(t, workspace.New(), functions, Options{Params: configuredParams})
+	service := mustNewService(t, workspace.New(), functions, Options{Parameters: configuredParams})
 	configuredParams["AddedLater"] = runtime.Int(2)
 	query := "RETURN CuStOm" + runtime.NamespaceSeparator + "DoThing(@Known)"
 	uri := documentURI(t, "registry.fql")
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, query); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
 		t.Fatal(err)
 	}
 	mapper := source.NewMapper(query)
@@ -293,10 +293,10 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		t,
 		workspace.New(),
 		functions,
-		Options{Params: runtime.Params{"Configured": runtime.Int(1)}},
+		Options{Parameters: runtime.Params{"Configured": runtime.Int(1)}},
 	)
 	paramURI := documentURI(t, "params.fql")
-	if err := paramService.OpenDocument(context.Background(), paramURI, "ferret", 1, "RETURN @"); err != nil {
+	if err := paramService.OpenDocument(context.Background(), paramURI, 1, "RETURN @"); err != nil {
 		t.Fatal(err)
 	}
 	params, err := paramService.Completion(context.Background(), paramURI, source.Position{Character: 8})
@@ -511,7 +511,7 @@ func openLanguageDocument(t *testing.T, text string) (*Service, source.URI) {
 
 	service := newTestService(t, Options{})
 	uri := documentURI(t, "features.fql")
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, text); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, text); err != nil {
 		t.Fatal(err)
 	}
 

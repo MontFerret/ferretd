@@ -9,14 +9,14 @@ import (
 )
 
 type (
-	// Execution owns one isolated, one-shot Ferret invocation.
-	Execution struct {
+	// execution owns one isolated, one-shot Ferret invocation.
+	execution struct {
 		mu sync.Mutex
 
 		id          ExecutionID
 		runtime     *executionRuntime
 		state       State
-		output      *Output
+		output      *RuntimeOutput
 		failure     *Failure
 		runDone     chan struct{}
 		close       lifecycle.CloseOperation
@@ -38,8 +38,8 @@ const watcherBufferSize = 8
 func newExecution(
 	id ExecutionID,
 	runtime *executionRuntime,
-) *Execution {
-	result := &Execution{
+) *execution {
+	result := &execution{
 		id:       id,
 		runtime:  runtime,
 		state:    StateCreated,
@@ -51,16 +51,16 @@ func newExecution(
 	return result
 }
 
-// Snapshot returns an immutable Execution view.
-func (e *Execution) Snapshot() ExecutionSnapshot {
+// snapshot returns an immutable Execution view.
+func (e *execution) snapshot() ExecutionSnapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	return e.snapshotLocked()
 }
 
-// Start commits RUNNING and starts the daemon-owned one-shot invocation.
-func (e *Execution) Start(ctx context.Context) (ExecutionSnapshot, error) {
+// start commits RUNNING and starts the daemon-owned one-shot invocation.
+func (e *execution) start(ctx context.Context) (ExecutionSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return ExecutionSnapshot{}, err
 	}
@@ -93,8 +93,8 @@ func (e *Execution) Start(ctx context.Context) (ExecutionSnapshot, error) {
 	}
 }
 
-// Cancel idempotently requests cancellation without overwriting terminal state.
-func (e *Execution) Cancel() ExecutionSnapshot {
+// cancel idempotently requests cancellation without overwriting terminal state.
+func (e *execution) cancel() ExecutionSnapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -110,8 +110,8 @@ func (e *Execution) Cancel() ExecutionSnapshot {
 	return e.snapshotLocked()
 }
 
-// Subscribe returns the latest lifecycle event and future bounded observations.
-func (e *Execution) Subscribe() Subscription {
+// subscribe returns the latest lifecycle event and future bounded observations.
+func (e *execution) subscribe() Subscription {
 	e.mu.Lock()
 	current := e.lastEvent.clone()
 	if e.state.Terminal() {
@@ -145,12 +145,12 @@ func (e *Execution) Subscribe() Subscription {
 	}
 }
 
-func (e *Execution) run() {
+func (e *execution) run() {
 	result := e.runtime.run()
 	e.finish(result.output, result.err, result.category)
 }
 
-func (e *Execution) finish(output *RuntimeOutput, err error, category FailureCategory) {
+func (e *execution) finish(output *RuntimeOutput, err error, category FailureCategory) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -174,16 +174,16 @@ func (e *Execution) finish(output *RuntimeOutput, err error, category FailureCat
 	}
 
 	e.state = StateFailed
-	e.failure = &Failure{Category: category, RuntimeFailure: *e.runtime.failure(err)}
+	e.failure = &Failure{Category: category, RuntimeFailure: *e.runtime.materializeFailure(err)}
 	e.publishLocked(EventFailed, true)
 }
 
-func (e *Execution) beginClose() bool {
+func (e *execution) beginClose() bool {
 	return e.close.Begin()
 }
 
-func (e *Execution) settleClose() {
-	e.Cancel()
+func (e *execution) settleClose() {
+	e.cancel()
 	<-e.runDone
 	_ = e.runtime.closeSession()
 
@@ -195,14 +195,14 @@ func (e *Execution) settleClose() {
 	e.mu.Unlock()
 }
 
-func (e *Execution) completeClose() {
+func (e *execution) completeClose() {
 	e.close.Finish(nil)
 }
 
-func (e *Execution) snapshotLocked() ExecutionSnapshot {
+func (e *execution) snapshotLocked() ExecutionSnapshot {
 	return (ExecutionSnapshot{
 		ID:         e.id,
-		Session:    e.runtime.target.session,
+		Session:    e.runtime.target.sessionID,
 		State:      e.state,
 		Parameters: e.runtime.input.parameters,
 		Options:    e.runtime.input.options,
@@ -211,7 +211,7 @@ func (e *Execution) snapshotLocked() ExecutionSnapshot {
 	}).Clone()
 }
 
-func (e *Execution) publishLocked(kind EventKind, terminal bool) {
+func (e *execution) publishLocked(kind EventKind, terminal bool) {
 	e.sequence++
 	e.lastEvent = Event{
 		Execution: e.id,
@@ -236,7 +236,7 @@ func (e *Execution) publishLocked(kind EventKind, terminal bool) {
 	}
 }
 
-func (e *Execution) unsubscribe(id uint64) {
+func (e *execution) unsubscribe(id uint64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -248,7 +248,7 @@ func (e *Execution) unsubscribe(id uint64) {
 	e.closeWatcherLocked(id, watcher, nil)
 }
 
-func (e *Execution) closeWatcherLocked(id uint64, watcher *eventWatcher, err error) {
+func (e *execution) closeWatcherLocked(id uint64, watcher *eventWatcher, err error) {
 	if watcher.closed {
 		return
 	}

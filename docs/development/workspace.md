@@ -54,9 +54,9 @@ visible.
 ## Retained files and documents
 
 The file model stores discovered identity and path information. The document
-model additionally retains source contents, revision, Ferret source and parse
-state, and load or syntax diagnostics. Callers receive values or copies rather
-than mutable manager-owned collections.
+model additionally retains source contents, a typed `workspace.Revision`,
+Ferret source and parse state, and load or syntax diagnostics. Callers receive
+values or copies rather than mutable manager-owned collections.
 
 A malformed or unreadable document does not fail an otherwise coherent
 workspace. It remains represented with diagnostics so other files are usable.
@@ -75,10 +75,10 @@ Unchanged contents retain their revision. Missing, unreadable, or invalid
 replacement contents remain retained as unavailable or diagnosed state rather
 than removing the document from the discovered set.
 
-After refresh, the workspace exposes a compile boundary that produces the
-immutable Plan consumed by `internal/exec`. Existing execution Sessions keep the
-source text, revision, and Plan with which they were created. A later refresh
-does not mutate them.
+After refresh, `CompileDocument` compiles the selected immutable document for a
+normal Session. `CompileDebugSnapshot` compiles the exact source snapshot and
+text retained by that Session. Existing Sessions keep the source text, revision,
+and Plan with which they were created; a later refresh does not mutate them.
 
 Each workspace engine uses Ferret's read-write filesystem rooted at the cleaned
 workspace directory. Root confinement and filesystem semantics remain Ferret

@@ -38,18 +38,23 @@ receive an `exec.DebugRuntime`, never mutable Session internals or a raw Plan.
 The DebugRuntime owns its Plan lease through the common runtime's one-time
 Ferret-session close attempt.
 
+The concrete Session and Execution implementations are package-private.
+Sibling packages use `exec.Manager`, immutable snapshots, subscriptions, and
+`DebugRuntime` rather than mutable resource objects.
+
 ## Common runtime and Executions
 
-`internal/params` validates and copies caller-owned JSON-shaped parameter values
-before they enter retained state. Maps, lists, scalars, and null values cross the
-gRPC and public-client boundary without exposing mutable caller storage.
+`exec.Parameters` is the named caller-facing parameter map. It recursively
+clones `map[string]any` and `[]any` containers before retained state is created;
+runtime preparation remains private to `internal/exec`. Raw maps are converted
+to `Parameters` only at gRPC and DAP boundaries.
 
 The package has one concrete execution-runtime implementation. It owns the
 immutable Session/Plan/source target, prepared Ferret parameters plus the
 daemon-retained copy, normalized options, a manager-owned context and
-cancellation function, one Ferret session resource, output/failure
-materialization, and idempotent Ferret-session cleanup. Both normal and debug
-creation use this sequence and the same `internal/params.Prepare` semantics.
+cancellation function, one Ferret session resource, `RuntimeOutput` and
+`RuntimeFailure` materialization, and idempotent Ferret-session cleanup. Both
+normal and debug creation use the same preparation and cloning semantics.
 
 Each Execution owns that runtime plus its ordinary one-shot state, ordered
 lifecycle events, and terminal result or failure. The fresh Ferret runtime

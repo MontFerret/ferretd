@@ -117,7 +117,7 @@ func newHookedManager(
 		_ = engine.Close()
 	})
 
-	return manager, session.Snapshot(), engine
+	return manager, session.snapshot(), engine
 }
 
 func retainedSession(t testing.TB, manager *Manager, id SessionID) *sessionEntry {

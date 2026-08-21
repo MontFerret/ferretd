@@ -17,6 +17,9 @@ type (
 	// State identifies the current workspace lifecycle state.
 	State uint8
 
+	// Revision identifies one retained version of a workspace document.
+	Revision uint64
+
 	// Workspace is the daemon-owned source state for a canonical root.
 	Workspace struct {
 		mu          sync.RWMutex
@@ -42,7 +45,7 @@ type (
 		URI          localsource.URI
 		// Revision advances monotonically when the workspace retains changed
 		// source state for this already-discovered document.
-		Revision uint64
+		Revision Revision
 	}
 )
 
@@ -127,7 +130,7 @@ func (w *Workspace) Documents() []Document {
 
 // Document returns a document by its workspace-relative path.
 func (w *Workspace) Document(relativePath string) (Document, bool) {
-	key, ok := documentKey(relativePath)
+	key, ok := normalizeDocumentPath(relativePath)
 	if !ok {
 		return Document{}, false
 	}
@@ -152,16 +155,6 @@ func (w *Workspace) Diagnostics() []*ferretdiagnostics.Diagnostic {
 	return result
 }
 
-// Compile compiles one retained document through the workspace-owned Ferret engine.
-func (w *Workspace) Compile(ctx context.Context, relativePath string) (Compilation, error) {
-	return w.compile(ctx, relativePath, false)
-}
-
-// CompileDebug compiles one retained document with Ferret debug metadata.
-func (w *Workspace) CompileDebug(ctx context.Context, relativePath string) (Compilation, error) {
-	return w.compile(ctx, relativePath, true)
-}
-
 // CompileDocument compiles an immutable document returned by RefreshDocument.
 // A later workspace refresh cannot change the source selected for this compile.
 func (w *Workspace) CompileDocument(ctx context.Context, document Document) (Compilation, error) {
@@ -173,7 +166,7 @@ func (w *Workspace) CompileDocument(ctx context.Context, document Document) (Com
 		return Compilation{}, ErrClosed
 	}
 
-	key, ok := documentKey(document.File().RelativePath)
+	key, ok := normalizeDocumentPath(document.File().RelativePath)
 	if !ok {
 		return Compilation{}, ErrDocumentNotFound
 	}
@@ -209,7 +202,7 @@ func (w *Workspace) CompileDebugSnapshot(
 		return Compilation{}, ErrClosed
 	}
 
-	key, ok := documentKey(snapshot.RelativePath)
+	key, ok := normalizeDocumentPath(snapshot.RelativePath)
 	if !ok {
 		return Compilation{}, ErrDocumentNotFound
 	}
@@ -236,35 +229,6 @@ func (w *Workspace) CompileDebugSnapshot(
 	}
 
 	return Compilation{Source: snapshot, Plan: plan}, nil
-}
-
-func (w *Workspace) compile(ctx context.Context, relativePath string, debug bool) (Compilation, error) {
-	if err := ctx.Err(); err != nil {
-		return Compilation{}, err
-	}
-
-	if w.closing.Load() {
-		return Compilation{}, ErrClosed
-	}
-
-	key, ok := documentKey(relativePath)
-	if !ok {
-		return Compilation{}, ErrDocumentNotFound
-	}
-
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	if w.closing.Load() || w.state != StateReady || w.engine == nil {
-		return Compilation{}, ErrClosed
-	}
-
-	document, ok := w.documents[key]
-	if !ok {
-		return Compilation{}, ErrDocumentNotFound
-	}
-
-	return w.compileDocumentLocked(ctx, document, debug)
 }
 
 func (w *Workspace) compileDocumentLocked(

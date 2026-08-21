@@ -73,20 +73,3 @@ func (s *Service) Hover(ctx context.Context, uri source.URI, position source.Pos
 
 	return result, nil
 }
-
-func symbolKindName(kind compiler.SymbolKind) string {
-	switch kind {
-	case compiler.SymbolKindFunctionParameter:
-		return "parameter"
-	case compiler.SymbolKindNamespaceAlias:
-		return "namespace"
-	case compiler.SymbolKindLoopBinding:
-		return "loop binding"
-	case compiler.SymbolKindMatchBinding:
-		return "match binding"
-	case compiler.SymbolKindCollectBinding:
-		return "collect binding"
-	default:
-		return "binding"
-	}
-}

@@ -10,7 +10,7 @@ func TestDiagnostics(t *testing.T) {
 	service := newTestService(t, Options{})
 	uri := documentURI(t, "query.fql")
 
-	if err := service.OpenDocument(ctx, uri, "ferret", 1, "RETURN 1"); err != nil {
+	if err := service.OpenDocument(ctx, uri, 1, "RETURN 1"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestDiagnosticsForEmptyDocument(t *testing.T) {
 	service := newTestService(t, Options{})
 	uri := documentURI(t, "empty.fql")
 
-	if err := service.OpenDocument(ctx, uri, "ferret", 1, ""); err != nil {
+	if err := service.OpenDocument(ctx, uri, 1, ""); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
 	}
 

@@ -80,14 +80,14 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, errors.Join(err, created.closeUnpublished())
 	}
 
-	return created.Snapshot(), nil
+	return created.snapshot(), nil
 }
 
 func (m *Manager) prepareSession(
 	ctx context.Context,
 	workspaceID workspace.ID,
 	relativePath string,
-) (*Session, error) {
+) (*session, error) {
 	parent, err := m.workspaces.Get(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ func (m *Manager) GetSession(ctx context.Context, id SessionID) (SessionSnapshot
 		return SessionSnapshot{}, ErrSessionNotFound
 	}
 
-	return session.Snapshot(), nil
+	return session.snapshot(), nil
 }
 
 // CloseSession idempotently removes a Session and all child resources.
@@ -166,8 +166,8 @@ func (m *Manager) closeSession(ctx context.Context, id SessionID, retained *sess
 func (m *Manager) CreateExecution(
 	ctx context.Context,
 	sessionID SessionID,
-	parameters map[string]any,
-	options ExecutionOptions,
+	parameters Parameters,
+	options RuntimeOptions,
 ) (ExecutionSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return ExecutionSnapshot{}, err
@@ -194,7 +194,7 @@ func (m *Manager) CreateExecution(
 	execution := newExecution(id, runtime)
 	m.executions.add(execution)
 
-	return execution.Snapshot(), nil
+	return execution.snapshot(), nil
 }
 
 // RunExecution starts a one-shot invocation and returns its RUNNING snapshot.
@@ -204,7 +204,7 @@ func (m *Manager) RunExecution(ctx context.Context, id ExecutionID) (ExecutionSn
 		return ExecutionSnapshot{}, err
 	}
 
-	return execution.Start(ctx)
+	return execution.start(ctx)
 }
 
 // GetExecution returns an immutable Execution snapshot.
@@ -214,7 +214,7 @@ func (m *Manager) GetExecution(ctx context.Context, id ExecutionID) (ExecutionSn
 		return ExecutionSnapshot{}, err
 	}
 
-	return execution.Snapshot(), nil
+	return execution.snapshot(), nil
 }
 
 // CancelExecution idempotently requests cancellation of an active Execution.
@@ -224,7 +224,7 @@ func (m *Manager) CancelExecution(ctx context.Context, id ExecutionID) (Executio
 		return ExecutionSnapshot{}, err
 	}
 
-	return execution.Cancel(), nil
+	return execution.cancel(), nil
 }
 
 // CloseExecution idempotently removes and settles an Execution.
@@ -248,7 +248,7 @@ func (m *Manager) WatchExecution(ctx context.Context, id ExecutionID) (Subscript
 		return Subscription{}, err
 	}
 
-	return execution.Subscribe(), nil
+	return execution.subscribe(), nil
 }
 
 // CloseWorkspace closes all Sessions parented by one workspace.
@@ -330,7 +330,7 @@ func (m *Manager) finishExecutionClose(entry *executionEntry) {
 	m.executions.finishClose(entry)
 }
 
-func (m *Manager) execution(ctx context.Context, id ExecutionID) (*Execution, error) {
+func (m *Manager) execution(ctx context.Context, id ExecutionID) (*execution, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

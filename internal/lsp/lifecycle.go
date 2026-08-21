@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"context"
-	"errors"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -18,14 +17,13 @@ func (s *Server) didOpen(glspContext *glsp.Context, params *protocol.DidOpenText
 	if err := s.language.OpenDocument(
 		s.operationContext(glspContext),
 		uri,
-		document.LanguageID,
 		document.Version,
 		document.Text,
 	); err != nil {
 		return err
 	}
 
-	s.publishDiagnosticsAsync(s.operationContext(glspContext), s.notifier(glspContext), uri)
+	s.publishDiagnosticsAsync(s.operationContext(glspContext), s.notificationSender(glspContext), uri)
 
 	return nil
 }
@@ -41,16 +39,16 @@ func (s *Server) didChange(glspContext *glsp.Context, params *protocol.DidChange
 			changes = append(changes, language.TextChange{Text: change.Text})
 		case protocol.TextDocumentContentChangeEvent:
 			if change.Range != nil {
-				return errors.New("incremental text document changes are not supported")
+				return errIncrementalTextChanges
 			}
 			changes = append(changes, language.TextChange{Text: change.Text})
 		case *protocol.TextDocumentContentChangeEvent:
 			if change.Range != nil {
-				return errors.New("incremental text document changes are not supported")
+				return errIncrementalTextChanges
 			}
 			changes = append(changes, language.TextChange{Text: change.Text})
 		default:
-			return errors.New("unsupported text document change")
+			return errUnsupportedDocumentChange
 		}
 	}
 
@@ -61,7 +59,7 @@ func (s *Server) didChange(glspContext *glsp.Context, params *protocol.DidChange
 		return err
 	}
 
-	s.publishDiagnosticsAsync(s.operationContext(glspContext), s.notifier(glspContext), uri)
+	s.publishDiagnosticsAsync(s.operationContext(glspContext), s.notificationSender(glspContext), uri)
 
 	return nil
 }
@@ -73,7 +71,7 @@ func (s *Server) didClose(glspContext *glsp.Context, params *protocol.DidCloseTe
 		return err
 	}
 
-	s.notifier(glspContext)(protocol.ServerTextDocumentPublishDiagnostics, protocol.PublishDiagnosticsParams{
+	s.notificationSender(glspContext)(protocol.ServerTextDocumentPublishDiagnostics, protocol.PublishDiagnosticsParams{
 		URI:         uri.String(),
 		Diagnostics: []protocol.Diagnostic{},
 	})
@@ -81,9 +79,9 @@ func (s *Server) didClose(glspContext *glsp.Context, params *protocol.DidCloseTe
 	return nil
 }
 
-type notifyFunc func(string, any)
+type notificationSender func(string, any)
 
-func (s *Server) notifier(glspContext *glsp.Context) notifyFunc {
+func (s *Server) notificationSender(glspContext *glsp.Context) notificationSender {
 	if glspContext != nil && glspContext.Notify != nil {
 		return func(method string, params any) {
 			glspContext.Notify(method, params)
@@ -93,7 +91,7 @@ func (s *Server) notifier(glspContext *glsp.Context) notifyFunc {
 	return func(string, any) {}
 }
 
-func (s *Server) publishDiagnosticsAsync(ctx context.Context, notify notifyFunc, uri source.URI) {
+func (s *Server) publishDiagnosticsAsync(ctx context.Context, sendNotification notificationSender, uri source.URI) {
 	go func() {
 		report, err := s.language.Diagnostics(ctx, uri)
 		if err != nil || !s.language.IsCurrent(context.Background(), uri, report.Snapshot) {
@@ -114,6 +112,6 @@ func (s *Server) publishDiagnosticsAsync(ctx context.Context, notify notifyFunc,
 			params.Diagnostics = append(params.Diagnostics, toProtocolDiagnostic(diagnostic))
 		}
 
-		notify(protocol.ServerTextDocumentPublishDiagnostics, params)
+		sendNotification(protocol.ServerTextDocumentPublishDiagnostics, params)
 	}()
 }

@@ -10,7 +10,7 @@ import (
 func TestExecutionSnapshotClone(t *testing.T) {
 	value := ExecutionSnapshot{
 		Parameters: map[string]any{"nested": []any{map[string]any{"key": "value"}}},
-		Output:     &Output{Content: []byte("one")},
+		Output:     &RuntimeOutput{Content: []byte("one")},
 		Failure: &Failure{
 			RuntimeFailure: RuntimeFailure{
 				Message: "failure",

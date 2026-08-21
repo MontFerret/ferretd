@@ -9,11 +9,21 @@ import (
 	"strings"
 )
 
-// Endpoint identifies a local daemon transport.
-type Endpoint struct {
+type (
+	// Network identifies a supported local transport family.
 	Network string
-	Address string
-}
+
+	// Endpoint identifies a local daemon transport.
+	Endpoint struct {
+		Network Network
+		Address string
+	}
+)
+
+const (
+	NetworkUnix      Network = "unix"
+	NetworkNamedPipe Network = "npipe"
+)
 
 // ParseEndpoint parses a supported local endpoint URL for the current platform.
 func ParseEndpoint(value string) (Endpoint, error) {
@@ -32,7 +42,7 @@ func ParseEndpoint(value string) (Endpoint, error) {
 			return Endpoint{}, fmt.Errorf("%w: unix endpoint must contain only an absolute path", ErrInvalidEndpoint)
 		}
 
-		return Endpoint{Network: "unix", Address: filepath.Clean(parsed.Path)}, nil
+		return Endpoint{Network: NetworkUnix, Address: filepath.Clean(parsed.Path)}, nil
 	case "npipe":
 		if runtime.GOOS != "windows" {
 			return Endpoint{}, fmt.Errorf("%w: named-pipe endpoints are only supported on Windows", ErrInvalidEndpoint)
@@ -47,7 +57,7 @@ func ParseEndpoint(value string) (Endpoint, error) {
 			return Endpoint{}, fmt.Errorf("%w: named-pipe endpoint must be under \\.\\pipe", ErrInvalidEndpoint)
 		}
 
-		return Endpoint{Network: "npipe", Address: address}, nil
+		return Endpoint{Network: NetworkNamedPipe, Address: address}, nil
 	default:
 		return Endpoint{}, fmt.Errorf("%w: unsupported scheme %q", ErrInvalidEndpoint, parsed.Scheme)
 	}
@@ -56,9 +66,9 @@ func ParseEndpoint(value string) (Endpoint, error) {
 // String returns the endpoint's URL form.
 func (e Endpoint) String() string {
 	switch e.Network {
-	case "unix":
+	case NetworkUnix:
 		return (&url.URL{Scheme: "unix", Path: e.Address}).String()
-	case "npipe":
+	case NetworkNamedPipe:
 		return (&url.URL{
 			Scheme: "npipe",
 			Path:   strings.ReplaceAll(e.Address, `\`, "/"),

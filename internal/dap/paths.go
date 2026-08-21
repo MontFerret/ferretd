@@ -10,18 +10,33 @@ import (
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
-func resolveLaunchPaths(arguments launchArguments) (string, string, string, error) {
-	programInput := strings.TrimSpace(arguments.Program)
+type (
+	launchArguments struct {
+		Program     string         `json:"program"`
+		CWD         string         `json:"cwd,omitempty"`
+		Parameters  map[string]any `json:"parameters,omitempty"`
+		StopOnEntry bool           `json:"stopOnEntry,omitempty"`
+	}
+
+	launchPaths struct {
+		root         string
+		program      string
+		relativePath string
+	}
+)
+
+func (a launchArguments) resolvePaths() (launchPaths, error) {
+	programInput := strings.TrimSpace(a.Program)
 	if programInput == "" {
-		return "", "", "", errors.New("launch program is required")
+		return launchPaths{}, errors.New("launch program is required")
 	}
 
 	processCWD, err := os.Getwd()
 	if err != nil {
-		return "", "", "", fmt.Errorf("get current directory: %w", err)
+		return launchPaths{}, fmt.Errorf("get current directory: %w", err)
 	}
 
-	root := strings.TrimSpace(arguments.CWD)
+	root := strings.TrimSpace(a.CWD)
 	if root != "" && !filepath.IsAbs(root) {
 		root = filepath.Join(processCWD, root)
 	}
@@ -44,36 +59,36 @@ func resolveLaunchPaths(arguments launchArguments) (string, string, string, erro
 	root = filepath.Clean(root)
 	rootInfo, err := os.Stat(root)
 	if err != nil {
-		return "", "", "", fmt.Errorf("stat cwd: %w", err)
+		return launchPaths{}, fmt.Errorf("stat cwd: %w", err)
 	}
 
 	if !rootInfo.IsDir() {
-		return "", "", "", errors.New("launch cwd is not a directory")
+		return launchPaths{}, errors.New("launch cwd is not a directory")
 	}
 
 	programInfo, err := os.Stat(program)
 	if err != nil {
-		return "", "", "", fmt.Errorf("stat program: %w", err)
+		return launchPaths{}, fmt.Errorf("stat program: %w", err)
 	}
 
 	if !programInfo.Mode().IsRegular() {
-		return "", "", "", errors.New("launch program is not a regular file")
+		return launchPaths{}, errors.New("launch program is not a regular file")
 	}
 
 	if filepath.Ext(program) != ".fql" {
-		return "", "", "", errors.New("launch program must be a .fql file")
+		return launchPaths{}, errors.New("launch program must be a .fql file")
 	}
 
 	relative, err := filepath.Rel(root, program)
 	if err != nil {
-		return "", "", "", fmt.Errorf("resolve program in cwd: %w", err)
+		return launchPaths{}, fmt.Errorf("resolve program in cwd: %w", err)
 	}
 
 	if relative == "." || relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", "", "", errors.New("launch program must be contained within cwd")
+		return launchPaths{}, errors.New("launch program must be contained within cwd")
 	}
 
-	return root, program, filepath.ToSlash(relative), nil
+	return launchPaths{root: root, program: program, relativePath: filepath.ToSlash(relative)}, nil
 }
 
 func (s *Server) sourcePath(value string) (string, error) {
@@ -83,7 +98,7 @@ func (s *Server) sourcePath(value string) (string, error) {
 
 	var path string
 	var err error
-	if s.client.pathFormat == "uri" {
+	if s.client.pathFormat == pathFormatURI {
 		path, err = source.URI(value).Path()
 		if err != nil {
 			return "", err
@@ -100,7 +115,7 @@ func (s *Server) sourcePath(value string) (string, error) {
 }
 
 func (s *Server) clientPath(path string) (string, error) {
-	if s.client.pathFormat == "uri" {
+	if s.client.pathFormat == pathFormatURI {
 		uri, err := source.URIFromPath(path)
 		if err != nil {
 			return "", err

@@ -27,37 +27,37 @@ func (s *Service) resolveAt(
 		return analyzedDocument{}, resolution{}, err
 	}
 
-	return document, resolveAnalyzed(document, position), nil
+	return document, document.resolve(position), nil
 }
 
-func resolveAnalyzed(document analyzedDocument, position source.Position) resolution {
-	offset := document.mapper.PositionToOffset(position)
+func (d analyzedDocument) resolve(position source.Position) resolution {
+	offset := d.mapper.PositionToOffset(position)
 	result := resolution{Offset: offset}
 
-	if symbol, ok := document.analysis.SymbolAt(offset); ok {
+	if symbol, ok := d.analysis.SymbolAt(offset); ok {
 		result.Symbol = &symbol
 		if symbol.HasDeclaration {
-			declaration := document.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan))
+			declaration := d.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan))
 			result.Range = declaration
 			result.Declaration = &declaration
 		}
 	}
 
-	if reference, ok := document.analysis.ReferenceAt(offset); ok {
-		result.Range = document.mapper.SpanToRange(source.SpanFromFerret(reference.Span))
+	if reference, ok := d.analysis.ReferenceAt(offset); ok {
+		result.Range = d.mapper.SpanToRange(source.SpanFromFerret(reference.Span))
 	}
 
-	if call, ok := document.analysis.CallAt(offset); ok {
+	if call, ok := d.analysis.CallAt(offset); ok {
 		result.Call = &call
 		if offset >= call.CalleeSpan.Start && offset < call.CalleeSpan.End {
-			result.Range = document.mapper.SpanToRange(source.SpanFromFerret(call.CalleeSpan))
+			result.Range = d.mapper.SpanToRange(source.SpanFromFerret(call.CalleeSpan))
 		}
 	}
 
-	if fact, ok := document.analysis.TypeAt(offset); ok {
+	if fact, ok := d.analysis.TypeAt(offset); ok {
 		result.Type = &fact
 		if result.Range == (source.Range{}) {
-			result.Range = document.mapper.SpanToRange(source.SpanFromFerret(fact.Span))
+			result.Range = d.mapper.SpanToRange(source.SpanFromFerret(fact.Span))
 		}
 	}
 

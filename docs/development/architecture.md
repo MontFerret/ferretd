@@ -59,8 +59,8 @@ cmd/ferretd lsp   -> internal/lsp -> internal/language -> internal/workspace
 cmd/ferretd dap   -> internal/dap -> internal/workspace + internal/exec
                                     + internal/debug
 
-domain services -> internal/source + internal/diagnostic + internal/params
-                + internal/lifecycle -> Ferret
+domain services -> internal/source + internal/diagnostic + internal/lifecycle
+                -> Ferret
 ```
 
 Protocol types do not flow into domain services. Mutable manager or session
@@ -85,8 +85,9 @@ than access to protected state.
   retained documents and Ferret syntax state, rooted engines, refresh, and close
   coordination.
 * `internal/exec` owns compiled Sessions, the common per-run execution runtime,
-  one-shot Executions, watches, cancellation, terminal results, lazy debug
-  Plans, and debugger-runtime leases.
+  `Parameters`, normalized `RuntimeOptions`, shared `RuntimeOutput` and
+  `RuntimeFailure` results, one-shot Executions, watches, cancellation, lazy
+  debug Plans, and debugger-runtime leases.
 * `internal/debug` owns retained DebugSessions, commands, paused-state
   inspection, event streams, and cleanup.
 * `internal/dap` adapts workspace, execution, and debug services to one stdio DAP
@@ -97,8 +98,7 @@ than access to protected state.
   request cancellation, notifications, and stdio framing.
 * `internal/source` owns local file URIs and UTF-8-byte to UTF-16 position
   mapping. `internal/diagnostic` owns shared diagnostic projections.
-* `internal/params` prepares caller-owned parameter values before retention.
-  `internal/lifecycle` supplies focused synchronization primitives used by
+* `internal/lifecycle` supplies focused synchronization primitives used by
   managers with matching close semantics.
 * `proto/ferretd` contains versioned protobuf sources. `gen/` contains generated
   daemon, workspace, and execution Go code.

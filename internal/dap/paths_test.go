@@ -10,16 +10,16 @@ func TestResolveLaunchPathsDefaultsRootAndRejectsEscape(t *testing.T) {
 	root := t.TempDir()
 	program := writeDAPProgram(t, root, "RETURN 1")
 
-	gotRoot, gotProgram, relative, err := resolveLaunchPaths(launchArguments{Program: program})
+	paths, err := (launchArguments{Program: program}).resolvePaths()
 	if err != nil {
 		t.Fatalf("resolveLaunchPaths: %v", err)
 	}
-	if gotRoot != root || gotProgram != program || relative != "query.fql" {
-		t.Fatalf("resolved = %q, %q, %q", gotRoot, gotProgram, relative)
+	if paths.root != root || paths.program != program || paths.relativePath != "query.fql" {
+		t.Fatalf("resolved = %+v", paths)
 	}
 
 	other := t.TempDir()
-	if _, _, _, err := resolveLaunchPaths(launchArguments{Program: program, CWD: other}); err == nil {
+	if _, err := (launchArguments{Program: program, CWD: other}).resolvePaths(); err == nil {
 		t.Fatal("program outside cwd was accepted")
 	}
 }
@@ -32,20 +32,20 @@ func TestResolveLaunchPathsSupportsProgramRelativeToCWD(t *testing.T) {
 	}
 	writeDAPProgram(t, nested, "RETURN 1")
 
-	gotRoot, gotProgram, relative, err := resolveLaunchPaths(launchArguments{
+	paths, err := (launchArguments{
 		Program: filepath.Join("nested", "query.fql"),
 		CWD:     root,
-	})
+	}).resolvePaths()
 	if err != nil {
 		t.Fatalf("resolveLaunchPaths: %v", err)
 	}
-	if gotRoot != root || gotProgram != filepath.Join(nested, "query.fql") || relative != "nested/query.fql" {
-		t.Fatalf("resolved = %q, %q, %q", gotRoot, gotProgram, relative)
+	if paths.root != root || paths.program != filepath.Join(nested, "query.fql") || paths.relativePath != "nested/query.fql" {
+		t.Fatalf("resolved = %+v", paths)
 	}
 }
 
 func TestSourcePathRejectsRemoteURIs(t *testing.T) {
-	server := &Server{client: clientOptions{pathFormat: "uri"}}
+	server := &Server{client: clientOptions{pathFormat: pathFormatURI}}
 	if _, err := server.sourcePath("file://remote/tmp/query.fql"); err == nil {
 		t.Fatal("remote file URI was accepted")
 	}

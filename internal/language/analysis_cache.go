@@ -17,7 +17,7 @@ type (
 		origin      snapshotOrigin
 		generation  uint64
 		workspaceID workspace.ID
-		revision    uint64
+		revision    workspace.Revision
 	}
 
 	documentSnapshot struct {

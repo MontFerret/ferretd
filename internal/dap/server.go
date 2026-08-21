@@ -1,3 +1,4 @@
+// Package dap adapts transport-neutral execution and debug managers to DAP stdio.
 package dap
 
 import (
@@ -15,48 +16,64 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// Server owns one in-process DAP launch session over a framed stream.
-type Server struct {
-	reader      *bufio.Reader
-	readerClose io.Closer
-	writer      io.Writer
+type (
+	// Server owns one in-process DAP launch session over a framed stream.
+	Server struct {
+		reader      *bufio.Reader
+		readerClose io.Closer
+		writer      io.Writer
 
-	writeMu      sync.Mutex
-	eventMu      sync.Mutex
-	stateMu      sync.Mutex
-	breakpointMu sync.Mutex
+		writeMu      sync.Mutex
+		eventMu      sync.Mutex
+		stateMu      sync.Mutex
+		breakpointMu sync.Mutex
 
-	workspaces            *workspace.Manager
-	executions            *exec.Manager
-	debugs                *debug.Manager
-	handles               *handleTable
-	owned                 ownedSession
-	client                clientOptions
-	watch                 debug.Subscription
-	pendingLaunch         *protocol.Request
-	sequence              int
-	initialized           bool
-	launched              bool
-	configured            bool
-	disconnected          bool
-	suppressEntry         bool
-	nextBreakpointID      int
-	stableBreakpoints     map[breakpointKey]int
-	nativeBreakpoints     map[uint64]int
-	nativeBreakpointFiles map[uint64]string
-	cleanupOnce           sync.Once
-	cleanupErr            error
-}
+		workspaces            *workspace.Manager
+		executions            *exec.Manager
+		debugs                *debug.Manager
+		handles               *handleTable
+		owned                 ownedSession
+		client                clientOptions
+		watch                 debug.Subscription
+		pendingLaunch         *protocol.Request
+		sequence              int
+		initialized           bool
+		launched              bool
+		configured            bool
+		disconnected          bool
+		suppressEntry         bool
+		nextBreakpointID      int
+		stableBreakpoints     map[breakpointKey]int
+		nativeBreakpoints     map[debug.BreakpointID]int
+		nativeBreakpointFiles map[debug.BreakpointID]string
+		cleanupOnce           sync.Once
+		cleanupErr            error
+	}
+
+	ownedSession struct {
+		workspace   workspace.ID
+		session     exec.SessionID
+		debug       debug.SessionID
+		program     string
+		stopOnEntry bool
+	}
+
+	breakpointKey struct {
+		file   string
+		line   int
+		column int
+	}
+)
 
 // New creates a single-session DAP server over non-nil input and output.
 // It returns an error when either stream is nil or its owned service graph
 // cannot be constructed.
 func New(input io.Reader, output io.Writer) (*Server, error) {
 	if input == nil {
-		return nil, errors.New("dap: nil input")
+		return nil, errNilInput
 	}
 	if output == nil {
-		return nil, errors.New("dap: nil output")
+		return nil, errNilOutput
 	}
 
 	workspaces := workspace.New()
@@ -87,10 +104,10 @@ func New(input io.Reader, output io.Writer) (*Server, error) {
 		handles:               newHandleTable(),
 		nextBreakpointID:      1,
 		stableBreakpoints:     make(map[breakpointKey]int),
-		nativeBreakpoints:     make(map[uint64]int),
-		nativeBreakpointFiles: make(map[uint64]string),
+		nativeBreakpoints:     make(map[debug.BreakpointID]int),
+		nativeBreakpointFiles: make(map[debug.BreakpointID]string),
 		client: clientOptions{
-			pathFormat:      "path",
+			pathFormat:      pathFormatPath,
 			linesStartAt1:   true,
 			columnsStartAt1: true,
 		},

@@ -11,7 +11,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-func toStatusError(err error) error {
+func toWorkspaceStatusError(err error) error {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return status.FromContextError(err).Err()

@@ -59,13 +59,13 @@ translate; they do not become alternate owners of domain behavior.
 * `internal/workspace` owns process-local workspace identity, discovery,
   retained source and syntax state, engines, refresh, and close coordination.
 * `internal/exec` owns compiled Sessions, the shared per-run execution runtime,
-  one-shot Executions, lazy debug Plans, DebugRuntime leases, and execution
-  lifecycle observation.
+  caller parameters (`Parameters`), one-shot Executions, lazy debug Plans,
+  DebugRuntime leases, and execution lifecycle observation.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
   events, and debug child cleanup.
-* `internal/source`, `internal/diagnostic`, `internal/params`, and
-  `internal/lifecycle` own their protocol-neutral shared concepts. Do not move
-  those semantics into adapters or process setup.
+* `internal/source`, `internal/diagnostic`, and `internal/lifecycle` own their
+  protocol-neutral shared concepts. Do not move those semantics into adapters
+  or process setup.
 * `client` is the supported public Go client. Keep generated protobuf details
   behind its API and preserve its error-classification contracts.
 * `proto/ferretd` owns versioned wire source contracts. `gen/` contains

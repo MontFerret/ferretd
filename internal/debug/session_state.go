@@ -1,10 +1,12 @@
 package debug
 
-// State identifies a debug Session lifecycle state.
-type State uint8
+type (
+	// State identifies a debug Session lifecycle state.
+	State uint8
 
-// StopReason identifies why a debug Session is stopped.
-type StopReason uint8
+	// StopReason identifies why a debug Session is stopped.
+	StopReason uint8
+)
 
 const (
 	StateCreated State = iota + 1

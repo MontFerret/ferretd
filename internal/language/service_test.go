@@ -69,20 +69,20 @@ func TestDocumentLifecycle(t *testing.T) {
 	service := newTestService(t, Options{})
 	uri := documentURI(t, "query.fql")
 
-	if err := service.OpenDocument(ctx, uri, "ferret", 1, "RETURN 1"); err != nil {
+	if err := service.OpenDocument(ctx, uri, 1, "RETURN 1"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
 	}
 
-	document, ok := service.GetDocument(ctx, uri)
+	document, ok := service.overlay(ctx, uri)
 	if !ok {
-		t.Fatal("GetDocument returned false")
+		t.Fatal("overlay lookup returned false")
 	}
 	if document.Version != 1 || document.Text != "RETURN 1" {
-		t.Fatalf("GetDocument = %#v", document)
+		t.Fatalf("overlay = %#v", document)
 	}
 
 	document.Text = "mutated"
-	stored, _ := service.GetDocument(ctx, uri)
+	stored, _ := service.overlay(ctx, uri)
 	if stored.Text != "RETURN 1" {
 		t.Fatalf("stored document was mutated through returned copy: %#v", stored)
 	}
@@ -90,15 +90,15 @@ func TestDocumentLifecycle(t *testing.T) {
 	if err := service.ChangeDocument(ctx, uri, 2, []TextChange{{Text: "RETURN 2"}, {Text: "RETURN 3"}}); err != nil {
 		t.Fatalf("ChangeDocument: %v", err)
 	}
-	changed, _ := service.GetDocument(ctx, uri)
+	changed, _ := service.overlay(ctx, uri)
 	if changed.Version != 2 || changed.Text != "RETURN 3" {
 		t.Fatalf("changed document = %#v", changed)
 	}
 
-	if err := service.OpenDocument(ctx, uri, "ferret", 7, "RETURN 7"); err != nil {
+	if err := service.OpenDocument(ctx, uri, 7, "RETURN 7"); err != nil {
 		t.Fatalf("replace OpenDocument: %v", err)
 	}
-	replaced, _ := service.GetDocument(ctx, uri)
+	replaced, _ := service.overlay(ctx, uri)
 	if replaced.Version != 7 || replaced.Text != "RETURN 7" {
 		t.Fatalf("replaced document = %#v", replaced)
 	}
@@ -109,7 +109,7 @@ func TestDocumentLifecycle(t *testing.T) {
 	if err := service.CloseDocument(ctx, uri); err != nil {
 		t.Fatalf("second CloseDocument: %v", err)
 	}
-	if _, ok := service.GetDocument(ctx, uri); ok {
+	if _, ok := service.overlay(ctx, uri); ok {
 		t.Fatal("closed document remains stored")
 	}
 }
@@ -122,7 +122,7 @@ func TestChangeDocumentErrors(t *testing.T) {
 	if err := service.ChangeDocument(ctx, uri, 1, []TextChange{{Text: "RETURN 1"}}); !errors.Is(err, ErrDocumentNotOpen) {
 		t.Fatalf("ChangeDocument missing error = %v", err)
 	}
-	if err := service.OpenDocument(ctx, uri, "ferret", 2, "RETURN 2"); err != nil {
+	if err := service.OpenDocument(ctx, uri, 2, "RETURN 2"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
 	}
 	if err := service.ChangeDocument(ctx, uri, 2, []TextChange{{Text: "RETURN 3"}}); !errors.Is(err, ErrStaleDocumentVersion) {
@@ -137,7 +137,6 @@ func TestOpenDocumentRejectsNonFileURI(t *testing.T) {
 	err := newTestService(t, Options{}).OpenDocument(
 		context.Background(),
 		source.URI("https://example.com/query.fql"),
-		"ferret",
 		1,
 		"RETURN 1",
 	)

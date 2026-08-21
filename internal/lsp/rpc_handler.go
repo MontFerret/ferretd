@@ -196,17 +196,3 @@ func (h *rpcHandler) cancelAll() {
 func (h *rpcHandler) waitForCompletion() {
 	h.wait.Wait()
 }
-
-func requestCancelledError() *jsonrpc2.Error {
-	return &jsonrpc2.Error{Code: requestCancelledCode, Message: "request cancelled"}
-}
-
-func isLifecycleMethod(method string) bool {
-	switch method {
-	case protocol.MethodInitialize, protocol.MethodInitialized, protocol.MethodShutdown, protocol.MethodExit,
-		protocol.MethodTextDocumentDidOpen, protocol.MethodTextDocumentDidChange, protocol.MethodTextDocumentDidClose:
-		return true
-	default:
-		return false
-	}
-}

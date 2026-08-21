@@ -12,7 +12,7 @@ import (
 
 type (
 	debugPlanLease struct {
-		parent *Session
+		parent *session
 		once   sync.Once
 	}
 
@@ -28,7 +28,7 @@ type (
 func newDebugRuntime(
 	runtime *executionRuntime,
 	debugger *ferret.DebugSession,
-	parent *Session,
+	parent *session,
 ) *DebugRuntime {
 	return &DebugRuntime{
 		runtime:  runtime,
@@ -39,7 +39,7 @@ func newDebugRuntime(
 
 // SessionID returns the parent executable Session identifier.
 func (r *DebugRuntime) SessionID() SessionID {
-	return r.runtime.target.session
+	return r.runtime.target.sessionID
 }
 
 // Context returns the manager-owned context for debugger execution commands.
@@ -55,7 +55,7 @@ func (r *DebugRuntime) Debugger() *ferret.DebugSession {
 }
 
 // Parameters returns an independent copy of the retained caller parameters.
-func (r *DebugRuntime) Parameters() map[string]any {
+func (r *DebugRuntime) Parameters() Parameters {
 	return r.runtime.parameters()
 }
 
@@ -64,14 +64,14 @@ func (r *DebugRuntime) Options() RuntimeOptions {
 	return r.runtime.options()
 }
 
-// Output copies one Ferret result into daemon-owned runtime output.
-func (r *DebugRuntime) Output(output *ferret.Output) *RuntimeOutput {
-	return r.runtime.output(output)
+// MaterializeOutput copies one Ferret result into daemon-owned runtime output.
+func (r *DebugRuntime) MaterializeOutput(output *ferret.Output) *RuntimeOutput {
+	return r.runtime.materializeOutput(output)
 }
 
-// Failure converts an error to durable source-aware runtime failure details.
-func (r *DebugRuntime) Failure(err error) *RuntimeFailure {
-	return r.runtime.failure(err)
+// MaterializeFailure converts an error to durable source-aware runtime failure details.
+func (r *DebugRuntime) MaterializeFailure(err error) *RuntimeFailure {
+	return r.runtime.materializeFailure(err)
 }
 
 // Close cancels the common execution runtime, closes the Ferret debugger session
@@ -94,7 +94,7 @@ func (l *debugPlanLease) release() {
 func (m *Manager) CreateDebugRuntime(
 	ctx context.Context,
 	id SessionID,
-	parameters map[string]any,
+	parameters Parameters,
 	options RuntimeOptions,
 ) (*DebugRuntime, error) {
 	if err := ctx.Err(); err != nil {
@@ -118,6 +118,7 @@ func (m *Manager) CreateDebugRuntime(
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, ErrSessionClosed) || errors.Is(err, workspace.ErrClosed) ||
 			errors.Is(err, workspace.ErrDocumentNotFound) {
+
 			return nil, err
 		}
 

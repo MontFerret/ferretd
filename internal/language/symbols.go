@@ -5,7 +5,6 @@ import (
 	"sort"
 
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
-	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 
 	"github.com/MontFerret/ferretd/internal/source"
 )
@@ -52,7 +51,9 @@ func (s *Service) DocumentSymbols(ctx context.Context, uri source.URI) ([]Docume
 			container := nodes[candidate].symbol.DeclarationSpan
 			selection := nodes[i].symbol.SelectionSpan
 
-			if !spanContainsSpan(container, selection) {
+			if container.End <= container.Start || selection.End < selection.Start ||
+				selection.Start < container.Start || selection.End > container.End {
+
 				continue
 			}
 
@@ -153,9 +154,4 @@ func (s *Service) References(
 	})
 
 	return locations, nil
-}
-
-func spanContainsSpan(container, contained ferretsource.Span) bool {
-	return container.End > container.Start && contained.End >= contained.Start &&
-		contained.Start >= container.Start && contained.End <= container.End
 }

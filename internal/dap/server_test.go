@@ -45,16 +45,17 @@ func TestNewRequiresStreams(t *testing.T) {
 		name   string
 		input  io.Reader
 		output io.Writer
+		want   error
 	}{
-		{name: "nil input", output: io.Discard},
-		{name: "nil output", input: strings.NewReader("")},
+		{name: "nil input", output: io.Discard, want: errNilInput},
+		{name: "nil output", input: strings.NewReader(""), want: errNilOutput},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server, err := New(test.input, test.output)
-			if err == nil {
-				t.Fatal("New error = nil, want non-nil")
+			if !errors.Is(err, test.want) {
+				t.Fatalf("New error = %v, want %v", err, test.want)
 			}
 			if server != nil {
 				t.Fatalf("New server = %v, want nil", server)

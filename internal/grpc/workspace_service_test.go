@@ -93,7 +93,7 @@ func TestWorkspaceServiceMapsInvalidRoot(t *testing.T) {
 }
 
 func TestWorkspaceLoadFailureIsSanitized(t *testing.T) {
-	err := toStatusError(fmt.Errorf("%w: private filesystem detail", workspace.ErrLoad))
+	err := toWorkspaceStatusError(fmt.Errorf("%w: private filesystem detail", workspace.ErrLoad))
 	if status.Code(err) != codes.Internal {
 		t.Fatalf("load code = %v, want Internal", status.Code(err))
 	}

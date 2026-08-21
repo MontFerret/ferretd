@@ -15,8 +15,8 @@ import (
 
 type closeOwnershipFixture struct {
 	manager               *Manager
-	session               *Session
-	execution             *Execution
+	session               *session
+	execution             *execution
 	sessionID             SessionID
 	executionID           ExecutionID
 	runStarted            chan struct{}
@@ -311,7 +311,7 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 			return nil
 		}),
 	)
-	created, err := manager.CreateExecution(context.Background(), session.ID, nil, ExecutionOptions{})
+	created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
@@ -332,7 +332,7 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 	return fixture
 }
 
-func waitForSessionClosing(t *testing.T, session *Session) {
+func waitForSessionClosing(t *testing.T, session *session) {
 	t.Helper()
 
 	deadline := time.NewTimer(5 * time.Second)
@@ -352,11 +352,11 @@ func waitForSessionClosing(t *testing.T, session *Session) {
 	}
 }
 
-func assertExecutionOwnership(t *testing.T, manager *Manager, execution *Execution, want bool) {
+func assertExecutionOwnership(t *testing.T, manager *Manager, execution *execution, want bool) {
 	t.Helper()
 
 	manager.executions.mu.RLock()
-	group := manager.executions.bySession[execution.runtime.target.session]
+	group := manager.executions.bySession[execution.runtime.target.sessionID]
 	var entry *executionEntry
 	if group != nil {
 		entry = group.entries[execution.id]

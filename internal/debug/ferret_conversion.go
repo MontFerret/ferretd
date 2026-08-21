@@ -8,7 +8,7 @@ func convertLocation(value ferret.DebugLocation) Location {
 
 func convertBreakpoint(value ferret.DebugBreakpoint) Breakpoint {
 	return Breakpoint{
-		ID:              uint64(value.ID),
+		ID:              BreakpointID(value.ID),
 		File:            value.File,
 		RequestedLine:   value.RequestedLine,
 		RequestedColumn: value.RequestedColumn,

@@ -149,7 +149,7 @@ func TestOverlayGenerationRejectsStaleReportsWhenClientVersionIsReused(t *testin
 		t.Fatal(err)
 	}
 
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "RETURN 1"); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, "RETURN 1"); err != nil {
 		t.Fatal(err)
 	}
 	if service.IsCurrent(context.Background(), uri, oldReport.Snapshot) {
@@ -171,7 +171,7 @@ func BenchmarkAnalysisCold(b *testing.B) {
 	var version int32
 	for b.Loop() {
 		version++
-		_ = service.OpenDocument(context.Background(), uri, "ferret", version, "LET value = 1\nRETURN value")
+		_ = service.OpenDocument(context.Background(), uri, version, "LET value = 1\nRETURN value")
 		_, _ = service.Diagnostics(context.Background(), uri)
 	}
 }
@@ -179,7 +179,7 @@ func BenchmarkAnalysisCold(b *testing.B) {
 func BenchmarkAnalysisCacheHit(b *testing.B) {
 	service := newTestService(b, Options{})
 	uri := source.URI("file:///benchmark.fql")
-	_ = service.OpenDocument(context.Background(), uri, "ferret", 1, "LET value = 1\nRETURN value")
+	_ = service.OpenDocument(context.Background(), uri, 1, "LET value = 1\nRETURN value")
 	_, _ = service.Diagnostics(context.Background(), uri)
 	b.ResetTimer()
 

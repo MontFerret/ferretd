@@ -17,7 +17,7 @@ func TestNew(t *testing.T) {
 	if d == nil {
 		t.Fatal("New returned a nil daemon")
 	}
-	if d.workspaces == nil || d.execution == nil || d.rpc == nil {
+	if d.workspaces == nil || d.executions == nil || d.grpc == nil {
 		t.Fatal("New did not construct all service boundaries")
 	}
 }

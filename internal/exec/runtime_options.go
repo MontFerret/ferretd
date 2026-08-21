@@ -10,9 +10,6 @@ type (
 	RuntimeOptions struct {
 		OutputContentType string
 	}
-
-	// ExecutionOptions is the ordinary Execution name for RuntimeOptions.
-	ExecutionOptions = RuntimeOptions
 )
 
 func (o RuntimeOptions) normalized() RuntimeOptions {

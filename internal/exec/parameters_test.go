@@ -1,12 +1,12 @@
-package params
+package exec
 
 import (
 	"reflect"
 	"testing"
 )
 
-func TestCloneRecursivelyCopiesBoundaryContainers(t *testing.T) {
-	input := map[string]any{
+func TestParametersCloneRecursivelyCopiesBoundaryContainers(t *testing.T) {
+	input := Parameters{
 		"nil":    nil,
 		"string": "value",
 		"bool":   true,
@@ -16,7 +16,7 @@ func TestCloneRecursivelyCopiesBoundaryContainers(t *testing.T) {
 		"slice":  []any{map[string]any{"key": "value"}, []any{"nested"}},
 	}
 
-	cloned := Clone(input)
+	cloned := input.Clone()
 	input["map"].(map[string]any)["items"].([]any)[0] = "caller"
 	input["slice"].([]any)[0].(map[string]any)["key"] = "caller"
 	cloned["map"].(map[string]any)["items"].([]any)[1].(map[string]any)["key"] = "snapshot"
@@ -36,21 +36,21 @@ func TestCloneRecursivelyCopiesBoundaryContainers(t *testing.T) {
 	}
 }
 
-func TestClonePreservesNil(t *testing.T) {
-	if Clone(nil) != nil {
-		t.Fatal("Clone(nil) returned a non-nil map")
+func TestParametersClonePreservesNil(t *testing.T) {
+	if Parameters(nil).Clone() != nil {
+		t.Fatal("Parameters(nil).Clone() returned a non-nil map")
 	}
 }
 
-func TestPrepareConvertsOwnedCopy(t *testing.T) {
-	input := map[string]any{
+func TestParametersPrepareConvertsOwnedCopy(t *testing.T) {
+	input := Parameters{
 		"value":  7,
 		"nested": map[string]any{"items": []any{"one", "two"}},
 	}
 
-	converted, retained, err := Prepare(input)
+	converted, retained, err := input.prepare()
 	if err != nil {
-		t.Fatalf("Prepare: %v", err)
+		t.Fatalf("prepare: %v", err)
 	}
 
 	input["value"] = 99
@@ -67,20 +67,20 @@ func TestPrepareConvertsOwnedCopy(t *testing.T) {
 	}
 }
 
-func TestPreparePreservesFerretAcceptedValues(t *testing.T) {
-	values := map[string]any{"typedSlice": []string{"one", "two"}}
+func TestParametersPreparePreservesFerretAcceptedValues(t *testing.T) {
+	values := Parameters{"typedSlice": []string{"one", "two"}}
 
-	_, retained, err := Prepare(values)
+	_, retained, err := values.prepare()
 	if err != nil {
-		t.Fatalf("Prepare: %v", err)
+		t.Fatalf("prepare: %v", err)
 	}
 	if !reflect.DeepEqual(retained["typedSlice"], []string{"one", "two"}) {
 		t.Fatalf("retained typed slice = %#v", retained["typedSlice"])
 	}
 }
 
-func TestPrepareRejectsFerretInvalidValues(t *testing.T) {
-	if _, _, err := Prepare(map[string]any{"invalid": make(chan int)}); err == nil {
-		t.Fatal("Prepare accepted a channel value")
+func TestParametersPrepareRejectsFerretInvalidValues(t *testing.T) {
+	if _, _, err := (Parameters{"invalid": make(chan int)}).prepare(); err == nil {
+		t.Fatal("prepare accepted a channel value")
 	}
 }

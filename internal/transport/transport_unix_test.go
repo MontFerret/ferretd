@@ -56,7 +56,7 @@ func TestDefaultEndpointUsesXDGRuntimeDirectory(t *testing.T) {
 	}
 
 	want := filepath.Join(runtimeDirectory, "ferret", "ferretd.sock")
-	if endpoint.Network != "unix" || endpoint.Address != want {
+	if endpoint.Network != NetworkUnix || endpoint.Address != want {
 		t.Fatalf("endpoint = %#v, want unix %q", endpoint, want)
 	}
 }
@@ -74,14 +74,14 @@ func TestDefaultEndpointIgnoresRelativeXDGRuntimeDirectory(t *testing.T) {
 }
 
 func TestNamedPipeEndpointString(t *testing.T) {
-	endpoint := Endpoint{Network: "npipe", Address: `\\.\pipe\ferretd`}
+	endpoint := Endpoint{Network: NetworkNamedPipe, Address: `\\.\pipe\ferretd`}
 	if got, want := endpoint.String(), "npipe:////./pipe/ferretd"; got != want {
 		t.Fatalf("String = %q, want %q", got, want)
 	}
 }
 
 func TestListenDialAndCleanup(t *testing.T) {
-	endpoint := Endpoint{Network: "unix", Address: filepath.Join(shortTempDir(t), "ferret", "ferretd.sock")}
+	endpoint := Endpoint{Network: NetworkUnix, Address: filepath.Join(shortTempDir(t), "ferret", "ferretd.sock")}
 	listener, err := Listen(endpoint)
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
@@ -137,7 +137,7 @@ func TestListenDialAndCleanup(t *testing.T) {
 
 func TestListenRefusesActiveOrNonSocketEndpoint(t *testing.T) {
 	t.Run("active", func(t *testing.T) {
-		endpoint := Endpoint{Network: "unix", Address: filepath.Join(shortTempDir(t), "ferretd.sock")}
+		endpoint := Endpoint{Network: NetworkUnix, Address: filepath.Join(shortTempDir(t), "ferretd.sock")}
 		listener, err := Listen(endpoint)
 		if err != nil {
 			t.Fatalf("first Listen: %v", err)
@@ -151,7 +151,7 @@ func TestListenRefusesActiveOrNonSocketEndpoint(t *testing.T) {
 	})
 
 	t.Run("regular file", func(t *testing.T) {
-		endpoint := Endpoint{Network: "unix", Address: filepath.Join(shortTempDir(t), "ferretd.sock")}
+		endpoint := Endpoint{Network: NetworkUnix, Address: filepath.Join(shortTempDir(t), "ferretd.sock")}
 		if err := os.WriteFile(endpoint.Address, nil, 0o600); err != nil {
 			t.Fatalf("write collision: %v", err)
 		}
@@ -164,7 +164,7 @@ func TestListenRefusesActiveOrNonSocketEndpoint(t *testing.T) {
 }
 
 func TestListenReclaimsStaleSocket(t *testing.T) {
-	endpoint := Endpoint{Network: "unix", Address: filepath.Join(shortTempDir(t), "ferretd.sock")}
+	endpoint := Endpoint{Network: NetworkUnix, Address: filepath.Join(shortTempDir(t), "ferretd.sock")}
 	stale, err := net.ListenUnix("unix", &net.UnixAddr{Name: endpoint.Address, Net: "unix"})
 	if err != nil {
 		t.Fatalf("create stale socket: %v", err)

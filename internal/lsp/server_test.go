@@ -11,6 +11,7 @@ import (
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
+	"github.com/MontFerret/ferretd/internal/language"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -137,8 +138,8 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	if len(published) != 3 || len(published[2].Diagnostics) != 0 || published[2].Version != nil {
 		t.Fatalf("didClose published = %#v", published)
 	}
-	if _, ok := service.GetDocument(context.Background(), uri); ok {
-		t.Fatal("didClose did not remove document")
+	if err := service.ChangeDocument(context.Background(), uri, 3, []language.TextChange{{Text: "RETURN 3"}}); !errors.Is(err, language.ErrDocumentNotOpen) {
+		t.Fatalf("didClose retained document: %v", err)
 	}
 }
 
@@ -156,7 +157,7 @@ func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
 	service := newTestLanguageService(t)
 	server := mustNewServer(t, service)
 	uri := documentURI(t, "query.fql")
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "RETURN 1"); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, "RETURN 1"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
 	}
 
@@ -170,13 +171,33 @@ func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
 			Text:  "RETURN 2",
 		}},
 	})
-	if err == nil {
-		t.Fatal("didChange returned nil error")
+	if !errors.Is(err, errIncrementalTextChanges) {
+		t.Fatalf("didChange error = %v, want %v", err, errIncrementalTextChanges)
 	}
 
-	document, _ := service.GetDocument(context.Background(), uri)
-	if document.Version != 1 || document.Text != "RETURN 1" {
-		t.Fatalf("document changed after rejected incremental update: %#v", document)
+	report, reportErr := service.Diagnostics(context.Background(), uri)
+	if reportErr != nil || report.Version == nil || *report.Version != 1 {
+		t.Fatalf("document changed after rejected incremental update: %+v, %v", report, reportErr)
+	}
+}
+
+func TestDidChangeRejectsUnsupportedChanges(t *testing.T) {
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
+	uri := documentURI(t, "query.fql")
+	if err := service.OpenDocument(context.Background(), uri, 1, "RETURN 1"); err != nil {
+		t.Fatalf("OpenDocument: %v", err)
+	}
+
+	err := server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.String()},
+			Version:                2,
+		},
+		ContentChanges: []any{struct{}{}},
+	})
+	if !errors.Is(err, errUnsupportedDocumentChange) {
+		t.Fatalf("didChange error = %v, want %v", err, errUnsupportedDocumentChange)
 	}
 }
 

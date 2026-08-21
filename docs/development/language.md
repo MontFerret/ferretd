@@ -32,14 +32,16 @@ filesystem watching are not implemented.
 1. a versioned editor overlay, when the URI is open; otherwise
 2. the retained document from the deepest matching open workspace.
 
-Opening a document stores client-supplied full text as an overlay. A change must
-advance the stored version and supplies full-document text; incremental ranges
-are rejected by the adapter. Closing removes the overlay and is idempotent. If a
-workspace baseline exists, subsequent requests fall back to that unchanged
-snapshot.
+Opening a document stores client-supplied full text as a private overlay. A
+change must advance the stored version and supplies full-document text;
+incremental ranges are rejected by the adapter. Closing removes the overlay and
+is idempotent. If a workspace baseline exists, subsequent requests fall back to
+that unchanged snapshot.
 
 Overlay generations and workspace document revisions form snapshot identities.
-The service stores document values rather than exposing mutable references.
+The service stores private overlay values rather than exposing lookup APIs or
+mutable references. `DiagnosticReport` carries `diagnostic.Diagnostic` values
+directly rather than language-owned aliases.
 Editor lifecycle events do not mutate workspace discovery, reload disk, or
 change execution source.
 

@@ -159,7 +159,7 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 	if err != nil {
 		t.Fatalf("debugger Continue: %v", err)
 	}
-	output := runtime.Output(event.Output)
+	output := runtime.MaterializeOutput(event.Output)
 	if output == nil || output.ContentType != defaultOutputContentType || string(output.Content) != "7" {
 		t.Fatalf("runtime output = %+v", output)
 	}

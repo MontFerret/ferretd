@@ -9,22 +9,21 @@ import (
 	"github.com/MontFerret/ferret/v2"
 	ferretruntime "github.com/MontFerret/ferret/v2/pkg/runtime"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
-	daemonparams "github.com/MontFerret/ferretd/internal/params"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 type (
 	runtimeTarget struct {
-		session SessionID
-		source  workspace.SourceSnapshot
-		text    string
-		plan    *ferret.Plan
+		sessionID SessionID
+		source    workspace.SourceSnapshot
+		text      string
+		plan      *ferret.Plan
 	}
 
 	runtimeInput struct {
-		values     ferretruntime.Params
-		parameters map[string]any
-		options    RuntimeOptions
+		ferretParameters ferretruntime.Params
+		parameters       Parameters
+		options          RuntimeOptions
 	}
 
 	// executionRuntime owns the daemon-level state and resources shared by
@@ -54,16 +53,16 @@ type (
 	}
 )
 
-func newRuntimeInput(parameters map[string]any, options RuntimeOptions) (runtimeInput, error) {
-	values, retained, err := daemonparams.Prepare(parameters)
+func newRuntimeInput(parameters Parameters, options RuntimeOptions) (runtimeInput, error) {
+	ferretParameters, retained, err := parameters.prepare()
 	if err != nil {
 		return runtimeInput{}, fmt.Errorf("%w: %v", ErrInvalidParameters, err)
 	}
 
 	return runtimeInput{
-		values:     values,
-		parameters: retained,
-		options:    options.normalized(),
+		ferretParameters: ferretParameters,
+		parameters:       retained,
+		options:          options.normalized(),
 	}, nil
 }
 
@@ -88,7 +87,7 @@ func (r *executionRuntime) run() runtimeRunResult {
 	output, runErr := session.Run(r.ctx)
 	closeErr := r.closeSession()
 	result := runtimeRunResult{
-		output:   r.output(output),
+		output:   r.materializeOutput(output),
 		err:      errors.Join(runErr, closeErr),
 		category: FailureRuntime,
 	}
@@ -101,7 +100,7 @@ func (r *executionRuntime) run() runtimeRunResult {
 }
 
 func (r *executionRuntime) sessionOptions() []ferret.SessionOption {
-	options := []ferret.SessionOption{ferret.WithSessionRuntimeParams(r.input.values)}
+	options := []ferret.SessionOption{ferret.WithSessionRuntimeParams(r.input.ferretParameters)}
 	if r.input.options.OutputContentType != "" {
 		options = append(options, ferret.WithOutputContentType(r.input.options.OutputContentType))
 	}
@@ -119,7 +118,7 @@ func (r *executionRuntime) closeSession() error {
 	return r.closeErr
 }
 
-func (r *executionRuntime) failure(err error) *RuntimeFailure {
+func (r *executionRuntime) materializeFailure(err error) *RuntimeFailure {
 	if err == nil {
 		return nil
 	}
@@ -130,7 +129,7 @@ func (r *executionRuntime) failure(err error) *RuntimeFailure {
 	}
 }
 
-func (r *executionRuntime) output(output *ferret.Output) *RuntimeOutput {
+func (r *executionRuntime) materializeOutput(output *ferret.Output) *RuntimeOutput {
 	if output == nil {
 		return nil
 	}
@@ -141,8 +140,8 @@ func (r *executionRuntime) output(output *ferret.Output) *RuntimeOutput {
 	}
 }
 
-func (r *executionRuntime) parameters() map[string]any {
-	return daemonparams.Clone(r.input.parameters)
+func (r *executionRuntime) parameters() Parameters {
+	return r.input.parameters.Clone()
 }
 
 func (r *executionRuntime) options() RuntimeOptions {
