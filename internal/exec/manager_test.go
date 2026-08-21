@@ -50,8 +50,10 @@ func TestManagerDoesNotOwnWorkspaceManager(t *testing.T) {
 
 func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
 	ctx := context.Background()
+	roots := [2]string{t.TempDir(), t.TempDir()}
 	workspaces := workspace.New()
 	manager := mustNewManager(t, workspaces)
+	// Register after TempDir so Windows releases rooted filesystem handles before directory cleanup.
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = workspaces.Clear(context.Background())
@@ -62,8 +64,7 @@ func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
 		execution ExecutionSnapshot
 	}
 	created := make([]resources, 0, 2)
-	for range 2 {
-		root := t.TempDir()
+	for _, root := range roots {
 		writeSourceFile(t, root, "query.fql", "RETURN 1")
 		opened, err := workspaces.Open(ctx, root)
 		if err != nil {
