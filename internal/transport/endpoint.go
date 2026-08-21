@@ -32,8 +32,8 @@ func ParseEndpoint(value string) (Endpoint, error) {
 		return Endpoint{}, fmt.Errorf("%w: parse URL: %v", ErrInvalidEndpoint, err)
 	}
 
-	switch parsed.Scheme {
-	case "unix":
+	switch Network(parsed.Scheme) {
+	case NetworkUnix:
 		if runtime.GOOS == "windows" {
 			return Endpoint{}, fmt.Errorf("%w: unix endpoints are not supported on Windows", ErrInvalidEndpoint)
 		}
@@ -43,7 +43,7 @@ func ParseEndpoint(value string) (Endpoint, error) {
 		}
 
 		return Endpoint{Network: NetworkUnix, Address: filepath.Clean(parsed.Path)}, nil
-	case "npipe":
+	case NetworkNamedPipe:
 		if runtime.GOOS != "windows" {
 			return Endpoint{}, fmt.Errorf("%w: named-pipe endpoints are only supported on Windows", ErrInvalidEndpoint)
 		}
@@ -67,10 +67,10 @@ func ParseEndpoint(value string) (Endpoint, error) {
 func (e Endpoint) String() string {
 	switch e.Network {
 	case NetworkUnix:
-		return (&url.URL{Scheme: "unix", Path: e.Address}).String()
+		return (&url.URL{Scheme: string(e.Network), Path: e.Address}).String()
 	case NetworkNamedPipe:
 		return (&url.URL{
-			Scheme: "npipe",
+			Scheme: string(e.Network),
 			Path:   strings.ReplaceAll(e.Address, `\`, "/"),
 		}).String()
 	default:
