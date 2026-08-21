@@ -4,12 +4,18 @@ import "strings"
 
 const defaultOutputContentType = "application/json"
 
-// ExecutionOptions contains invocation-specific Ferret settings.
-type ExecutionOptions struct {
-	OutputContentType string
-}
+type (
+	// RuntimeOptions contains per-run Ferret settings shared by ordinary and
+	// debugger execution.
+	RuntimeOptions struct {
+		OutputContentType string
+	}
 
-func (o ExecutionOptions) normalized() ExecutionOptions {
+	// ExecutionOptions is the ordinary Execution name for RuntimeOptions.
+	ExecutionOptions = RuntimeOptions
+)
+
+func (o RuntimeOptions) normalized() RuntimeOptions {
 	o.OutputContentType = strings.TrimSpace(o.OutputContentType)
 	if o.OutputContentType == "" {
 		o.OutputContentType = defaultOutputContentType

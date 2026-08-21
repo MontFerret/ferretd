@@ -4,13 +4,10 @@ package debug
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
-	daemonparams "github.com/MontFerret/ferretd/internal/params"
 )
 
 type (
@@ -62,49 +59,30 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, err
 	}
 
-	runtimeParams, retainedParameters, err := daemonparams.Prepare(parameters)
-	if err != nil {
-		return SessionSnapshot{}, fmt.Errorf("%w: %v", exec.ErrInvalidParameters, err)
-	}
-
 	id, err := newSessionID()
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
 
-	options = options.normalized()
-
 	if err := m.beginCreate(parentID); err != nil {
 		return SessionSnapshot{}, err
 	}
+
 	defer m.finishCreate(parentID)
 
-	target, err := m.executions.AcquireDebugTarget(ctx, parentID)
+	runtime, err := m.executions.CreateDebugRuntime(ctx, parentID, parameters, options)
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
 
-	sessionOptions := []ferret.SessionOption{ferret.WithSessionRuntimeParams(runtimeParams)}
-	if options.OutputContentType != "" {
-		sessionOptions = append(sessionOptions, ferret.WithOutputContentType(options.OutputContentType))
-	}
-
-	ferretSession, err := target.NewDebugSession(ctx, sessionOptions...)
-	if err != nil {
-		target.Release()
-
-		return SessionSnapshot{}, err
-	}
-
-	created := newSession(id, target, ferretSession, retainedParameters, options)
+	created := newSession(id, runtime)
 	m.mu.Lock()
 	group := m.groups[parentID]
 	if m.closed || group == nil || !group.gate.Accepting() {
 		managerClosed := m.closed
 		m.mu.Unlock()
 
-		closeErr := ferretSession.Close()
-		target.Release()
+		closeErr := runtime.Close()
 		if managerClosed {
 			return SessionSnapshot{}, errors.Join(ErrClosed, closeErr)
 		}
@@ -379,13 +357,13 @@ func (m *Manager) finishSessionClose(session *Session) {
 	session.completeClose()
 
 	m.mu.Lock()
-	if group := m.groups[session.session]; group != nil {
+	if group := m.groups[session.runtime.SessionID()]; group != nil {
 		if group.sessions[session.id] == session {
 			delete(group.sessions, session.id)
 		}
 
 		if group.gate.Accepting() && group.gate.Idle() && len(group.sessions) == 0 {
-			delete(m.groups, session.session)
+			delete(m.groups, session.runtime.SessionID())
 		}
 	}
 	delete(m.closing, session.id)

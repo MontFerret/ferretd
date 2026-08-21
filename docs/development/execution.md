@@ -1,17 +1,19 @@
 # Execution Development
 
-`internal/exec` coordinates compiled Ferret Plans and isolated one-shot runtime
-Sessions. Ferret owns compilation, runtime values, VM execution, and result
-encoding; the execution manager owns long-lived identity, lifecycle,
-cancellation, observation, and cleanup.
+`internal/exec` coordinates compiled Ferret Plans and one common per-run
+execution runtime used by ordinary execution and debugging. Ferret owns
+compilation, runtime values, VM execution, and result encoding; the execution
+manager owns long-lived identity, runtime preparation, cancellation, lifecycle,
+observation, and cleanup.
 
 The resource hierarchy is:
 
 ```text
 Workspace
     -> execution Session
-        -> zero or more one-shot Executions
+        -> zero or more one-shot Executions -> common execution runtime
         -> zero or more retained DebugSessions through internal/debug
+            -> DebugRuntime -> common execution runtime + debugger capability
 ```
 
 See [workspace.md](workspace.md) for source refresh and engine ownership and
@@ -32,18 +34,27 @@ Executions.
 
 The Session also coordinates lazy construction of one matching debug Plan. That
 Plan is separate because it carries debugger instrumentation. Debug consumers
-receive only leased immutable targets, never mutable Session internals.
+receive an `exec.DebugRuntime`, never mutable Session internals or a raw Plan.
+The DebugRuntime owns its Plan lease until its Ferret debugger session closes.
 
-## Parameters and Executions
+## Common runtime and Executions
 
 `internal/params` validates and copies caller-owned JSON-shaped parameter values
 before they enter retained state. Maps, lists, scalars, and null values cross the
 gRPC and public-client boundary without exposing mutable caller storage.
 
-Each Execution owns copied parameters and options, one fresh Ferret runtime
-Session, at most one run attempt, its cancellation function, ordered lifecycle
-events, and a terminal result or failure. Executions do not share runtime state,
-queue work, persist results, replay, or act as a REPL.
+The package has one concrete execution-runtime implementation. It owns the
+immutable Session/Plan/source target, prepared Ferret parameters plus the
+daemon-retained copy, normalized options, a manager-owned context and
+cancellation function, one Ferret session resource, output/failure
+materialization, and idempotent Ferret-session cleanup. Both normal and debug
+creation use this sequence and the same `internal/params.Prepare` semantics.
+
+Each Execution owns that runtime plus its ordinary one-shot state, ordered
+lifecycle events, and terminal result or failure. The fresh Ferret runtime
+Session is still created only after `Start`, so session-creation failures remain
+asynchronous terminal failures. Executions do not share runtime state, queue
+work, persist results, replay, or act as a REPL.
 
 Running transitions a created Execution to running and returns that snapshot
 immediately. VM execution continues under manager-owned lifecycle control rather
@@ -71,9 +82,10 @@ Execution lifecycle.
 
 ## Cleanup and parent ownership
 
-Closing an Execution cancels active work, waits for owned runtime cleanup, ends
-watchers, and becomes idempotent. Closing a Session closes every child Execution
-and DebugSession before closing its Plans. Closing a workspace invokes the
+Closing an Execution cancels active work, waits for common-runtime cleanup, ends
+watchers, and becomes idempotent. Closing a Session stops both normal and debug
+runtime creation, closes every child Execution and DebugSession, waits for
+DebugRuntime leases, and then closes its Plans. Closing a workspace invokes the
 execution manager's registered close hook before the workspace engine closes.
 
 The manager orchestrates two package-local registries rather than owning all
@@ -85,11 +97,12 @@ reachability and the Session-to-Execution index. Closing entries remain retained
 for concurrent waiters and parent teardown, but normal lookups expose active
 entries only.
 
-Each Session owns the gate that admits Execution creation. Session close stops
-that gate, waits for every admitted creator to publish or leave, then detaches
-the complete child set from the Execution registry. No Session-registry lock is
-held while entering the Execution registry, and no registry lock is held during
-compilation, hooks, runtime cleanup, Plan closure, or lifecycle waits.
+Each Session owns the gate that admits ordinary and debug runtime creation.
+Session close stops that gate, waits for every admitted creator to publish or
+leave, then detaches the ordinary child set and invokes debug child cleanup. No
+Session-registry lock is held while entering the Execution registry, and no
+registry lock is held during compilation, hooks, runtime cleanup, Plan closure,
+or lifecycle waits.
 
 Concurrent close calls share one close operation and retained result. A caller's
 canceled wait does not transfer or abandon ownership of the underlying cleanup;
@@ -113,11 +126,11 @@ and typed error mapping is part of the public compatibility surface.
 ## Testing changes
 
 Execution tests should cover compile failure without publication, immutable
-Sessions, refreshed source revisions, parameter copying and rejection, one-shot
-run semantics, isolated runtime Sessions, cancellation, terminal results,
-failure categories, current-plus-future watching, lagged watchers, context
-cancellation, concurrent close, parent cascades, Plan close counts, debug leases,
-and manager shutdown.
+Sessions, refreshed source revisions, shared normal/debug parameter semantics,
+one-shot run semantics, isolated runtime Sessions, cancellation, terminal
+results, failure categories, current-plus-future watching, lagged watchers,
+context cancellation, concurrent close, parent cascades, Plan close counts,
+DebugRuntime leases and setup rollback, and manager shutdown.
 
 Cross-boundary changes require domain tests, gRPC translation tests, public
 client tests, and daemon end-to-end coverage. Lifecycle tests should coordinate

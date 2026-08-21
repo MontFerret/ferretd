@@ -12,13 +12,15 @@ func TestExecutionSnapshotClone(t *testing.T) {
 		Parameters: map[string]any{"nested": []any{map[string]any{"key": "value"}}},
 		Output:     &Output{Content: []byte("one")},
 		Failure: &Failure{
-			Message: "failure",
-			Diagnostics: []diagnostic.Diagnostic{{
-				Message: "diagnostic",
-				RelatedInformation: []diagnostic.RelatedInformation{{
-					Message: "related",
+			RuntimeFailure: RuntimeFailure{
+				Message: "failure",
+				Diagnostics: []diagnostic.Diagnostic{{
+					Message: "diagnostic",
+					RelatedInformation: []diagnostic.RelatedInformation{{
+						Message: "related",
+					}},
 				}},
-			}},
+			},
 		},
 	}
 	cloned := value.Clone()

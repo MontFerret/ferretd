@@ -5,11 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2"
-	"github.com/MontFerret/ferret/v2/pkg/runtime"
-	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
-	"github.com/MontFerret/ferretd/internal/source"
 )
 
 type (
@@ -17,25 +13,17 @@ type (
 	Execution struct {
 		mu sync.Mutex
 
-		id             ExecutionID
-		session        SessionID
-		plan           *ferret.Plan
-		sourceURI      source.URI
-		sourceText     string
-		params         runtime.Params
-		parameterInput map[string]any
-		options        ExecutionOptions
-		state          State
-		output         *Output
-		failure        *Failure
-		ctx            context.Context
-		cancel         context.CancelCauseFunc
-		runDone        chan struct{}
-		close          lifecycle.CloseOperation
-		sequence       uint64
-		lastEvent      Event
-		nextWatcher    uint64
-		watchers       map[uint64]*eventWatcher
+		id          ExecutionID
+		runtime     *executionRuntime
+		state       State
+		output      *Output
+		failure     *Failure
+		runDone     chan struct{}
+		close       lifecycle.CloseOperation
+		sequence    uint64
+		lastEvent   Event
+		nextWatcher uint64
+		watchers    map[uint64]*eventWatcher
 	}
 
 	eventWatcher struct {
@@ -49,26 +37,14 @@ const watcherBufferSize = 8
 
 func newExecution(
 	id ExecutionID,
-	session *Session,
-	params runtime.Params,
-	parameterInput map[string]any,
-	options ExecutionOptions,
+	runtime *executionRuntime,
 ) *Execution {
-	ctx, cancel := context.WithCancelCause(context.Background())
 	result := &Execution{
-		id:             id,
-		session:        session.id,
-		plan:           session.plan,
-		sourceURI:      session.source.URI,
-		sourceText:     session.text,
-		params:         params,
-		parameterInput: parameterInput,
-		options:        options,
-		state:          StateCreated,
-		ctx:            ctx,
-		cancel:         cancel,
-		runDone:        make(chan struct{}),
-		watchers:       make(map[uint64]*eventWatcher),
+		id:       id,
+		runtime:  runtime,
+		state:    StateCreated,
+		runDone:  make(chan struct{}),
+		watchers: make(map[uint64]*eventWatcher),
 	}
 	result.publishLocked(EventCreated, false)
 
@@ -124,11 +100,11 @@ func (e *Execution) Cancel() ExecutionSnapshot {
 
 	switch e.state {
 	case StateCreated:
-		e.cancel(errExecutionCanceled)
+		e.runtime.cancel(errExecutionCanceled)
 		e.state = StateCancelled
 		e.publishLocked(EventCancelled, true)
 	case StateRunning:
-		e.cancel(errExecutionCanceled)
+		e.runtime.cancel(errExecutionCanceled)
 	}
 
 	return e.snapshotLocked()
@@ -170,39 +146,11 @@ func (e *Execution) Subscribe() Subscription {
 }
 
 func (e *Execution) run() {
-	options := []ferret.SessionOption{ferret.WithSessionRuntimeParams(e.params)}
-	if e.options.OutputContentType != "" {
-		options = append(options, ferret.WithOutputContentType(e.options.OutputContentType))
-	}
-
-	session, err := e.plan.NewSession(e.ctx, options...)
-	if err != nil {
-		e.finish(nil, err, FailureSessionCreation)
-
-		return
-	}
-
-	output, runErr := session.Run(e.ctx)
-	closeErr := session.Close()
-	result := errors.Join(runErr, closeErr)
-	category := FailureRuntime
-
-	if runErr == nil && closeErr != nil {
-		category = FailureCleanup
-	}
-
-	e.finish(output, result, category)
+	result := e.runtime.run()
+	e.finish(result.output, result.err, result.category)
 }
 
-func (e *Execution) finish(output *ferret.Output, err error, category FailureCategory) {
-	var result *Output
-	if output != nil {
-		result = &Output{
-			ContentType: output.ContentType,
-			Content:     append([]byte(nil), output.Content...),
-		}
-	}
-
+func (e *Execution) finish(output *RuntimeOutput, err error, category FailureCategory) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -210,7 +158,7 @@ func (e *Execution) finish(output *ferret.Output, err error, category FailureCat
 		return
 	}
 
-	e.output = result
+	e.output = output
 	if err == nil {
 		e.state = StateCompleted
 		e.publishLocked(EventCompleted, true)
@@ -218,7 +166,7 @@ func (e *Execution) finish(output *ferret.Output, err error, category FailureCat
 		return
 	}
 
-	if errors.Is(err, context.Canceled) && context.Cause(e.ctx) != nil {
+	if errors.Is(err, context.Canceled) && context.Cause(e.runtime.ctx) != nil {
 		e.state = StateCancelled
 		e.publishLocked(EventCancelled, true)
 
@@ -226,11 +174,7 @@ func (e *Execution) finish(output *ferret.Output, err error, category FailureCat
 	}
 
 	e.state = StateFailed
-	e.failure = &Failure{
-		Category:    category,
-		Message:     err.Error(),
-		Diagnostics: diagnostic.FromError(e.sourceURI, e.sourceText, err),
-	}
+	e.failure = &Failure{Category: category, RuntimeFailure: *e.runtime.failure(err)}
 	e.publishLocked(EventFailed, true)
 }
 
@@ -241,6 +185,7 @@ func (e *Execution) beginClose() bool {
 func (e *Execution) settleClose() {
 	e.Cancel()
 	<-e.runDone
+	_ = e.runtime.closeSession()
 
 	e.mu.Lock()
 	for id, watcher := range e.watchers {
@@ -257,10 +202,10 @@ func (e *Execution) completeClose() {
 func (e *Execution) snapshotLocked() ExecutionSnapshot {
 	return (ExecutionSnapshot{
 		ID:         e.id,
-		Session:    e.session,
+		Session:    e.runtime.target.session,
 		State:      e.state,
-		Parameters: e.parameterInput,
-		Options:    e.options,
+		Parameters: e.runtime.input.parameters,
+		Options:    e.runtime.input.options,
 		Output:     e.output,
 		Failure:    e.failure,
 	}).Clone()

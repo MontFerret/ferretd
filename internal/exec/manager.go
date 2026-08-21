@@ -4,11 +4,9 @@ package exec
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/MontFerret/ferretd/internal/diagnostic"
-	daemonparams "github.com/MontFerret/ferretd/internal/params"
 	"github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -175,9 +173,9 @@ func (m *Manager) CreateExecution(
 		return ExecutionSnapshot{}, err
 	}
 
-	runtimeParams, retainedParameters, err := daemonparams.Prepare(parameters)
+	input, err := prepareRuntimeInput(parameters, options)
 	if err != nil {
-		return ExecutionSnapshot{}, fmt.Errorf("%w: %v", ErrInvalidParameters, err)
+		return ExecutionSnapshot{}, err
 	}
 
 	id, err := newExecutionID()
@@ -185,16 +183,15 @@ func (m *Manager) CreateExecution(
 		return ExecutionSnapshot{}, err
 	}
 
-	options = options.normalized()
-
-	creation, err := m.sessions.beginExecutionCreate(sessionID)
+	creation, err := m.sessions.beginRuntimeCreate(sessionID)
 	if err != nil {
 		return ExecutionSnapshot{}, err
 	}
 	defer creation.finish()
 
 	parent := creation.session()
-	execution := newExecution(id, parent, runtimeParams, retainedParameters, options)
+	runtime := newExecutionRuntime(parent.runtimeTarget(), input)
+	execution := newExecution(id, runtime)
 	m.executions.add(execution)
 
 	return execution.Snapshot(), nil
@@ -292,13 +289,12 @@ func (m *Manager) finishWorkspaceClose(closing workspaceClose) {
 		)
 	}
 
-	closing.group.finishClose(result)
-	m.sessions.finishWorkspaceClose(closing)
+	m.sessions.finishWorkspaceClose(closing, result)
 }
 
 func (m *Manager) finishSessionClose(entry *sessionEntry) {
 	session := entry.session
-	session.waitForExecutionCreates()
+	session.waitForRuntimeCreates()
 
 	children := m.executions.beginSessionClose(session.id)
 	for _, closing := range children {

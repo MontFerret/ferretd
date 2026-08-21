@@ -378,7 +378,7 @@ func assertExecutionOwnership(t *testing.T, manager *Manager, execution *Executi
 	t.Helper()
 
 	manager.executions.mu.RLock()
-	group := manager.executions.bySession[execution.session]
+	group := manager.executions.bySession[execution.runtime.target.session]
 	var entry *executionEntry
 	if group != nil {
 		entry = group.entries[execution.id]

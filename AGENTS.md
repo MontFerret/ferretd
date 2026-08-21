@@ -58,8 +58,9 @@ translate; they do not become alternate owners of domain behavior.
   resolution, analysis coordination, and language features.
 * `internal/workspace` owns process-local workspace identity, discovery,
   retained source and syntax state, engines, refresh, and close coordination.
-* `internal/exec` owns compiled Sessions, one-shot Executions, lazy debug Plans,
-  immutable debug-target leases, and execution lifecycle observation.
+* `internal/exec` owns compiled Sessions, the shared per-run execution runtime,
+  one-shot Executions, lazy debug Plans, DebugRuntime leases, and execution
+  lifecycle observation.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
   events, and debug child cleanup.
 * `internal/source`, `internal/diagnostic`, `internal/params`, and

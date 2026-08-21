@@ -247,21 +247,22 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 		t.Fatalf("second source revision = %d, want 2", second.Source.Revision)
 	}
 
-	target, err := fixture.manager.AcquireDebugTarget(context.Background(), first.ID)
+	runtime, err := fixture.manager.CreateDebugRuntime(
+		context.Background(),
+		first.ID,
+		nil,
+		RuntimeOptions{},
+	)
 	if err != nil {
-		t.Fatalf("AcquireDebugTarget: %v", err)
+		t.Fatalf("CreateDebugRuntime: %v", err)
 	}
-	defer target.Release()
-	if target.Source() != first.Source || target.SourceText() != "LET value = 1\nRETURN value" {
-		t.Fatalf("debug target = source %+v text %q, want first Session snapshot",
-			target.Source(), target.SourceText())
+	defer func() { _ = runtime.Close() }()
+	if runtime.runtime.target.source != first.Source || runtime.runtime.target.text != "LET value = 1\nRETURN value" {
+		t.Fatalf("debug runtime = source %+v text %q, want first Session snapshot",
+			runtime.runtime.target.source, runtime.runtime.target.text)
 	}
 
-	debugSession, err := target.NewDebugSession(context.Background())
-	if err != nil {
-		t.Fatalf("NewDebugSession: %v", err)
-	}
-	defer func() { _ = debugSession.Close() }()
+	debugSession := runtime.Debugger()
 	if _, err := debugSession.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -398,7 +399,7 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 	closed := make(chan error, 1)
 	var admitted *Execution
 	func() {
-		creation, err := manager.sessions.beginExecutionCreate(snapshot.ID)
+		creation, err := manager.sessions.beginRuntimeCreate(snapshot.ID)
 		if err != nil {
 			t.Fatalf("begin Execution creation: %v", err)
 		}
@@ -425,12 +426,13 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 			t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
 		}
 
+		input, err := prepareRuntimeInput(nil, RuntimeOptions{})
+		if err != nil {
+			t.Fatalf("prepare runtime input: %v", err)
+		}
 		admitted = newExecution(
 			ExecutionID("admitted-execution"),
-			parent,
-			nil,
-			nil,
-			ExecutionOptions{},
+			newExecutionRuntime(parent.runtimeTarget(), input),
 		)
 		manager.executions.add(admitted)
 	}()

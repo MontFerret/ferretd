@@ -84,8 +84,9 @@ than access to protected state.
 * `internal/workspace` owns process-local workspace identity, static discovery,
   retained documents and Ferret syntax state, rooted engines, refresh, and close
   coordination.
-* `internal/exec` owns compiled Sessions, one-shot Executions, watches,
-  cancellation, terminal results, lazy debug Plans, and debug-target leases.
+* `internal/exec` owns compiled Sessions, the common per-run execution runtime,
+  one-shot Executions, watches, cancellation, terminal results, lazy debug
+  Plans, and debugger-runtime leases.
 * `internal/debug` owns retained DebugSessions, commands, paused-state
   inspection, event streams, and cleanup.
 * `internal/dap` adapts workspace, execution, and debug services to one stdio DAP
@@ -106,14 +107,18 @@ than access to protected state.
 
 An open workspace owns retained file and document snapshots plus one rooted
 Ferret engine. An execution Session is a child of that workspace and owns an
-immutable compiled Plan. Each Execution is a one-shot child of a Session and
-owns a fresh Ferret runtime Session. Closing a parent cascades through its
-children before the parent resource is released.
+immutable compiled Plan. Each ordinary Execution is a one-shot child of a
+Session and uses a fresh `internal/exec` execution runtime around one Ferret
+runtime Session.
 
-A Session can also lazily own a matching debug Plan. `internal/exec` leases an
-immutable debug target while `internal/debug` owns the retained Ferret debugger
-session. A DebugSession is independent from ordinary Executions but remains a
-child of the same execution Session for cleanup.
+A Session can also lazily own one matching debug Plan. `internal/exec` builds a
+DebugRuntime from the same execution-runtime machinery, adds one Ferret debugger
+session, and retains the debug-Plan lease until that runtime closes.
+`internal/debug` layers DebugSession identity, commands, inspection, events, and
+state on that DebugRuntime. Ordinary Executions and DebugSessions remain sibling
+resources with distinct observable state machines. Closing a parent stops new
+runtime creation, settles both child kinds, releases leases, and only then
+closes its Plans.
 
 The language service consumes workspace documents as static baselines but owns
 editor overlays separately. Opening or changing an editor document does not

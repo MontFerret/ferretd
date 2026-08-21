@@ -31,7 +31,7 @@ type (
 		group     *workspaceGroup
 	}
 
-	executionCreation struct {
+	runtimeCreation struct {
 		parent *Session
 	}
 
@@ -123,48 +123,32 @@ func (r *sessionRegistry) active(id SessionID) *Session {
 	return entry.session
 }
 
-func (r *sessionRegistry) beginExecutionCreate(id SessionID) (executionCreation, error) {
+func (r *sessionRegistry) beginRuntimeCreate(id SessionID) (runtimeCreation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return executionCreation{}, ErrClosed
+		return runtimeCreation{}, ErrClosed
 	}
 
 	entry := r.entries[id]
 	if entry == nil || entry.state != registryStateActive {
-		return executionCreation{}, ErrSessionNotFound
+		return runtimeCreation{}, ErrSessionNotFound
 	}
 
-	if !entry.session.beginExecutionCreate() {
-		panic("execution: active Session rejected child creation")
+	if !entry.session.beginRuntimeCreate() {
+		panic("execution: active Session rejected runtime creation")
 	}
 
-	return executionCreation{parent: entry.session}, nil
+	return runtimeCreation{parent: entry.session}, nil
 }
 
-func (c executionCreation) session() *Session {
+func (c runtimeCreation) session() *Session {
 	return c.parent
 }
 
-func (c executionCreation) finish() {
-	c.parent.finishExecutionCreate()
-}
-
-func (r *sessionRegistry) sessionForDebug(id SessionID) (*Session, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if r.closed {
-		return nil, ErrClosed
-	}
-
-	entry := r.entries[id]
-	if entry == nil || entry.state != registryStateActive {
-		return nil, ErrSessionNotFound
-	}
-
-	return entry.session, nil
+func (c runtimeCreation) finish() {
+	c.parent.finishRuntimeCreate()
 }
 
 func (r *sessionRegistry) beginClose(id SessionID, retained *sessionEntry) (*sessionEntry, bool) {
@@ -239,10 +223,16 @@ func (r *sessionRegistry) beginShutdown() []workspaceClose {
 	return result
 }
 
-func (r *sessionRegistry) finishWorkspaceClose(closing workspaceClose) {
+func (r *sessionRegistry) finishWorkspaceClose(closing workspaceClose, err error) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Publish registry removal before waking close waiters. Holding the registry
+	// lock across both steps prevents a waiter from observing the stale group or
+	// a new creator from interleaving between removal and completion.
 	if r.groups[closing.id] == closing.group {
 		delete(r.groups, closing.id)
 	}
-	r.mu.Unlock()
+
+	closing.group.finishClose(err)
 }

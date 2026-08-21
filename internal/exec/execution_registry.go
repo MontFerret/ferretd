@@ -46,17 +46,19 @@ func (r *executionRegistry) add(execution *Execution) {
 	entry := &executionEntry{execution: execution, state: registryStateActive}
 	r.entries[execution.id] = entry
 
-	group := r.bySession[execution.session]
+	group := r.bySession[execution.runtime.target.session]
 	if group == nil {
 		group = &executionGroup{
 			state:   registryStateActive,
 			entries: make(map[ExecutionID]*executionEntry),
 		}
-		r.bySession[execution.session] = group
+		r.bySession[execution.runtime.target.session] = group
 	}
+
 	if group.state != registryStateActive {
 		panic("execution: closing Session accepted an Execution")
 	}
+
 	group.entries[execution.id] = entry
 }
 
@@ -92,12 +94,14 @@ func (r *executionRegistry) beginSessionClose(id SessionID) []executionClose {
 	if group == nil {
 		return nil
 	}
-	group.state = registryStateClosing
 
+	group.state = registryStateClosing
 	result := make([]executionClose, 0, len(group.entries))
+
 	for _, entry := range group.entries {
 		result = append(result, r.beginCloseLocked(entry))
 	}
+
 	if len(group.entries) == 0 {
 		delete(r.bySession, id)
 	}
@@ -113,6 +117,7 @@ func (r *executionRegistry) beginCloseLocked(entry *executionEntry) executionClo
 	if !entry.execution.beginClose() {
 		panic("execution: active Execution close has already started")
 	}
+
 	entry.state = registryStateClosing
 
 	return executionClose{entry: entry, owner: true}
@@ -127,7 +132,7 @@ func (r *executionRegistry) finishClose(entry *executionEntry) {
 		delete(r.entries, execution.id)
 	}
 
-	group := r.bySession[execution.session]
+	group := r.bySession[execution.runtime.target.session]
 	if group == nil {
 		return
 	}
@@ -138,6 +143,6 @@ func (r *executionRegistry) finishClose(entry *executionEntry) {
 	// Active empty groups are reused by later Executions from the same Session.
 	// Parent close removes the group after the last retained child settles.
 	if group.state == registryStateClosing && len(group.entries) == 0 {
-		delete(r.bySession, execution.session)
+		delete(r.bySession, execution.runtime.target.session)
 	}
 }

@@ -287,6 +287,11 @@ RETURN x / 0`)
 	if runtimeError.Reason != StopRuntimeError || runtimeError.Failure == nil {
 		t.Fatalf("runtime error = %+v", runtimeError)
 	}
+	if diagnostics := runtimeError.Failure.Diagnostics; len(diagnostics) != 1 ||
+		diagnostics[0].URI != fixture.session.Source.URI || diagnostics[0].Code == "" ||
+		diagnostics[0].Range.Start == diagnostics[0].Range.End {
+		t.Fatalf("runtime error diagnostics = %+v, want one source-located diagnostic", diagnostics)
+	}
 
 	scopes, err := fixture.manager.Scopes(context.Background(), created.ID, 0)
 	if err != nil || !debugScopeHas(scopes[0], "x", "7") {
