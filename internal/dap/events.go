@@ -3,11 +3,15 @@ package dap
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	protocol "github.com/google/go-dap"
 
 	"github.com/MontFerret/ferretd/internal/debug"
+)
+
+const (
+	threadID   = 1
+	threadName = "Ferret"
 )
 
 func (s *Server) watchDebugSession(subscription debug.Subscription) {
@@ -136,12 +140,4 @@ func (s *Server) sendTerminated() error {
 			Event: protocol.Event{ProtocolMessage: base, Event: "terminated"},
 		}
 	})
-}
-
-func ensureTrailingNewline(value string) string {
-	if strings.HasSuffix(value, "\n") {
-		return value
-	}
-
-	return value + "\n"
 }

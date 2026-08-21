@@ -5,36 +5,25 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2"
-	"github.com/MontFerret/ferret/v2/pkg/runtime"
-	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
 
 type (
-	// Execution owns one isolated, one-shot Ferret invocation.
-	Execution struct {
+	// execution owns one isolated, one-shot Ferret invocation.
+	execution struct {
 		mu sync.Mutex
 
-		id             ExecutionID
-		session        SessionID
-		plan           *ferret.Plan
-		sourceURI      string
-		sourceText     string
-		params         runtime.Params
-		parameterInput map[string]any
-		options        ExecutionOptions
-		state          State
-		output         *Output
-		failure        *Failure
-		ctx            context.Context
-		cancel         context.CancelCauseFunc
-		runDone        chan struct{}
-		closeDone      chan struct{}
-		closing        bool
-		sequence       uint64
-		lastEvent      Event
-		nextWatcher    uint64
-		watchers       map[uint64]*eventWatcher
+		id          ExecutionID
+		runtime     *executionRuntime
+		state       State
+		output      *RuntimeOutput
+		failure     *Failure
+		runDone     chan struct{}
+		close       lifecycle.CloseOperation
+		sequence    uint64
+		lastEvent   Event
+		nextWatcher uint64
+		watchers    map[uint64]*eventWatcher
 	}
 
 	eventWatcher struct {
@@ -48,43 +37,29 @@ const watcherBufferSize = 8
 
 func newExecution(
 	id ExecutionID,
-	session *Session,
-	params runtime.Params,
-	parameterInput map[string]any,
-	options ExecutionOptions,
-) *Execution {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	result := &Execution{
-		id:             id,
-		session:        session.id,
-		plan:           session.plan,
-		sourceURI:      string(session.source.URI),
-		sourceText:     session.text,
-		params:         params,
-		parameterInput: cloneParameters(parameterInput),
-		options:        options,
-		state:          StateCreated,
-		ctx:            ctx,
-		cancel:         cancel,
-		runDone:        make(chan struct{}),
-		closeDone:      make(chan struct{}),
-		watchers:       make(map[uint64]*eventWatcher),
+	runtime *executionRuntime,
+) *execution {
+	result := &execution{
+		id:       id,
+		runtime:  runtime,
+		state:    StateCreated,
+		runDone:  make(chan struct{}),
+		watchers: make(map[uint64]*eventWatcher),
 	}
 	result.publishLocked(EventCreated, false)
 
 	return result
 }
 
-// Snapshot returns an immutable Execution view.
-func (e *Execution) Snapshot() ExecutionSnapshot {
+func (e *execution) snapshot() ExecutionSnapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	return e.snapshotLocked()
 }
 
-// Start commits RUNNING and starts the daemon-owned one-shot invocation.
-func (e *Execution) Start(ctx context.Context) (ExecutionSnapshot, error) {
+// start commits RUNNING and starts the daemon-owned one-shot invocation.
+func (e *execution) start(ctx context.Context) (ExecutionSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return ExecutionSnapshot{}, err
 	}
@@ -117,27 +92,27 @@ func (e *Execution) Start(ctx context.Context) (ExecutionSnapshot, error) {
 	}
 }
 
-// Cancel idempotently requests cancellation without overwriting terminal state.
-func (e *Execution) Cancel() ExecutionSnapshot {
+// cancel idempotently requests cancellation without overwriting terminal state.
+func (e *execution) cancel() ExecutionSnapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	switch e.state {
 	case StateCreated:
-		e.cancel(errExecutionCanceled)
+		e.runtime.cancel(errExecutionCanceled)
 		e.state = StateCancelled
 		e.publishLocked(EventCancelled, true)
 	case StateRunning:
-		e.cancel(errExecutionCanceled)
+		e.runtime.cancel(errExecutionCanceled)
 	}
 
 	return e.snapshotLocked()
 }
 
-// Subscribe returns the latest lifecycle event and future bounded observations.
-func (e *Execution) Subscribe() Subscription {
+// subscribe returns the latest lifecycle event and future bounded observations.
+func (e *execution) subscribe() Subscription {
 	e.mu.Lock()
-	current := cloneEvent(e.lastEvent)
+	current := e.lastEvent.clone()
 	if e.state.Terminal() {
 		events := make(chan Event)
 		errors := make(chan error)
@@ -169,40 +144,12 @@ func (e *Execution) Subscribe() Subscription {
 	}
 }
 
-func (e *Execution) run() {
-	options := []ferret.SessionOption{ferret.WithSessionRuntimeParams(e.params)}
-	if e.options.OutputContentType != "" {
-		options = append(options, ferret.WithOutputContentType(e.options.OutputContentType))
-	}
-
-	session, err := e.plan.NewSession(e.ctx, options...)
-	if err != nil {
-		e.finish(nil, err, FailureSessionCreation)
-
-		return
-	}
-
-	output, runErr := session.Run(e.ctx)
-	closeErr := session.Close()
-	result := errors.Join(runErr, closeErr)
-	category := FailureRuntime
-
-	if runErr == nil && closeErr != nil {
-		category = FailureCleanup
-	}
-
-	e.finish(output, result, category)
+func (e *execution) run() {
+	result := e.runtime.run()
+	e.finish(result.output, result.err, result.category)
 }
 
-func (e *Execution) finish(output *ferret.Output, err error, category FailureCategory) {
-	var result *Output
-	if output != nil {
-		result = &Output{
-			ContentType: output.ContentType,
-			Content:     append([]byte(nil), output.Content...),
-		}
-	}
-
+func (e *execution) finish(output *RuntimeOutput, err error, category FailureCategory) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -210,7 +157,7 @@ func (e *Execution) finish(output *ferret.Output, err error, category FailureCat
 		return
 	}
 
-	e.output = result
+	e.output = output
 	if err == nil {
 		e.state = StateCompleted
 		e.publishLocked(EventCompleted, true)
@@ -218,7 +165,7 @@ func (e *Execution) finish(output *ferret.Output, err error, category FailureCat
 		return
 	}
 
-	if errors.Is(err, context.Canceled) && context.Cause(e.ctx) != nil {
+	if errors.Is(err, context.Canceled) && context.Cause(e.runtime.ctx) != nil {
 		e.state = StateCancelled
 		e.publishLocked(EventCancelled, true)
 
@@ -226,30 +173,18 @@ func (e *Execution) finish(output *ferret.Output, err error, category FailureCat
 	}
 
 	e.state = StateFailed
-	e.failure = &Failure{
-		Category:    category,
-		Message:     err.Error(),
-		Diagnostics: diagnostic.FromError(e.sourceURI, e.sourceText, err),
-	}
+	e.failure = &Failure{Category: category, RuntimeFailure: *e.runtime.materializeFailure(err)}
 	e.publishLocked(EventFailed, true)
 }
 
-func (e *Execution) beginClose() bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.closing {
-		return false
-	}
-
-	e.closing = true
-
-	return true
+func (e *execution) beginClose() bool {
+	return e.close.Begin()
 }
 
-func (e *Execution) settleClose() {
-	e.Cancel()
+func (e *execution) settleClose() error {
+	e.cancel()
 	<-e.runDone
+	closeErr := e.runtime.closeSession()
 
 	e.mu.Lock()
 	for id, watcher := range e.watchers {
@@ -257,25 +192,27 @@ func (e *Execution) settleClose() {
 	}
 
 	e.mu.Unlock()
+
+	return closeErr
 }
 
-func (e *Execution) completeClose() {
-	close(e.closeDone)
+func (e *execution) completeClose(err error) {
+	e.close.Finish(err)
 }
 
-func (e *Execution) snapshotLocked() ExecutionSnapshot {
-	return ExecutionSnapshot{
+func (e *execution) snapshotLocked() ExecutionSnapshot {
+	return (ExecutionSnapshot{
 		ID:         e.id,
-		Session:    e.session,
+		Session:    e.runtime.target.sessionID,
 		State:      e.state,
-		Parameters: cloneParameters(e.parameterInput),
-		Options:    e.options,
-		Output:     cloneOutput(e.output),
-		Failure:    cloneFailure(e.failure),
-	}
+		Parameters: e.runtime.input.parameters,
+		Options:    e.runtime.input.options,
+		Output:     e.output,
+		Failure:    e.failure,
+	}).Clone()
 }
 
-func (e *Execution) publishLocked(kind EventKind, terminal bool) {
+func (e *execution) publishLocked(kind EventKind, terminal bool) {
 	e.sequence++
 	e.lastEvent = Event{
 		Execution: e.id,
@@ -286,7 +223,7 @@ func (e *Execution) publishLocked(kind EventKind, terminal bool) {
 
 	for id, watcher := range e.watchers {
 		select {
-		case watcher.events <- cloneEvent(e.lastEvent):
+		case watcher.events <- e.lastEvent.clone():
 			if terminal {
 				e.closeWatcherLocked(id, watcher, nil)
 			}
@@ -300,7 +237,7 @@ func (e *Execution) publishLocked(kind EventKind, terminal bool) {
 	}
 }
 
-func (e *Execution) unsubscribe(id uint64) {
+func (e *execution) unsubscribe(id uint64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -312,7 +249,7 @@ func (e *Execution) unsubscribe(id uint64) {
 	e.closeWatcherLocked(id, watcher, nil)
 }
 
-func (e *Execution) closeWatcherLocked(id uint64, watcher *eventWatcher, err error) {
+func (e *execution) closeWatcherLocked(id uint64, watcher *eventWatcher, err error) {
 	if watcher.closed {
 		return
 	}

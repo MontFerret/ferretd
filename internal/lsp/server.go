@@ -3,14 +3,12 @@ package lsp
 
 import (
 	"context"
-	"path/filepath"
 	"sync"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/MontFerret/ferretd/internal/language"
-	"github.com/MontFerret/ferretd/internal/source"
 )
 
 const serverName = "ferretd"
@@ -22,10 +20,11 @@ type Server struct {
 	contexts sync.Map
 }
 
-// New creates an LSP server adapter.
-func New(service *language.Service) *Server {
+// New creates an LSP server adapter around the supplied language service.
+// It returns an error when the language service is nil.
+func New(service *language.Service) (*Server, error) {
 	if service == nil {
-		service = language.New(language.Options{})
+		return nil, errNilLanguageService
 	}
 
 	result := &Server{language: service}
@@ -47,7 +46,7 @@ func New(service *language.Service) *Server {
 		TextDocumentFormatting:         result.formatting,
 	}
 
-	return result
+	return result, nil
 }
 
 func (s *Server) initialize(glspContext *glsp.Context, params *protocol.InitializeParams) (any, error) {
@@ -113,52 +112,4 @@ func (s *Server) operationContext(glspContext *glsp.Context) context.Context {
 	}
 
 	return context.Background()
-}
-
-func initializationRoots(params *protocol.InitializeParams) ([]string, error) {
-	if params == nil {
-		return nil, nil
-	}
-
-	var values []string
-
-	if len(params.WorkspaceFolders) > 0 {
-		for _, folder := range params.WorkspaceFolders {
-			path, err := source.URIToPath(folder.URI)
-			if err != nil {
-				return nil, err
-			}
-
-			values = append(values, path)
-		}
-	} else if params.RootURI != nil && *params.RootURI != "" {
-		path, err := source.URIToPath(*params.RootURI)
-		if err != nil {
-			return nil, err
-		}
-
-		values = append(values, path)
-	} else if params.RootPath != nil && *params.RootPath != "" {
-		values = append(values, *params.RootPath)
-	}
-
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-
-	for _, value := range values {
-		absolute, err := filepath.Abs(value)
-		if err != nil {
-			return nil, err
-		}
-
-		root := filepath.Clean(absolute)
-		if _, ok := seen[root]; ok {
-			continue
-		}
-
-		seen[root] = struct{}{}
-		result = append(result, root)
-	}
-
-	return result, nil
 }

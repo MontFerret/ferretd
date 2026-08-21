@@ -10,12 +10,13 @@ import (
 	"time"
 
 	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 type closeOwnershipFixture struct {
 	manager               *Manager
-	session               *Session
-	execution             *Execution
+	session               *session
+	execution             *execution
 	sessionID             SessionID
 	executionID           ExecutionID
 	runStarted            chan struct{}
@@ -39,7 +40,7 @@ func TestCloseExecutionRetainsSessionOwnershipUntilRuntimeCleanup(t *testing.T) 
 	}()
 
 	waitForSignal(t, fixture.runtimeCloseStarted, "runtime Session close")
-	assertExecutionOwnership(t, fixture.session, fixture.execution, true)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, true)
 
 	if _, err := fixture.manager.GetExecution(
 		context.Background(),
@@ -54,15 +55,104 @@ func TestCloseExecutionRetainsSessionOwnershipUntilRuntimeCleanup(t *testing.T) 
 	}()
 
 	waitForSessionClosing(t, fixture.session)
-	assertExecutionOwnership(t, fixture.session, fixture.execution, true)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, true)
 	assertNoSignal(t, fixture.planCloseStarted, "Plan close before Execution cleanup")
 
 	fixture.releaseClose()
 	waitForResult(t, executionClose, "Execution close")
 	waitForResult(t, sessionClose, "Session close")
 	waitForSignal(t, fixture.planCloseStarted, "Plan close")
-	assertExecutionOwnership(t, fixture.session, fixture.execution, false)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, false)
 	assertCloseCounts(t, fixture)
+}
+
+func TestCloseWorkspaceJoinsClosingSessionCleanup(t *testing.T) {
+	want := errors.New("plan close failed")
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseClose) })
+	}
+	t.Cleanup(release)
+
+	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+		close(closeStarted)
+		<-releaseClose
+
+		return want
+	}))
+
+	sessionClose := make(chan error, 1)
+	go func() {
+		sessionClose <- manager.CloseSession(context.Background(), session.ID)
+	}()
+	waitForSignal(t, closeStarted, "Plan close")
+	assertWorkspaceGroupOwnership(t, manager, session.Source.Workspace, session.ID, true)
+
+	workspaceContext := newObservedDoneContext()
+	workspaceClose := make(chan error, 1)
+	go func() {
+		workspaceClose <- manager.CloseWorkspace(workspaceContext, session.Source.Workspace)
+	}()
+	waitForSignal(t, workspaceContext.observed, "workspace close wait")
+
+	release()
+	waitForExpectedError(t, sessionClose, "Session close", want)
+	waitForExpectedError(t, workspaceClose, "workspace close", want)
+	assertWorkspaceGroupOwnership(t, manager, session.Source.Workspace, session.ID, false)
+}
+
+func TestManagerCloseJoinsCommittedWorkspaceClose(t *testing.T) {
+	want := errors.New("plan close failed")
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseClose) })
+	}
+	t.Cleanup(release)
+
+	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+		close(closeStarted)
+		<-releaseClose
+
+		return want
+	}))
+
+	workspaceClose := make(chan error, 1)
+	go func() {
+		workspaceClose <- manager.CloseWorkspace(context.Background(), session.Source.Workspace)
+	}()
+	waitForSignal(t, closeStarted, "Plan close")
+
+	managerContext := newObservedDoneContext()
+	managerClose := make(chan error, 1)
+	go func() {
+		managerClose <- manager.Close(managerContext)
+	}()
+	waitForSignal(t, managerContext.observed, "Manager close wait")
+
+	release()
+	waitForExpectedError(t, workspaceClose, "workspace close", want)
+	waitForExpectedError(t, managerClose, "Manager close", want)
+	assertWorkspaceGroupOwnership(t, manager, session.Source.Workspace, session.ID, false)
+}
+
+func TestParentRetainedSessionPreservesCompletedCloseResult(t *testing.T) {
+	want := errors.New("plan close failed")
+	manager, snapshot, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+		return want
+	}))
+
+	retained := retainedSession(t, manager, snapshot.ID)
+
+	if err := manager.CloseSession(context.Background(), snapshot.ID); !errors.Is(err, want) {
+		t.Fatalf("CloseSession error = %v, want %v", err, want)
+	}
+	if err := manager.closeSession(context.Background(), snapshot.ID, retained); !errors.Is(err, want) {
+		t.Fatalf("retained Session close error = %v, want %v", err, want)
+	}
 }
 
 func TestCloseExecutionCallerCancellationRetainsSessionOwnership(t *testing.T) {
@@ -75,7 +165,7 @@ func TestCloseExecutionCallerCancellationRetainsSessionOwnership(t *testing.T) {
 	}
 
 	waitForSignal(t, fixture.runtimeCloseStarted, "runtime Session close")
-	assertExecutionOwnership(t, fixture.session, fixture.execution, true)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, true)
 
 	sessionClose := make(chan error, 1)
 	go func() {
@@ -83,7 +173,7 @@ func TestCloseExecutionCallerCancellationRetainsSessionOwnership(t *testing.T) {
 	}()
 
 	waitForSessionClosing(t, fixture.session)
-	assertExecutionOwnership(t, fixture.session, fixture.execution, true)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, true)
 	assertNoSignal(t, fixture.planCloseStarted, "Plan close before cancelled caller cleanup")
 
 	fixture.releaseClose()
@@ -93,7 +183,7 @@ func TestCloseExecutionCallerCancellationRetainsSessionOwnership(t *testing.T) {
 	}
 
 	waitForSignal(t, fixture.planCloseStarted, "Plan close")
-	assertExecutionOwnership(t, fixture.session, fixture.execution, false)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, false)
 	assertCloseCounts(t, fixture)
 }
 
@@ -113,7 +203,7 @@ func TestConcurrentCloseExecutionUsesOneCleanupOwner(t *testing.T) {
 	close(start)
 
 	waitForSignal(t, fixture.runtimeCloseStarted, "runtime Session close")
-	assertExecutionOwnership(t, fixture.session, fixture.execution, true)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, true)
 
 	sessionClose := make(chan error, 1)
 	go func() {
@@ -127,11 +217,111 @@ func TestConcurrentCloseExecutionUsesOneCleanupOwner(t *testing.T) {
 	}
 
 	waitForResult(t, sessionClose, "Session close")
-	assertExecutionOwnership(t, fixture.session, fixture.execution, false)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, false)
 	assertCloseCounts(t, fixture)
 }
 
+func TestConcurrentCloseExecutionRetainsCleanupFailureForParent(t *testing.T) {
+	want := errors.New("runtime Session close failed")
+	fixture := newCloseOwnershipFixtureWithRuntimeCloseError(t, want)
+
+	ownerResult := make(chan error, 1)
+	go func() {
+		ownerResult <- fixture.manager.CloseExecution(context.Background(), fixture.executionID)
+	}()
+	waitForSignal(t, fixture.runtimeCloseStarted, "runtime Session close")
+
+	const waiters = 4
+	waiterResults := make(chan error, waiters)
+	for range waiters {
+		ctx := newObservedDoneContext()
+		go func() {
+			waiterResults <- fixture.manager.CloseExecution(ctx, fixture.executionID)
+		}()
+		waitForSignal(t, ctx.observed, "concurrent Execution close waiter")
+	}
+
+	sessionResult := make(chan error, 1)
+	go func() {
+		sessionResult <- fixture.manager.CloseSession(context.Background(), fixture.sessionID)
+	}()
+	waitForSessionClosing(t, fixture.session)
+	assertNoSignal(t, fixture.planCloseStarted, "Plan close before Execution cleanup")
+
+	fixture.releaseClose()
+	waitForExpectedError(t, ownerResult, "owner Execution close", want)
+	for range waiters {
+		waitForExpectedError(t, waiterResults, "concurrent Execution close", want)
+	}
+	waitForExpectedError(t, sessionResult, "parent Session close", want)
+	assertCloseCounts(t, fixture)
+	if state := fixture.execution.snapshot().State; state != StateCancelled {
+		t.Fatalf("Execution state after failed cleanup = %v, want cancelled", state)
+	}
+
+	if err := fixture.manager.CloseExecution(context.Background(), fixture.executionID); err != nil {
+		t.Fatalf("late idempotent CloseExecution: %v", err)
+	}
+}
+
+func TestConcurrentCloseSessionSharesFailureAndOneOwner(t *testing.T) {
+	const waiters = 8
+
+	want := errors.New("plan close failed")
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	var closeCalls atomic.Int64
+	var closeStartOnce sync.Once
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseClose) })
+	}
+	t.Cleanup(release)
+
+	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+		closeCalls.Add(1)
+		closeStartOnce.Do(func() { close(closeStarted) })
+		<-releaseClose
+
+		return want
+	}))
+
+	results := make(chan error, waiters+1)
+	go func() {
+		results <- manager.CloseSession(context.Background(), session.ID)
+	}()
+	waitForSignal(t, closeStarted, "Plan close")
+
+	for range waiters {
+		ctx := newObservedDoneContext()
+		go func() {
+			results <- manager.CloseSession(ctx, session.ID)
+		}()
+		waitForSignal(t, ctx.observed, "concurrent close waiter")
+	}
+
+	release()
+	for range waiters + 1 {
+		if err := <-results; !errors.Is(err, want) {
+			t.Fatalf("CloseSession error = %v, want %v", err, want)
+		}
+	}
+	if got := closeCalls.Load(); got != 1 {
+		t.Fatalf("Plan close calls = %d, want 1", got)
+	}
+	if err := manager.CloseSession(context.Background(), session.ID); err != nil {
+		t.Fatalf("late idempotent CloseSession: %v", err)
+	}
+}
+
 func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
+	return newCloseOwnershipFixtureWithRuntimeCloseError(t, nil)
+}
+
+func newCloseOwnershipFixtureWithRuntimeCloseError(
+	t *testing.T,
+	runtimeCloseErr error,
+) *closeOwnershipFixture {
 	t.Helper()
 
 	fixture := &closeOwnershipFixture{
@@ -158,13 +348,11 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 			fixture.runtimeCloseStartOnce.Do(func() { close(fixture.runtimeCloseStarted) })
 			<-fixture.releaseRuntimeClose
 
-			return nil
+			return runtimeCloseErr
 		}),
 		ferret.WithPlanCloseHook(func() error {
 			fixture.planCloseCalls.Add(1)
-			select {
-			case <-fixture.execution.closeDone:
-			default:
+			if !fixture.execution.close.Finished() {
 				fixture.planClosedTooEarly.Store(true)
 			}
 
@@ -173,16 +361,14 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 			return nil
 		}),
 	)
-	created, err := manager.CreateExecution(context.Background(), session.ID, nil, ExecutionOptions{})
+	created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
 
-	manager.mu.RLock()
 	fixture.manager = manager
-	fixture.session = manager.sessions[session.ID]
-	fixture.execution = manager.executions[created.ID]
-	manager.mu.RUnlock()
+	fixture.session = retainedSession(t, manager, session.ID).session
+	fixture.execution = retainedExecution(t, manager, created.ID).execution
 	fixture.sessionID = session.ID
 	fixture.executionID = created.ID
 	t.Cleanup(fixture.releaseClose)
@@ -196,17 +382,14 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 	return fixture
 }
 
-func waitForSessionClosing(t *testing.T, session *Session) {
+func waitForSessionClosing(t *testing.T, session *session) {
 	t.Helper()
 
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 
 	for {
-		session.mu.Lock()
-		closing := session.closing
-		session.mu.Unlock()
-		if closing {
+		if session.closeStarted() {
 			return
 		}
 
@@ -219,14 +402,42 @@ func waitForSessionClosing(t *testing.T, session *Session) {
 	}
 }
 
-func assertExecutionOwnership(t *testing.T, session *Session, execution *Execution, want bool) {
+func assertExecutionOwnership(t *testing.T, manager *Manager, execution *execution, want bool) {
 	t.Helper()
 
-	session.mu.Lock()
-	owned := session.executions[execution.id] == execution
-	session.mu.Unlock()
+	manager.executions.mu.RLock()
+	group := manager.executions.bySession[execution.runtime.target.sessionID]
+	var entry *executionEntry
+	if group != nil {
+		entry = group.entries[execution.id]
+	}
+	owned := entry != nil && entry.execution == execution
+	manager.executions.mu.RUnlock()
 	if owned != want {
 		t.Fatalf("Session owns Execution = %t, want %t", owned, want)
+	}
+}
+
+func assertWorkspaceGroupOwnership(
+	t *testing.T,
+	manager *Manager,
+	workspaceID workspace.ID,
+	sessionID SessionID,
+	want bool,
+) {
+	t.Helper()
+
+	manager.sessions.mu.RLock()
+	group := manager.sessions.groups[workspaceID]
+	var owned bool
+	if group != nil {
+		group.mu.Lock()
+		owned = group.sessions[sessionID] != nil
+		group.mu.Unlock()
+	}
+	manager.sessions.mu.RUnlock()
+	if owned != want {
+		t.Fatalf("workspace group owns Session = %t, want %t", owned, want)
 	}
 }
 
@@ -273,6 +484,19 @@ func waitForResult(t *testing.T, result <-chan error, description string) {
 	case err := <-result:
 		if err != nil {
 			t.Fatalf("%s: %v", description, err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", description)
+	}
+}
+
+func waitForExpectedError(t *testing.T, result <-chan error, description string, want error) {
+	t.Helper()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, want) {
+			t.Fatalf("%s error = %v, want %v", description, err, want)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatalf("timed out waiting for %s", description)

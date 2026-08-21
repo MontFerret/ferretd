@@ -11,7 +11,7 @@ import (
 )
 
 func TestDaemonGetInfoNegotiatesAPIVersion(t *testing.T) {
-	service := newDaemonService("v1.2.3", "instance", nil)
+	service := mustNewDaemonService(t, "v1.2.3", "instance", func() {})
 
 	response, err := service.GetInfo(context.Background(), &daemonv1.GetInfoRequest{
 		ClientApi: &daemonv1.ApiVersion{Major: 1, Minor: 99},
@@ -28,7 +28,7 @@ func TestDaemonGetInfoNegotiatesAPIVersion(t *testing.T) {
 }
 
 func TestDaemonGetInfoRejectsAPIMajorMismatch(t *testing.T) {
-	service := newDaemonService("dev", "instance", nil)
+	service := mustNewDaemonService(t, "dev", "instance", func() {})
 	clientAPI := &daemonv1.ApiVersion{Major: 2, Minor: 3}
 
 	_, err := service.GetInfo(context.Background(), &daemonv1.GetInfoRequest{ClientApi: clientAPI})
@@ -50,7 +50,7 @@ func TestDaemonGetInfoRejectsAPIMajorMismatch(t *testing.T) {
 }
 
 func TestDaemonGetInfoRequiresClientVersion(t *testing.T) {
-	service := newDaemonService("dev", "instance", nil)
+	service := mustNewDaemonService(t, "dev", "instance", func() {})
 
 	_, err := service.GetInfo(context.Background(), &daemonv1.GetInfoRequest{})
 	if status.Code(err) != codes.InvalidArgument {
@@ -60,7 +60,7 @@ func TestDaemonGetInfoRequiresClientVersion(t *testing.T) {
 
 func TestDaemonShutdownIsIdempotent(t *testing.T) {
 	calls := 0
-	service := newDaemonService("dev", "instance", func() {
+	service := mustNewDaemonService(t, "dev", "instance", func() {
 		calls++
 	})
 

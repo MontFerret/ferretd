@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -31,8 +32,8 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 	if _, err := manager.Open(ctx, root); err != nil {
 		t.Fatal(err)
 	}
-	service := New(Options{Workspaces: manager})
-	uri, err := source.PathToURI(path)
+	service := mustNewService(t, manager, newTestDefaultFunctions(t), Options{})
+	uri, err := source.URIFromPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +43,7 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 		t.Fatalf("workspace diagnostics = %+v, %v", report, err)
 	}
 
-	if err := service.OpenDocument(ctx, uri, "ferret", 1, "RETURN 1"); err != nil {
+	if err := service.OpenDocument(ctx, uri, 1, "RETURN 1"); err != nil {
 		t.Fatal(err)
 	}
 	report, err = service.Diagnostics(ctx, uri)
@@ -97,7 +98,10 @@ RETURN [outer(shared), shared]`
 	}
 
 	hover, err := service.Hover(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "outer(param)")))
-	if err != nil || hover == nil || hover.Signature == nil || hover.Signature.Label != "outer(param)" {
+	if err != nil || hover == nil || !reflect.DeepEqual(hover.Signature, &Signature{
+		Label:      "outer(param)",
+		Parameters: []string{"param"},
+	}) {
 		t.Fatalf("UDF hover = %+v, %v", hover, err)
 	}
 }
@@ -179,7 +183,10 @@ RETURN add(value, 2)`
 	if err != nil || signature == nil {
 		t.Fatalf("signature = %+v, %v", signature, err)
 	}
-	if len(signature.Signatures) != 1 || signature.Signatures[0].Label != "add(left, right)" || signature.ActiveParameter != 1 {
+	if !reflect.DeepEqual(signature.Signatures, []Signature{{
+		Label:      "add(left, right)",
+		Parameters: []string{"left", "right"},
+	}}) || signature.ActiveSignature != 0 || signature.ActiveParameter != 1 {
 		t.Fatalf("signature = %+v", signature)
 	}
 
@@ -244,14 +251,11 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuredParams := runtime.Params{"Configured": runtime.Int(1)}
-	service := New(Options{
-		Functions: functions,
-		Params:    configuredParams,
-	})
+	service := mustNewService(t, workspace.New(), functions, Options{Parameters: configuredParams})
 	configuredParams["AddedLater"] = runtime.Int(2)
 	query := "RETURN CuStOm" + runtime.NamespaceSeparator + "DoThing(@Known)"
 	uri := documentURI(t, "registry.fql")
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, query); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
 		t.Fatal(err)
 	}
 	mapper := source.NewMapper(query)
@@ -277,24 +281,29 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 	}
 
 	signature, err := service.SignatureHelp(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "@Known")))
-	if err != nil || signature == nil || len(signature.Signatures) != 3 ||
-		signature.Signatures[0].Label != "CuStOm::DoThing(arg1)" ||
-		signature.Signatures[1].Label != "CuStOm::DoThing(arg1, arg2)" ||
-		!signature.Signatures[2].Variadic {
+	wantSignatures := []Signature{
+		{Label: "CuStOm::DoThing(arg1)", Parameters: []string{"arg1"}},
+		{Label: "CuStOm::DoThing(arg1, arg2)", Parameters: []string{"arg1", "arg2"}},
+		{Label: "CuStOm::DoThing(arg1...)", Parameters: []string{"arg1..."}, Variadic: true},
+	}
+	if err != nil || signature == nil || !reflect.DeepEqual(signature.Signatures, wantSignatures) ||
+		signature.ActiveSignature != 0 || signature.ActiveParameter != 0 {
 		t.Fatalf("registered signature = %+v, %v", signature, err)
 	}
 
 	hover, err := service.Hover(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "DoThing")))
-	if err != nil || hover == nil || len(hover.RegisteredSignatures) != 3 ||
-		hover.RegisteredSignatures[0].Label != "CuStOm::DoThing(arg1)" ||
-		hover.RegisteredSignatures[1].Label != "CuStOm::DoThing(arg1, arg2)" ||
-		!hover.RegisteredSignatures[2].Variadic {
+	if err != nil || hover == nil || !reflect.DeepEqual(hover.RegisteredSignatures, wantSignatures) {
 		t.Fatalf("registered hover = %+v, %v", hover, err)
 	}
 
-	paramService := New(Options{Functions: functions, Params: runtime.Params{"Configured": runtime.Int(1)}})
+	paramService := mustNewService(
+		t,
+		workspace.New(),
+		functions,
+		Options{Parameters: runtime.Params{"Configured": runtime.Int(1)}},
+	)
 	paramURI := documentURI(t, "params.fql")
-	if err := paramService.OpenDocument(context.Background(), paramURI, "ferret", 1, "RETURN @"); err != nil {
+	if err := paramService.OpenDocument(context.Background(), paramURI, 1, "RETURN @"); err != nil {
 		t.Fatal(err)
 	}
 	params, err := paramService.Completion(context.Background(), paramURI, source.Position{Character: 8})
@@ -504,12 +513,12 @@ func TestSemanticTokensSplitMultilineStringsAndComments(t *testing.T) {
 	}
 }
 
-func openLanguageDocument(t *testing.T, text string) (*Service, string) {
+func openLanguageDocument(t *testing.T, text string) (*Service, source.URI) {
 	t.Helper()
 
-	service := New(Options{})
+	service := newTestService(t, Options{})
 	uri := documentURI(t, "features.fql")
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, text); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, text); err != nil {
 		t.Fatal(err)
 	}
 

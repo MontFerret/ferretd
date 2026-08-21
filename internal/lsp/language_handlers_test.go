@@ -13,17 +13,17 @@ import (
 )
 
 func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
-	service := language.New(language.Options{})
-	server := New(service)
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
 	uri := documentURI(t, "handlers.fql")
 	query := "LET value = 1\nFUNC add(p) => value + p\nRETURN add(value)"
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, query); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
 		t.Fatal(err)
 	}
 	mapper := source.NewMapper(query)
 
 	hover, err := server.hover(nil, &protocol.HoverParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
 		Position:     toProtocolPosition(mapper.OffsetToPosition(19)),
 	}})
 	if err != nil || hover == nil {
@@ -36,7 +36,7 @@ func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
 	}
 
 	definition, err := server.definition(nil, &protocol.DefinitionParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
 		Position:     toProtocolPosition(mapper.OffsetToPosition(strings.LastIndex(query, "value"))),
 	}})
 	if err != nil || definition == nil {
@@ -44,14 +44,14 @@ func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
 	}
 
 	tokens, err := server.semanticTokensFull(nil, &protocol.SemanticTokensParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
 	})
 	if err != nil || tokens == nil || len(tokens.Data) == 0 || len(tokens.Data)%5 != 0 {
 		t.Fatalf("semantic tokens = %+v, %v", tokens, err)
 	}
 
 	edits, err := server.formatting(nil, &protocol.DocumentFormattingParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
 		Options: protocol.FormattingOptions{
 			protocol.FormattingOptionTabSize:      protocol.Integer(2),
 			protocol.FormattingOptionInsertSpaces: false,
@@ -65,23 +65,23 @@ func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
 func TestInitializationRootsPrecedenceAndDeduplication(t *testing.T) {
 	first := t.TempDir()
 	second := t.TempDir()
-	firstURI, err := source.PathToURI(first)
+	firstURI, err := source.URIFromPath(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondURI, err := source.PathToURI(second)
+	secondURI, err := source.URIFromPath(second)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	rootURI := protocol.DocumentUri(secondURI)
+	rootURI := protocol.DocumentUri(secondURI.String())
 	rootPath := second
 	roots, err := initializationRoots(&protocol.InitializeParams{
 		RootURI:  &rootURI,
 		RootPath: &rootPath,
 		WorkspaceFolders: []protocol.WorkspaceFolder{
-			{URI: firstURI},
-			{URI: firstURI},
+			{URI: firstURI.String()},
+			{URI: firstURI.String()},
 		},
 	})
 	if err != nil {
@@ -220,16 +220,16 @@ func TestCompletionWordKindMapping(t *testing.T) {
 }
 
 func TestCompletionPreservesCanonicalLowercaseText(t *testing.T) {
-	service := language.New(language.Options{})
-	server := New(service)
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
 	uri := documentURI(t, "completion.fql")
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "re"); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, "re"); err != nil {
 		t.Fatal(err)
 	}
 
 	value, err := server.completion(nil, &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
 			Position:     protocol.Position{Character: 2},
 		},
 	})

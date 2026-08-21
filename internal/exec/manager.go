@@ -1,12 +1,10 @@
+// Package exec coordinates daemon-owned Ferret Plans and one-shot Executions.
 package exec
 
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
-
-	"github.com/MontFerret/ferret/v2/pkg/runtime"
 
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/source"
@@ -14,51 +12,35 @@ import (
 )
 
 type (
-	// Manager owns all process-local daemon Sessions and Executions.
+	// Manager orchestrates process-local daemon Sessions and Executions.
 	Manager struct {
-		mu sync.RWMutex
+		workspaces *workspace.Manager
+		sessions   *sessionRegistry
+		executions *executionRegistry
 
-		workspaces        *workspace.Manager
-		sessions          map[SessionID]*Session
-		closingSessions   map[SessionID]*Session
-		executions        map[ExecutionID]*Execution
-		closingExecutions map[ExecutionID]*Execution
-		closeHooks        []SessionCloseHook
-		groups            map[workspace.ID]*workspaceGroup
-		closed            bool
+		hooksMu    sync.RWMutex
+		closeHooks []SessionCloseHook
 	}
 
 	// SessionCloseHook releases sibling resources parented by an executable Session.
 	SessionCloseHook func(context.Context, SessionID) error
-
-	workspaceGroup struct {
-		closing      bool
-		closeStarted bool
-		closeDone    chan struct{}
-		closeErr     error
-		creating     int
-		createDone   chan struct{}
-		sessions     map[SessionID]*Session
-	}
 )
 
-// New creates an execution manager parented by the existing workspace manager.
-func New(workspaces *workspace.Manager) *Manager {
+// New creates an execution manager that borrows the existing workspace manager.
+// It returns an error when the workspace manager is nil.
+func New(workspaces *workspace.Manager) (*Manager, error) {
 	if workspaces == nil {
-		workspaces = workspace.New()
+		return nil, errNilWorkspaceManager
 	}
 
 	result := &Manager{
-		workspaces:        workspaces,
-		sessions:          make(map[SessionID]*Session),
-		closingSessions:   make(map[SessionID]*Session),
-		executions:        make(map[ExecutionID]*Execution),
-		closingExecutions: make(map[ExecutionID]*Execution),
-		groups:            make(map[workspace.ID]*workspaceGroup),
+		workspaces: workspaces,
+		sessions:   newSessionRegistry(),
+		executions: newExecutionRegistry(),
 	}
 	workspaces.RegisterCloseHook(result.CloseWorkspace)
 
-	return result
+	return result, nil
 }
 
 // RegisterSessionCloseHook adds a Session child-resource closer.
@@ -68,9 +50,9 @@ func (m *Manager) RegisterSessionCloseHook(hook SessionCloseHook) {
 		return
 	}
 
-	m.mu.Lock()
+	m.hooksMu.Lock()
 	m.closeHooks = append(m.closeHooks, hook)
-	m.mu.Unlock()
+	m.hooksMu.Unlock()
 }
 
 // CreateSession compiles one immutable workspace document into a reusable Plan.
@@ -83,41 +65,57 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, err
 	}
 
-	if err := m.beginSessionCreate(workspaceID); err != nil {
+	creation, err := m.sessions.beginCreate(workspaceID)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	defer m.sessions.finishCreate(creation)
+
+	created, err := m.prepareSession(ctx, workspaceID, relativePath)
+	if err != nil {
 		return SessionSnapshot{}, err
 	}
 
-	defer m.finishSessionCreate(workspaceID)
+	if err := m.sessions.commitCreate(ctx, creation, created); err != nil {
+		return SessionSnapshot{}, errors.Join(err, created.closeUnpublished())
+	}
 
+	return created.snapshot(), nil
+}
+
+func (m *Manager) prepareSession(
+	ctx context.Context,
+	workspaceID workspace.ID,
+	relativePath string,
+) (*session, error) {
 	parent, err := m.workspaces.Get(ctx, workspaceID)
 	if err != nil {
-		return SessionSnapshot{}, err
+		return nil, err
 	}
+
 	document, err := parent.RefreshDocument(ctx, relativePath)
 	if err != nil {
-		return SessionSnapshot{}, err
+		return nil, err
 	}
 
 	compilation, err := parent.CompileDocument(ctx, document)
 	if err != nil {
-		if compilation.Plan != nil {
-			err = errors.Join(err, compilation.Plan.Close())
-		}
+		err = errors.Join(err, compilation.Close())
 
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, workspace.ErrClosed) || errors.Is(err, workspace.ErrDocumentNotFound) {
-			return SessionSnapshot{}, err
+			return nil, err
 		}
 
-		diagnostics := diagnostic.FromError(string(compilation.Source.URI), document.Content(), err)
+		diagnostics := diagnostic.FromError(compilation.Source.URI, document.Content(), err)
 		if errors.Is(err, workspace.ErrDocumentUnavailable) {
 			mapper := source.NewMapper(document.Content())
 			for _, item := range document.Diagnostics() {
-				diagnostics = append(diagnostics, diagnostic.Convert(string(compilation.Source.URI), mapper, item))
+				diagnostics = append(diagnostics, diagnostic.Convert(compilation.Source.URI, mapper, item))
 			}
 		}
 
-		return SessionSnapshot{}, &CompilationError{
+		return nil, &CompilationError{
 			Source:      compilation.Source,
 			Diagnostics: diagnostics,
 			Cause:       err,
@@ -126,30 +124,16 @@ func (m *Manager) CreateSession(
 
 	id, err := newSessionID()
 	if err != nil {
-		return SessionSnapshot{}, errors.Join(err, compilation.Plan.Close())
+		return nil, errors.Join(err, compilation.Close())
 	}
 
-	created := newSession(id, parent, compilation, document.Content())
-	m.mu.Lock()
-	group := m.groups[workspaceID]
-
-	if m.closed || group == nil || group.closing {
-		m.mu.Unlock()
-
-		return SessionSnapshot{}, errors.Join(ErrWorkspaceClosed, compilation.Plan.Close())
+	text := document.Content()
+	sourceSnapshot := compilation.Source
+	compileDebug := func(ctx context.Context) (workspace.Compilation, error) {
+		return parent.CompileDebugSnapshot(ctx, sourceSnapshot, text)
 	}
 
-	if err := ctx.Err(); err != nil {
-		m.mu.Unlock()
-
-		return SessionSnapshot{}, errors.Join(err, compilation.Plan.Close())
-	}
-
-	m.sessions[id] = created
-	group.sessions[id] = created
-	m.mu.Unlock()
-
-	return created.Snapshot(), nil
+	return newSession(id, compilation, text, compileDebug), nil
 }
 
 // GetSession returns an immutable Session snapshot.
@@ -158,44 +142,46 @@ func (m *Manager) GetSession(ctx context.Context, id SessionID) (SessionSnapshot
 		return SessionSnapshot{}, err
 	}
 
-	m.mu.RLock()
-	session, ok := m.sessions[id]
-	m.mu.RUnlock()
-	if !ok {
+	session := m.sessions.active(id)
+	if session == nil {
 		return SessionSnapshot{}, ErrSessionNotFound
 	}
 
-	return session.Snapshot(), nil
+	return session.snapshot(), nil
 }
 
 // CloseSession idempotently removes a Session and all child resources.
 func (m *Manager) CloseSession(ctx context.Context, id SessionID) error {
-	session, executions, owner := m.detachSession(id)
-	if session == nil {
+	return m.closeSession(ctx, id, nil)
+}
+
+func (m *Manager) closeSession(ctx context.Context, id SessionID, retained *sessionEntry) error {
+	entry, owner := m.sessions.beginClose(id, retained)
+	if entry == nil {
 		return nil
 	}
 
 	if owner {
-		go m.finishSessionClose(session, executions)
+		go m.finishSessionClose(entry)
 	}
 
-	return waitForDone(ctx, session.closeDone, session.closeResult)
+	return entry.session.waitClose(ctx)
 }
 
 // CreateExecution creates a CREATED one-shot invocation resource.
 func (m *Manager) CreateExecution(
 	ctx context.Context,
 	sessionID SessionID,
-	parameters map[string]any,
-	options ExecutionOptions,
+	parameters Parameters,
+	options RuntimeOptions,
 ) (ExecutionSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return ExecutionSnapshot{}, err
 	}
 
-	params, err := runtime.NewParamsFrom(parameters)
+	input, err := newRuntimeInput(parameters, options)
 	if err != nil {
-		return ExecutionSnapshot{}, invalidParametersError(err)
+		return ExecutionSnapshot{}, err
 	}
 
 	id, err := newExecutionID()
@@ -203,36 +189,18 @@ func (m *Manager) CreateExecution(
 		return ExecutionSnapshot{}, err
 	}
 
-	options.OutputContentType = strings.TrimSpace(options.OutputContentType)
-	if options.OutputContentType == "" {
-		options.OutputContentType = "application/json"
-	}
-
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
-
-		return ExecutionSnapshot{}, ErrManagerClosed
-	}
-
-	session, ok := m.sessions[sessionID]
-	if !ok {
-		m.mu.Unlock()
-
-		return ExecutionSnapshot{}, ErrSessionNotFound
-	}
-
-	execution := newExecution(id, session, params, parameters, options)
-	if err := session.addExecution(execution); err != nil {
-		m.mu.Unlock()
-
+	creation, err := m.sessions.beginRuntimeCreate(sessionID)
+	if err != nil {
 		return ExecutionSnapshot{}, err
 	}
+	defer creation.finish()
 
-	m.executions[id] = execution
-	m.mu.Unlock()
+	parent := creation.session()
+	runtime := newExecutionRuntime(parent.runtimeTarget(), input)
+	execution := newExecution(id, runtime)
+	m.executions.add(execution)
 
-	return execution.Snapshot(), nil
+	return execution.snapshot(), nil
 }
 
 // RunExecution starts a one-shot invocation and returns its RUNNING snapshot.
@@ -242,7 +210,7 @@ func (m *Manager) RunExecution(ctx context.Context, id ExecutionID) (ExecutionSn
 		return ExecutionSnapshot{}, err
 	}
 
-	return execution.Start(ctx)
+	return execution.start(ctx)
 }
 
 // GetExecution returns an immutable Execution snapshot.
@@ -252,7 +220,7 @@ func (m *Manager) GetExecution(ctx context.Context, id ExecutionID) (ExecutionSn
 		return ExecutionSnapshot{}, err
 	}
 
-	return execution.Snapshot(), nil
+	return execution.snapshot(), nil
 }
 
 // CancelExecution idempotently requests cancellation of an active Execution.
@@ -262,21 +230,21 @@ func (m *Manager) CancelExecution(ctx context.Context, id ExecutionID) (Executio
 		return ExecutionSnapshot{}, err
 	}
 
-	return execution.Cancel(), nil
+	return execution.cancel(), nil
 }
 
 // CloseExecution idempotently removes and settles an Execution.
 func (m *Manager) CloseExecution(ctx context.Context, id ExecutionID) error {
-	execution := m.detachExecution(id)
-	if execution == nil {
+	closing := m.executions.beginClose(id)
+	if closing.entry == nil {
 		return nil
 	}
 
-	if execution.beginClose() {
-		go m.finishExecutionClose(execution)
+	if closing.owner {
+		go m.finishExecutionClose(closing.entry)
 	}
 
-	return waitForDone(ctx, execution.closeDone, func() error { return nil })
+	return closing.entry.execution.close.Wait(ctx)
 }
 
 // WatchExecution subscribes to current and future lifecycle events.
@@ -286,271 +254,105 @@ func (m *Manager) WatchExecution(ctx context.Context, id ExecutionID) (Subscript
 		return Subscription{}, err
 	}
 
-	return execution.Subscribe(), nil
+	return execution.subscribe(), nil
 }
 
 // CloseWorkspace closes all Sessions parented by one workspace.
 func (m *Manager) CloseWorkspace(ctx context.Context, id workspace.ID) error {
-	m.mu.Lock()
-	group := m.groups[id]
-
-	if group == nil {
-		group = &workspaceGroup{sessions: make(map[SessionID]*Session)}
-		m.groups[id] = group
+	closing := m.sessions.beginWorkspaceClose(id)
+	if closing.owner {
+		go m.finishWorkspaceClose(closing)
 	}
 
-	group.closing = true
-	owner := !group.closeStarted
-	if owner {
-		group.closeStarted = true
-		group.closeDone = make(chan struct{})
-	}
-
-	done := group.closeDone
-	m.mu.Unlock()
-
-	if owner {
-		go m.finishWorkspaceClose(id, group)
-	}
-
-	return waitForDone(ctx, done, func() error { return group.closeErr })
+	return closing.group.waitClose(ctx)
 }
 
 // Close prevents new resources and settles all current Sessions and Executions.
 func (m *Manager) Close(ctx context.Context) error {
-	m.mu.Lock()
-	if !m.closed {
-		m.closed = true
+	groups := m.sessions.beginShutdown()
+	for _, closing := range groups {
+		if closing.owner {
+			go m.finishWorkspaceClose(closing)
+		}
 	}
-
-	workspaceIDs := make([]workspace.ID, 0, len(m.groups))
-	for id := range m.groups {
-		workspaceIDs = append(workspaceIDs, id)
-	}
-	m.mu.Unlock()
 
 	var result error
-	for _, id := range workspaceIDs {
-		if err := m.CloseWorkspace(ctx, id); err != nil {
-			result = errors.Join(result, err)
-		}
+	for _, closing := range groups {
+		result = errors.Join(result, closing.group.waitClose(ctx))
 	}
 
 	return result
 }
 
-func (m *Manager) finishWorkspaceClose(id workspace.ID, group *workspaceGroup) {
-	m.mu.RLock()
-	creating := group.creating
-	createDone := group.createDone
-	m.mu.RUnlock()
-
-	if creating > 0 {
-		_ = waitForDone(context.Background(), createDone, func() error { return nil })
-	}
-
-	m.mu.RLock()
-	ids := make([]SessionID, 0, len(group.sessions))
-	for sessionID := range group.sessions {
-		ids = append(ids, sessionID)
-	}
-	m.mu.RUnlock()
+func (m *Manager) finishWorkspaceClose(closing workspaceClose) {
+	closing.group.waitForCreates()
 
 	var result error
-	for _, sessionID := range ids {
-		result = errors.Join(result, m.CloseSession(context.Background(), sessionID))
+	for _, entry := range closing.group.retainedSessions() {
+		result = errors.Join(
+			result,
+			m.closeSession(context.Background(), entry.session.id, entry),
+		)
 	}
 
-	group.closeErr = result
-	close(group.closeDone)
-
-	m.mu.Lock()
-	if m.groups[id] == group {
-		delete(m.groups, id)
-	}
-	m.mu.Unlock()
+	m.sessions.finishWorkspaceClose(closing, result)
 }
 
-func (m *Manager) beginSessionCreate(id workspace.ID) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Manager) finishSessionClose(entry *sessionEntry) {
+	session := entry.session
+	session.waitForRuntimeCreates()
 
-	if m.closed {
-		return ErrManagerClosed
-	}
-
-	group := m.groups[id]
-	if group == nil {
-		group = &workspaceGroup{sessions: make(map[SessionID]*Session)}
-		m.groups[id] = group
-	}
-
-	if group.closing {
-		return ErrWorkspaceClosed
-	}
-
-	if group.creating == 0 {
-		group.createDone = make(chan struct{})
-	}
-
-	group.creating++
-
-	return nil
-}
-
-func (m *Manager) finishSessionCreate(id workspace.ID) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	group := m.groups[id]
-	if group == nil || group.creating == 0 {
-		return
-	}
-
-	group.creating--
-	if group.creating == 0 {
-		close(group.createDone)
-
-		group.createDone = nil
-
-		if !group.closing && len(group.sessions) == 0 {
-			delete(m.groups, id)
+	children := m.executions.beginSessionClose(session.id)
+	for _, closing := range children {
+		if closing.owner {
+			go m.finishExecutionClose(closing.entry)
 		}
 	}
-}
 
-func (m *Manager) detachSession(id SessionID) (*Session, []*Execution, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if session, ok := m.closingSessions[id]; ok {
-		return session, nil, false
-	}
-
-	session, ok := m.sessions[id]
-	if !ok {
-		return nil, nil, false
-	}
-	executions, owner := session.beginClose()
-	if !owner {
-		return session, nil, false
-	}
-
-	delete(m.sessions, id)
-
-	if group := m.groups[session.source.Workspace]; group != nil {
-		delete(group.sessions, id)
-	}
-
-	m.closingSessions[id] = session
-
-	return session, executions, true
-}
-
-func (m *Manager) finishSessionClose(session *Session, executions []*Execution) {
 	var result error
-	for _, execution := range executions {
-		m.detachKnownExecution(execution)
-
-		if execution.beginClose() {
-			go m.finishExecutionClose(execution)
-		}
-
-		if err := waitForDone(context.Background(), execution.closeDone, func() error { return nil }); err != nil {
-			result = errors.Join(result, err)
-		}
+	for _, closing := range children {
+		result = errors.Join(result, closing.entry.execution.close.Wait(context.Background()))
 	}
 
-	m.mu.RLock()
-	hooks := append([]SessionCloseHook(nil), m.closeHooks...)
-	m.mu.RUnlock()
-	for _, hook := range hooks {
-		if err := hook(context.Background(), session.id); err != nil {
-			result = errors.Join(result, err)
-		}
+	for _, hook := range m.sessionCloseHooks() {
+		result = errors.Join(result, hook(context.Background(), session.id))
 	}
 
 	plan, debugPlan := session.releasePlans()
-
 	if plan != nil {
 		result = errors.Join(result, plan.Close())
 	}
+
 	if debugPlan != nil {
 		result = errors.Join(result, debugPlan.Close())
 	}
 
 	session.finishClose(result)
-	m.mu.Lock()
-	delete(m.closingSessions, session.id)
-	m.mu.Unlock()
+	m.sessions.finishClose(entry)
 }
 
-func (m *Manager) execution(ctx context.Context, id ExecutionID) (*Execution, error) {
+func (m *Manager) finishExecutionClose(entry *executionEntry) {
+	closeErr := entry.execution.settleClose()
+	entry.execution.completeClose(closeErr)
+	m.executions.finishClose(entry)
+}
+
+func (m *Manager) execution(ctx context.Context, id ExecutionID) (*execution, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	m.mu.RLock()
-	execution, ok := m.executions[id]
-	m.mu.RUnlock()
-
-	if !ok {
+	execution := m.executions.active(id)
+	if execution == nil {
 		return nil, ErrExecutionNotFound
 	}
 
 	return execution, nil
 }
 
-func (m *Manager) detachExecution(id ExecutionID) *Execution {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Manager) sessionCloseHooks() []SessionCloseHook {
+	m.hooksMu.RLock()
+	defer m.hooksMu.RUnlock()
 
-	if execution, ok := m.closingExecutions[id]; ok {
-		return execution
-	}
-
-	execution, ok := m.executions[id]
-	if !ok {
-		return nil
-	}
-
-	m.detachKnownExecutionLocked(execution)
-
-	return execution
-}
-
-func (m *Manager) detachKnownExecution(execution *Execution) {
-	m.mu.Lock()
-	if m.executions[execution.id] == execution {
-		m.detachKnownExecutionLocked(execution)
-	}
-	m.mu.Unlock()
-}
-
-func (m *Manager) detachKnownExecutionLocked(execution *Execution) {
-	// Public visibility ends immediately, while Session ownership lasts through cleanup.
-	delete(m.executions, execution.id)
-	m.closingExecutions[execution.id] = execution
-}
-
-func (m *Manager) finishExecutionClose(execution *Execution) {
-	execution.settleClose()
-
-	m.mu.Lock()
-	session := m.sessions[execution.session]
-	if session == nil {
-		session = m.closingSessions[execution.session]
-	}
-
-	if session != nil {
-		session.removeExecution(execution)
-	}
-
-	m.mu.Unlock()
-
-	execution.completeClose()
-
-	m.mu.Lock()
-	delete(m.closingExecutions, execution.id)
-	m.mu.Unlock()
+	return append([]SessionCloseHook(nil), m.closeHooks...)
 }

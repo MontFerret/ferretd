@@ -15,7 +15,7 @@ import (
 // be treated as read-only by visitors.
 type Document struct {
 	file        File
-	revision    uint64
+	revision    Revision
 	loaded      bool
 	source      *ferretsource.Source
 	syntax      *parser.Parser
@@ -75,7 +75,7 @@ func newUnreadableDocument(file File, err error) Document {
 	}
 }
 
-func (d Document) withRevision(revision uint64) Document {
+func (d Document) withRevision(revision Revision) Document {
 	d.revision = revision
 
 	return d
@@ -87,7 +87,7 @@ func (d Document) File() File {
 }
 
 // Revision returns the daemon-owned source revision.
-func (d Document) Revision() uint64 {
+func (d Document) Revision() Revision {
 	return d.revision
 }
 

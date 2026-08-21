@@ -3,8 +3,10 @@ package debug
 import "errors"
 
 var (
-	// ErrManagerClosed reports a debug manager that is shutting down.
-	ErrManagerClosed = errors.New("debug manager closed")
+	errNilExecutionManager = errors.New("debug: nil execution manager")
+
+	// ErrClosed reports a debug service that is shutting down.
+	ErrClosed = errors.New("debug service closed")
 	// ErrSessionNotFound reports an unknown daemon debug Session ID.
 	ErrSessionNotFound = errors.New("debug session not found")
 	// ErrSessionRunning reports a debug Session with an active command.

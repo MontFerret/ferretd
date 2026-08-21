@@ -3,7 +3,6 @@ package exec
 import (
 	"context"
 	"errors"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,7 +24,7 @@ func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		input,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -70,7 +69,7 @@ func TestConcurrentExecutionsFromOneSessionAreIsolated(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			map[string]any{"value": value},
-			ExecutionOptions{},
+			RuntimeOptions{},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution(%d): %v", value, err)
@@ -112,7 +111,7 @@ func TestRepeatedExecutionsDoNotRecompileSessionPlan(t *testing.T) {
 			context.Background(),
 			session.ID,
 			map[string]any{"value": value},
-			ExecutionOptions{},
+			RuntimeOptions{},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -130,14 +129,12 @@ func TestRepeatedExecutionsDoNotRecompileSessionPlan(t *testing.T) {
 func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 	t.Run("session creation", func(t *testing.T) {
 		manager, session, _ := newHookedManager(t, "RETURN 1")
-		created, err := manager.CreateExecution(context.Background(), session.ID, nil, ExecutionOptions{})
+		created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
 
-		manager.mu.RLock()
-		plan := manager.sessions[session.ID].plan
-		manager.mu.RUnlock()
+		plan := retainedSession(t, manager, session.ID).session.plan
 		if err := plan.Close(); err != nil {
 			t.Fatalf("Plan.Close: %v", err)
 		}
@@ -152,7 +149,7 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			map[string]any{"zero": 0},
-			ExecutionOptions{},
+			RuntimeOptions{},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -176,7 +173,7 @@ RETURN [first, second, third]`)
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			ExecutionOptions{},
+			RuntimeOptions{},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -207,7 +204,7 @@ RETURN [first, second, third]`)
 		manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithSessionCloseHook(func() error {
 			return want
 		}))
-		created, err := manager.CreateExecution(context.Background(), session.ID, nil, ExecutionOptions{})
+		created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
@@ -227,7 +224,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			ExecutionOptions{},
+			RuntimeOptions{},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -251,7 +248,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			ExecutionOptions{},
+			RuntimeOptions{},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -294,7 +291,7 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -346,7 +343,7 @@ func TestCancellationRacingSuccessNeverOverwritesTerminalState(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			ExecutionOptions{},
+			RuntimeOptions{},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -384,7 +381,7 @@ func TestSessionAndWorkspaceCloseCascadeExecutions(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -422,7 +419,7 @@ func TestCloseExecutionCancelsRunningAndEndsWatch(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -459,7 +456,7 @@ func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -486,8 +483,8 @@ func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 		context.Background(),
 		fixture.workspace.ID(),
 		"query.fql",
-	); !errors.Is(err, ErrManagerClosed) {
-		t.Fatalf("CreateSession after Close error = %v, want ErrManagerClosed", err)
+	); !errors.Is(err, ErrClosed) {
+		t.Fatalf("CreateSession after Close error = %v, want ErrClosed", err)
 	}
 }
 
@@ -497,7 +494,7 @@ func TestInvalidParametersAndUnknownCloseContracts(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		map[string]any{"invalid": make(chan int)},
-		ExecutionOptions{},
+		RuntimeOptions{},
 	); !errors.Is(err, ErrInvalidParameters) {
 		t.Fatalf("CreateExecution error = %v, want ErrInvalidParameters", err)
 	}
@@ -532,20 +529,5 @@ func assertFailure(t *testing.T, terminal ExecutionSnapshot, category FailureCat
 	}
 	if (terminal.Output != nil) != wantOutput {
 		t.Fatalf("output = %+v, want present %t", terminal.Output, wantOutput)
-	}
-}
-
-func TestExecutionSnapshotClone(t *testing.T) {
-	value := ExecutionSnapshot{
-		Parameters: map[string]any{"nested": []any{map[string]any{"key": "value"}}},
-		Output:     &Output{Content: []byte("one")},
-		Failure:    &Failure{Diagnostics: nil},
-	}
-	cloned := cloneExecutionSnapshot(value)
-	cloned.Parameters["nested"].([]any)[0].(map[string]any)["key"] = "changed"
-	cloned.Output.Content[0] = 't'
-
-	if reflect.DeepEqual(value, cloned) {
-		t.Fatal("clone shares mutable state")
 	}
 }

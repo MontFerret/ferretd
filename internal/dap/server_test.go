@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,13 +29,48 @@ type testClient struct {
 	sequence int
 }
 
+func mustNewServer(t testing.TB, input io.Reader, output io.Writer) *Server {
+	t.Helper()
+
+	server, err := New(input, output)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	return server
+}
+
+func TestNewRequiresStreams(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  io.Reader
+		output io.Writer
+		want   error
+	}{
+		{name: "nil input", output: io.Discard, want: errNilInput},
+		{name: "nil output", input: strings.NewReader(""), want: errNilOutput},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, err := New(test.input, test.output)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("New error = %v, want %v", err, test.want)
+			}
+			if server != nil {
+				t.Fatalf("New server = %v, want nil", server)
+			}
+		})
+	}
+}
+
 func newTestClient(t *testing.T) *testClient {
 	t.Helper()
 
 	serverInput, clientInput := io.Pipe()
 	clientOutput, serverOutput := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
-	server := New(serverInput, serverOutput)
+	server := mustNewServer(t, serverInput, serverOutput)
 	done := make(chan error, 1)
 	go func() {
 		err := server.Run(ctx)
@@ -167,8 +203,9 @@ func TestDAPContextCancellationUnblocksIdleStream(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
+	server := mustNewServer(t, serverInput, serverOutput)
 	go func() {
-		done <- New(serverInput, serverOutput).Run(ctx)
+		done <- server.Run(ctx)
 	}()
 
 	cancel()
@@ -308,10 +345,11 @@ FUNC outer(p) {
   RETURN result
 }
 RETURN outer(@input) + box.value`)
-	programURI, err := source.PathToURI(program)
+	typedProgramURI, err := source.URIFromPath(program)
 	if err != nil {
 		t.Fatal(err)
 	}
+	programURI := typedProgramURI.String()
 
 	client := newTestClient(t)
 	initialize := client.request("initialize")

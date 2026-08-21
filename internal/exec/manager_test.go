@@ -14,6 +14,96 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
+func TestNewRequiresWorkspaceManager(t *testing.T) {
+	manager, err := New(nil)
+	if manager != nil {
+		t.Fatal("New returned a manager for a nil workspace dependency")
+	}
+	if !errors.Is(err, errNilWorkspaceManager) {
+		t.Fatalf("New error = %v, want %v", err, errNilWorkspaceManager)
+	}
+}
+
+func TestManagerDoesNotOwnWorkspaceManager(t *testing.T) {
+	workspaces := workspace.New()
+	opened, err := workspaces.Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = workspaces.Clear(context.Background()) })
+
+	manager, err := New(workspaces)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if manager.workspaces != workspaces {
+		t.Fatal("New did not retain the supplied workspace manager")
+	}
+
+	if err := manager.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := workspaces.Get(context.Background(), opened.ID()); err != nil {
+		t.Fatalf("workspace after execution manager Close: %v", err)
+	}
+}
+
+func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
+	ctx := context.Background()
+	roots := [2]string{t.TempDir(), t.TempDir()}
+	workspaces := workspace.New()
+	manager := mustNewManager(t, workspaces)
+	// Register after TempDir so Windows releases rooted filesystem handles before directory cleanup.
+	t.Cleanup(func() {
+		_ = manager.Close(context.Background())
+		_ = workspaces.Clear(context.Background())
+	})
+
+	type resources struct {
+		session   SessionSnapshot
+		execution ExecutionSnapshot
+	}
+	created := make([]resources, 0, 2)
+	for _, root := range roots {
+		writeSourceFile(t, root, "query.fql", "RETURN 1")
+		opened, err := workspaces.Open(ctx, root)
+		if err != nil {
+			t.Fatalf("workspace Open: %v", err)
+		}
+		session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
+		if err != nil {
+			t.Fatalf("CreateSession: %v", err)
+		}
+		execution, err := manager.CreateExecution(ctx, session.ID, nil, RuntimeOptions{})
+		if err != nil {
+			t.Fatalf("CreateExecution: %v", err)
+		}
+		created = append(created, resources{session: session, execution: execution})
+	}
+
+	if err := manager.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	for _, item := range created {
+		if _, err := manager.GetSession(ctx, item.session.ID); !errors.Is(err, ErrSessionNotFound) {
+			t.Fatalf("GetSession after Close error = %v, want ErrSessionNotFound", err)
+		}
+		if _, err := manager.GetExecution(ctx, item.execution.ID); !errors.Is(err, ErrExecutionNotFound) {
+			t.Fatalf("GetExecution after Close error = %v, want ErrExecutionNotFound", err)
+		}
+	}
+
+	manager.sessions.mu.RLock()
+	groups := len(manager.sessions.groups)
+	manager.sessions.mu.RUnlock()
+	if groups != 0 {
+		t.Fatalf("workspace groups after Close = %d, want 0", groups)
+	}
+	if err := manager.Close(ctx); err != nil {
+		t.Fatalf("repeated Close: %v", err)
+	}
+}
+
 func TestCreateSessionCompilesImmutableSourceAndParameters(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN [@second, @first]")
 	got := fixture.session
@@ -158,21 +248,22 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 		t.Fatalf("second source revision = %d, want 2", second.Source.Revision)
 	}
 
-	target, err := fixture.manager.AcquireDebugTarget(context.Background(), first.ID)
+	runtime, err := fixture.manager.CreateDebugRuntime(
+		context.Background(),
+		first.ID,
+		nil,
+		RuntimeOptions{},
+	)
 	if err != nil {
-		t.Fatalf("AcquireDebugTarget: %v", err)
+		t.Fatalf("CreateDebugRuntime: %v", err)
 	}
-	defer target.Release()
-	if target.Source() != first.Source || target.SourceText() != "LET value = 1\nRETURN value" {
-		t.Fatalf("debug target = source %+v text %q, want first Session snapshot",
-			target.Source(), target.SourceText())
+	defer func() { _ = runtime.Close() }()
+	if runtime.runtime.target.source != first.Source || runtime.runtime.target.text != "LET value = 1\nRETURN value" {
+		t.Fatalf("debug runtime = source %+v text %q, want first Session snapshot",
+			runtime.runtime.target.source, runtime.runtime.target.text)
 	}
 
-	debugSession, err := target.NewDebugSession(context.Background())
-	if err != nil {
-		t.Fatalf("NewDebugSession: %v", err)
-	}
-	defer func() { _ = debugSession.Close() }()
+	debugSession := runtime.Debugger()
 	if _, err := debugSession.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -193,7 +284,7 @@ func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	manager := New(workspaces)
+	manager := mustNewManager(t, workspaces)
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = workspaces.Clear(context.Background())
@@ -211,14 +302,14 @@ func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing
 		len(compilation.Diagnostics) == 0 {
 		t.Fatalf("CompilationError = %+v", compilation)
 	}
-	if compilation.Diagnostics[0].URI != string(compilation.Source.URI) ||
+	if compilation.Diagnostics[0].URI != compilation.Source.URI ||
 		compilation.Diagnostics[0].Code == "" || compilation.Diagnostics[0].Message == "" {
 		t.Fatalf("diagnostic = %+v", compilation.Diagnostics[0])
 	}
 
-	manager.mu.RLock()
-	registered := len(manager.sessions)
-	manager.mu.RUnlock()
+	manager.sessions.mu.RLock()
+	registered := len(manager.sessions.entries)
+	manager.sessions.mu.RUnlock()
 	if registered != 0 {
 		t.Fatalf("registered Sessions = %d, want 0", registered)
 	}
@@ -246,6 +337,14 @@ func TestCloseSessionRunsPlanCloseOnceAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCloseSessionRequiresContext(t *testing.T) {
+	fixture := newExecutionFixture(t, "RETURN 1")
+	assertPanics(t, func() {
+		//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+		_ = fixture.manager.CloseSession(nil, fixture.session.ID)
+	})
+}
+
 func TestSessionCloseCallerTimeoutDoesNotStopCleanup(t *testing.T) {
 	closeStarted := make(chan struct{})
 	releaseClose := make(chan struct{})
@@ -269,10 +368,11 @@ func TestSessionCloseCallerTimeoutDoesNotStopCleanup(t *testing.T) {
 }
 
 func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
-	manager := New(workspace.New())
+	manager := mustNewManager(t, workspace.New())
 	workspaceID := workspace.ID("workspace")
-	if err := manager.beginSessionCreate(workspaceID); err != nil {
-		t.Fatalf("beginSessionCreate: %v", err)
+	creation, err := manager.sessions.beginCreate(workspaceID)
+	if err != nil {
+		t.Fatalf("begin Session creation: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -280,15 +380,113 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 	if err := manager.CloseWorkspace(ctx, workspaceID); !errors.Is(err, context.Canceled) {
 		t.Fatalf("CloseWorkspace error = %v, want context.Canceled", err)
 	}
-	manager.finishSessionCreate(workspaceID)
+	if _, err := manager.sessions.beginCreate(workspaceID); !errors.Is(err, workspace.ErrClosed) {
+		t.Fatalf("begin Session creation during workspace close error = %v, want workspace.ErrClosed", err)
+	}
+	manager.sessions.finishCreate(creation)
 	if err := manager.CloseWorkspace(context.Background(), workspaceID); err != nil {
 		t.Fatalf("wait for CloseWorkspace: %v", err)
 	}
-	manager.mu.RLock()
-	_, retained := manager.groups[workspaceID]
-	manager.mu.RUnlock()
+	manager.sessions.mu.RLock()
+	_, retained := manager.sessions.groups[workspaceID]
+	manager.sessions.mu.RUnlock()
 	if retained {
 		t.Fatal("workspace group retained after committed close")
+	}
+}
+
+func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
+	manager, snapshot, _ := newHookedManager(t, "RETURN 1")
+	closed := make(chan error, 1)
+	var admitted *execution
+	func() {
+		creation, err := manager.sessions.beginRuntimeCreate(snapshot.ID)
+		if err != nil {
+			t.Fatalf("begin Execution creation: %v", err)
+		}
+		defer creation.finish()
+
+		parent := creation.session()
+		go func() {
+			closed <- manager.CloseSession(context.Background(), snapshot.ID)
+		}()
+		waitForSessionClosing(t, parent)
+
+		select {
+		case err := <-closed:
+			t.Fatalf("CloseSession completed with admitted Execution creator: %v", err)
+		default:
+		}
+
+		if _, err := manager.CreateExecution(
+			context.Background(),
+			snapshot.ID,
+			nil,
+			RuntimeOptions{},
+		); !errors.Is(err, ErrSessionNotFound) {
+			t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
+		}
+
+		input, err := newRuntimeInput(nil, RuntimeOptions{})
+		if err != nil {
+			t.Fatalf("prepare runtime input: %v", err)
+		}
+		admitted = newExecution(
+			ExecutionID("admitted-execution"),
+			newExecutionRuntime(parent.runtimeTarget(), input),
+		)
+		manager.executions.add(admitted)
+	}()
+
+	if err := <-closed; err != nil {
+		t.Fatalf("CloseSession: %v", err)
+	}
+	if _, err := manager.GetExecution(
+		context.Background(),
+		admitted.id,
+	); !errors.Is(err, ErrExecutionNotFound) {
+		t.Fatalf("GetExecution after parent close error = %v, want ErrExecutionNotFound", err)
+	}
+
+	manager.executions.mu.RLock()
+	entries := len(manager.executions.entries)
+	groups := len(manager.executions.bySession)
+	manager.executions.mu.RUnlock()
+	if entries != 0 || groups != 0 {
+		t.Fatalf("Execution registry after parent close = %d entries, %d groups", entries, groups)
+	}
+}
+
+func TestManagerCloseWaitsForAdmittedSessionCreation(t *testing.T) {
+	manager := mustNewManager(t, workspace.New())
+	workspaceID := workspace.ID("workspace")
+	creation, err := manager.sessions.beginCreate(workspaceID)
+	if err != nil {
+		t.Fatalf("begin Session creation: %v", err)
+	}
+
+	closeContext := newObservedDoneContext()
+	closed := make(chan error, 1)
+	go func() {
+		closed <- manager.Close(closeContext)
+	}()
+	waitForSignal(t, closeContext.observed, "Manager close wait")
+
+	if _, err := manager.sessions.beginCreate(workspace.ID("other")); !errors.Is(err, ErrClosed) {
+		t.Fatalf("begin Session creation after Manager close error = %v, want ErrClosed", err)
+	}
+	manager.sessions.finishCreate(creation)
+
+	if err := <-closed; err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	manager.sessions.mu.RLock()
+	entries := len(manager.sessions.entries)
+	groups := len(manager.sessions.groups)
+	manager.sessions.mu.RUnlock()
+	if entries != 0 || groups != 0 {
+		t.Fatalf("Session registry after Manager close = %d entries, %d groups", entries, groups)
 	}
 }
 
@@ -298,25 +496,17 @@ func TestParentCloseDoesNotReadoptSettledExecution(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
 
-	fixture.manager.mu.RLock()
-	execution := fixture.manager.executions[created.ID]
-	fixture.manager.mu.RUnlock()
 	if err := fixture.manager.CloseExecution(context.Background(), created.ID); err != nil {
 		t.Fatalf("CloseExecution: %v", err)
 	}
-	fixture.manager.detachKnownExecution(execution)
-
-	fixture.manager.mu.RLock()
-	_, retained := fixture.manager.closingExecutions[created.ID]
-	fixture.manager.mu.RUnlock()
-	if retained {
-		t.Fatal("settled Execution was reinserted into closing lookup")
+	if children := fixture.manager.executions.beginSessionClose(fixture.session.ID); len(children) != 0 {
+		t.Fatalf("settled Executions retained by Session = %d, want 0", len(children))
 	}
 }
 
@@ -332,7 +522,7 @@ func writeSourceFile(t *testing.T, root, relativePath, content string) {
 func runSessionOutput(t *testing.T, manager *Manager, sessionID SessionID) string {
 	t.Helper()
 
-	created, err := manager.CreateExecution(context.Background(), sessionID, nil, ExecutionOptions{})
+	created, err := manager.CreateExecution(context.Background(), sessionID, nil, RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}

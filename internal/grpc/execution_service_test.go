@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"errors"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -10,6 +11,28 @@ import (
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
+
+func TestExecutionServiceRequiresManager(t *testing.T) {
+	service, err := newExecutionService(nil)
+	if service != nil {
+		t.Fatal("newExecutionService returned a service for a nil manager")
+	}
+	if !errors.Is(err, errNilExecutionManager) {
+		t.Fatalf("newExecutionService error = %v, want %v", err, errNilExecutionManager)
+	}
+}
+
+func TestExecutionServiceUsesSuppliedManager(t *testing.T) {
+	workspaces := workspace.New()
+	manager := mustNewExecutionManager(t, workspaces)
+	service, err := newExecutionService(manager)
+	if err != nil {
+		t.Fatalf("newExecutionService: %v", err)
+	}
+	if service.executions != manager {
+		t.Fatal("newExecutionService did not retain the supplied manager")
+	}
+}
 
 func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 	tests := []struct {
@@ -34,6 +57,13 @@ func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND,
 		},
 		{
+			name:      "workspace closed",
+			err:       workspace.ErrClosed,
+			code:      codes.FailedPrecondition,
+			resource:  executionv1.ResourceKind_RESOURCE_KIND_WORKSPACE,
+			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
+		},
+		{
 			name:      "session not found",
 			err:       exec.ErrSessionNotFound,
 			code:      codes.NotFound,
@@ -46,6 +76,13 @@ func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 			code:      codes.FailedPrecondition,
 			resource:  executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
 			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_STATE,
+		},
+		{
+			name:      "execution service closed",
+			err:       exec.ErrClosed,
+			code:      codes.FailedPrecondition,
+			resource:  executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
+			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
 		},
 		{
 			name:      "watcher lag",

@@ -19,6 +19,29 @@ type executionFixture struct {
 	session    SessionSnapshot
 }
 
+func mustNewManager(t testing.TB, workspaces *workspace.Manager) *Manager {
+	t.Helper()
+
+	manager, err := New(workspaces)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	return manager
+}
+
+func assertPanics(t testing.TB, call func()) {
+	t.Helper()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("call did not panic")
+		}
+	}()
+
+	call()
+}
+
 func newExecutionFixture(t *testing.T, query string) executionFixture {
 	t.Helper()
 
@@ -32,7 +55,7 @@ func newExecutionFixture(t *testing.T, query string) executionFixture {
 	if err != nil {
 		t.Fatalf("workspace Open: %v", err)
 	}
-	manager := New(workspaces)
+	manager := mustNewManager(t, workspaces)
 	session, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -76,21 +99,55 @@ func newHookedManager(
 	}
 	session := newSession(
 		SessionID("session"),
-		nil,
 		workspace.Compilation{Plan: plan, Source: snapshot},
 		query,
+		func(ctx context.Context) (workspace.Compilation, error) {
+			debugPlan, compileErr := engine.CompileDebug(ctx, ferretsource.New("query.fql", query))
+
+			return workspace.Compilation{Plan: debugPlan, Source: snapshot}, compileErr
+		},
 	)
-	manager := New(workspace.New())
-	manager.sessions[session.id] = session
-	manager.groups[workspaceID] = &workspaceGroup{
-		sessions: map[SessionID]*Session{session.id: session},
+	manager := mustNewManager(t, workspace.New())
+	creation, err := manager.sessions.beginCreate(workspaceID)
+	if err != nil {
+		t.Fatalf("begin Session creation: %v", err)
 	}
+	if err := manager.sessions.commitCreate(context.Background(), creation, session); err != nil {
+		t.Fatalf("commit Session creation: %v", err)
+	}
+	manager.sessions.finishCreate(creation)
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = engine.Close()
 	})
 
-	return manager, session.Snapshot(), engine
+	return manager, session.snapshot(), engine
+}
+
+func retainedSession(t testing.TB, manager *Manager, id SessionID) *sessionEntry {
+	t.Helper()
+
+	manager.sessions.mu.RLock()
+	entry := manager.sessions.entries[id]
+	manager.sessions.mu.RUnlock()
+	if entry == nil {
+		t.Fatalf("Session %q is not retained", id)
+	}
+
+	return entry
+}
+
+func retainedExecution(t testing.TB, manager *Manager, id ExecutionID) *executionEntry {
+	t.Helper()
+
+	manager.executions.mu.RLock()
+	entry := manager.executions.entries[id]
+	manager.executions.mu.RUnlock()
+	if entry == nil {
+		t.Fatalf("Execution %q is not retained", id)
+	}
+
+	return entry
 }
 
 func runAndObserve(t *testing.T, manager *Manager, id ExecutionID) (ExecutionSnapshot, []Event) {

@@ -11,13 +11,14 @@ import (
 	protocol "github.com/google/go-dap"
 
 	"github.com/MontFerret/ferretd/internal/debug"
+	"github.com/MontFerret/ferretd/internal/exec"
 )
 
 func (s *Server) handleInitialize(
 	request *protocol.InitializeRequest,
 	arguments initializeClientOptions,
 ) error {
-	options, err := normalizeClientOptions(arguments)
+	options, err := arguments.normalized()
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
@@ -65,17 +66,17 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		return s.sendFailure(request.GetRequest(), fmt.Sprintf("invalid launch arguments: %v", err))
 	}
 
-	root, program, relativePath, err := resolveLaunchPaths(arguments)
+	paths, err := arguments.resolvePaths()
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
 
-	opened, err := s.workspaces.Open(ctx, root)
+	opened, err := s.workspaces.Open(ctx, paths.root)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err.Error())
 	}
 
-	session, err := s.executions.CreateSession(ctx, opened.ID(), relativePath)
+	session, err := s.executions.CreateSession(ctx, opened.ID(), paths.relativePath)
 	if err != nil {
 		_ = s.workspaces.Close(context.Background(), opened.ID())
 
@@ -85,8 +86,8 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 	debugSession, err := s.debugs.CreateSession(
 		ctx,
 		session.ID,
-		arguments.Parameters,
-		debug.SessionOptions{},
+		exec.Parameters(arguments.Parameters),
+		exec.RuntimeOptions{},
 	)
 	if err != nil {
 		_ = s.executions.CloseSession(context.Background(), session.ID)
@@ -109,7 +110,7 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		workspace:   opened.ID(),
 		session:     session.ID,
 		debug:       debugSession.ID,
-		program:     program,
+		program:     paths.program,
 		stopOnEntry: arguments.StopOnEntry,
 	}
 	s.watch = watch
@@ -275,7 +276,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 func (s *Server) bindBreakpointID(
 	file string,
 	requested debug.BreakpointLocation,
-	nativeID uint64,
+	nativeID debug.BreakpointID,
 ) int {
 	s.breakpointMu.Lock()
 	defer s.breakpointMu.Unlock()
@@ -306,7 +307,7 @@ func (s *Server) clearNativeBreakpoints(file string) {
 	}
 }
 
-func (s *Server) dapBreakpointID(nativeID uint64) int {
+func (s *Server) dapBreakpointID(nativeID debug.BreakpointID) int {
 	s.breakpointMu.Lock()
 	defer s.breakpointMu.Unlock()
 

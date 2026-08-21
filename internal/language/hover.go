@@ -9,7 +9,7 @@ import (
 )
 
 // Hover returns compiler-known symbol, type, call, and bind-parameter information.
-func (s *Service) Hover(ctx context.Context, uri string, position source.Position) (*Hover, error) {
+func (s *Service) Hover(ctx context.Context, uri source.URI, position source.Position) (*Hover, error) {
 	document, resolved, err := s.resolveAt(ctx, uri, position)
 	if err != nil {
 		return nil, err
@@ -23,16 +23,8 @@ func (s *Service) Hover(ctx context.Context, uri string, position source.Positio
 
 		if symbol.Kind == compiler.SymbolKindUDF {
 			parameters := document.analysis.FunctionParameters(symbol.ID)
-			names := make([]string, 0, len(parameters))
-
-			for _, parameter := range parameters {
-				names = append(names, parameter.Name)
-			}
-
-			result.Signature = &Signature{
-				Label:      signatureLabel(symbol.Name, names),
-				Parameters: names,
-			}
+			signature := udfSignature(symbol.Name, parameters)
+			result.Signature = &signature
 		}
 
 		if symbol.Type != compiler.ValueTypeUnknown {
@@ -43,22 +35,7 @@ func (s *Service) Hover(ctx context.Context, uri string, position source.Positio
 
 	if resolved.Call != nil && resolved.Offset >= resolved.Call.CalleeSpan.Start && resolved.Offset < resolved.Call.CalleeSpan.End && resolved.Call.Kind != compiler.CallKindUDF {
 		if function, ok := s.functionIndex.lookup(resolved.Call.Identity); ok {
-			for _, arity := range function.arities {
-				parameters := placeholderParameters(arity, false)
-				result.RegisteredSignatures = append(result.RegisteredSignatures, Signature{
-					Label:      signatureLabel(function.name, parameters),
-					Parameters: parameters,
-				})
-			}
-
-			if function.variadic {
-				parameters := placeholderParameters(1, true)
-				result.RegisteredSignatures = append(result.RegisteredSignatures, Signature{
-					Label:      signatureLabel(function.name, parameters),
-					Parameters: parameters,
-					Variadic:   true,
-				})
-			}
+			result.RegisteredSignatures = function.signatures(1)
 		}
 	}
 
@@ -72,21 +49,4 @@ func (s *Service) Hover(ctx context.Context, uri string, position source.Positio
 	}
 
 	return result, nil
-}
-
-func symbolKindName(kind compiler.SymbolKind) string {
-	switch kind {
-	case compiler.SymbolKindFunctionParameter:
-		return "parameter"
-	case compiler.SymbolKindNamespaceAlias:
-		return "namespace"
-	case compiler.SymbolKindLoopBinding:
-		return "loop binding"
-	case compiler.SymbolKindMatchBinding:
-		return "match binding"
-	case compiler.SymbolKindCollectBinding:
-		return "collect binding"
-	default:
-		return "binding"
-	}
 }

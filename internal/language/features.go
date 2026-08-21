@@ -9,7 +9,7 @@ import (
 type (
 	// Location identifies a source range in one document.
 	Location struct {
-		URI   string
+		URI   source.URI
 		Range source.Range
 	}
 
@@ -79,29 +79,48 @@ type (
 )
 
 const (
+	// CompletionKindVariable identifies a value binding.
 	CompletionKindVariable CompletionKind = iota + 1
+	// CompletionKindFunction identifies a callable declaration.
 	CompletionKindFunction
+	// CompletionKindParameter identifies a UDF parameter binding.
 	CompletionKindParameter
+	// CompletionKindNamespace identifies a registered function namespace.
 	CompletionKindNamespace
+	// CompletionKindKeyword identifies FQL syntax keywords.
 	CompletionKindKeyword
+	// CompletionKindLiteral identifies literal language values.
 	CompletionKindLiteral
+	// CompletionKindOperator identifies language operators.
 	CompletionKindOperator
 )
 
 const (
+	// SemanticTokenUnknown preserves compiler tokens without a known classification.
 	SemanticTokenUnknown SemanticTokenKind = iota
+	// SemanticTokenNamespace identifies registered function namespaces.
 	SemanticTokenNamespace
+	// SemanticTokenFunction identifies callable declarations and references.
 	SemanticTokenFunction
+	// SemanticTokenVariable identifies mutable value bindings and references.
 	SemanticTokenVariable
+	// SemanticTokenParameter identifies UDF parameters and their references.
 	SemanticTokenParameter
+	// SemanticTokenKeyword identifies FQL syntax keywords.
 	SemanticTokenKeyword
+	// SemanticTokenString identifies string literals.
 	SemanticTokenString
+	// SemanticTokenNumber identifies numeric literals.
 	SemanticTokenNumber
+	// SemanticTokenComment identifies source comments.
 	SemanticTokenComment
+	// SemanticTokenOperator identifies language operators.
 	SemanticTokenOperator
 )
 
 const (
+	// SemanticTokenDeclaration marks the token that declares a symbol.
 	SemanticTokenDeclaration SemanticTokenModifiers = 1 << iota
+	// SemanticTokenReadonly marks a symbol that cannot be reassigned.
 	SemanticTokenReadonly
 )

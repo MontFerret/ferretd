@@ -60,11 +60,11 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 			t.Fatalf("document state = revision %d loaded %t syntax %t", document.Revision(), document.Loaded(), document.HasSyntax())
 		}
 
-		wantURI, err := source.PathToURI(file.Path)
+		wantURI, err := source.URIFromPath(file.Path)
 		if err != nil {
-			t.Fatalf("PathToURI: %v", err)
+			t.Fatalf("URIFromPath: %v", err)
 		}
-		if file.URI != source.URI(wantURI) {
+		if file.URI != wantURI {
 			t.Fatalf("file URI = %q, want %q", file.URI, wantURI)
 		}
 	}

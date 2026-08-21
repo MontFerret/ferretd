@@ -6,11 +6,14 @@ import (
 	"sync"
 
 	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// Session owns one immutable reusable Ferret Plan.
-type Session struct {
+// session owns one immutable reusable Ferret Plan. The child gate orders
+// execution-runtime creation before close; its mutex owns debug compilation and
+// Plan lease state. No operation holds the Session mutex while waiting on the gate.
+type session struct {
 	mu sync.Mutex
 
 	id           SessionID
@@ -19,47 +22,34 @@ type Session struct {
 	text         string
 	compileDebug func(context.Context) (workspace.Compilation, error)
 	plan         *ferret.Plan
-	executions   map[ExecutionID]*Execution
 	debugPlan    *ferret.Plan
 
 	debugCompileDone   chan struct{}
 	debugCompileErr    error
-	debugTargetDone    chan struct{}
+	debugRuntimeDone   chan struct{}
 	debugCompiling     bool
 	debugCompileFailed bool
-	debugTargets       int
-	closing            bool
-	closeDone          chan struct{}
-	closeErr           error
+	debugRuntimes      int
+	children           lifecycle.Gate
 }
 
 func newSession(
 	id SessionID,
-	parent *workspace.Workspace,
 	compilation workspace.Compilation,
 	text string,
-) *Session {
-	result := &Session{
-		id:         id,
-		source:     compilation.Source,
-		parameters: compilation.Plan.Params(),
-		text:       text,
-		plan:       compilation.Plan,
-		executions: make(map[ExecutionID]*Execution),
-		closeDone:  make(chan struct{}),
+	compileDebug func(context.Context) (workspace.Compilation, error),
+) *session {
+	return &session{
+		id:           id,
+		source:       compilation.Source,
+		parameters:   compilation.Plan.Params(),
+		text:         text,
+		compileDebug: compileDebug,
+		plan:         compilation.Plan,
 	}
-
-	if parent != nil {
-		result.compileDebug = func(ctx context.Context) (workspace.Compilation, error) {
-			return parent.CompileDebugSnapshot(ctx, compilation.Source, text)
-		}
-	}
-
-	return result
 }
 
-// Snapshot returns an immutable Session view.
-func (s *Session) Snapshot() SessionSnapshot {
+func (s *session) snapshot() SessionSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -70,39 +60,17 @@ func (s *Session) Snapshot() SessionSnapshot {
 	}
 }
 
-func (s *Session) addExecution(execution *Execution) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.closing {
-		return ErrSessionClosed
-	}
-
-	s.executions[execution.id] = execution
-
-	return nil
-}
-
-func (s *Session) removeExecution(execution *Execution) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.executions[execution.id] == execution {
-		delete(s.executions, execution.id)
-	}
-}
-
-func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) {
+func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget, error) {
 	for {
 		s.mu.Lock()
-		if s.closing {
+		if !s.children.Accepting() {
 			s.mu.Unlock()
 
-			return nil, ErrSessionClosed
+			return runtimeTarget{}, ErrSessionClosed
 		}
 
 		if s.debugPlan != nil {
-			target := s.newDebugTargetLocked(s.debugPlan)
+			target := s.newDebugRuntimeTargetLocked(s.debugPlan)
 			s.mu.Unlock()
 
 			return target, nil
@@ -112,7 +80,7 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 			err := s.debugCompileErr
 			s.mu.Unlock()
 
-			return nil, err
+			return runtimeTarget{}, err
 		}
 
 		if s.debugCompiling {
@@ -121,7 +89,7 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return runtimeTarget{}, ctx.Err()
 			case <-done:
 				continue
 			}
@@ -134,19 +102,6 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 		source := s.source
 		s.mu.Unlock()
 
-		if compileDebug == nil {
-			compileErr := errors.New("debug compilation is unavailable")
-			s.mu.Lock()
-			s.debugCompiling = false
-			s.debugCompileErr = compileErr
-			s.debugCompileFailed = true
-			close(done)
-			s.debugCompileDone = nil
-			s.mu.Unlock()
-
-			return nil, compileErr
-		}
-
 		compilation, err := compileDebug(ctx)
 		if err == nil && compilation.Plan == nil {
 			err = errors.New("debug compilation returned no plan")
@@ -157,11 +112,11 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 		}
 
 		s.mu.Lock()
-		closing := s.closing
-		var target *DebugTarget
+		closing := !s.children.Accepting()
+		var target runtimeTarget
 		if err == nil && !closing {
 			s.debugPlan = compilation.Plan
-			target = s.newDebugTargetLocked(compilation.Plan)
+			target = s.newDebugRuntimeTargetLocked(compilation.Plan)
 		} else if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			s.debugCompileErr = err
 			s.debugCompileFailed = true
@@ -172,75 +127,80 @@ func (s *Session) acquireDebugTarget(ctx context.Context) (*DebugTarget, error) 
 		s.mu.Unlock()
 
 		if err != nil || closing {
-			if compilation.Plan != nil {
-				err = errors.Join(err, compilation.Plan.Close())
-			}
+			err = errors.Join(err, compilation.Close())
 
 			if closing {
 				err = errors.Join(ErrSessionClosed, err)
 			}
 
-			return nil, err
+			return runtimeTarget{}, err
 		}
 
 		return target, nil
 	}
 }
 
-func (s *Session) newDebugTargetLocked(plan *ferret.Plan) *DebugTarget {
-	if s.debugTargets == 0 {
-		s.debugTargetDone = make(chan struct{})
+func (s *session) newDebugRuntimeTargetLocked(plan *ferret.Plan) runtimeTarget {
+	if s.debugRuntimes == 0 {
+		s.debugRuntimeDone = make(chan struct{})
 	}
-	s.debugTargets++
+	s.debugRuntimes++
 
-	return newDebugTarget(s.id, s.source, s.text, plan, s.releaseDebugTarget)
+	return runtimeTarget{sessionID: s.id, source: s.source, text: s.text, plan: plan}
 }
 
-func (s *Session) releaseDebugTarget() {
+func (s *session) releaseDebugRuntime() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.debugTargets == 0 {
+	if s.debugRuntimes == 0 {
 		return
 	}
 
-	s.debugTargets--
-	if s.debugTargets == 0 {
-		close(s.debugTargetDone)
-		s.debugTargetDone = nil
+	s.debugRuntimes--
+	if s.debugRuntimes == 0 {
+		close(s.debugRuntimeDone)
+		s.debugRuntimeDone = nil
 	}
 }
 
-func (s *Session) beginClose() ([]*Execution, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closing {
-		return nil, false
+func (s *session) runtimeTarget() runtimeTarget {
+	return runtimeTarget{
+		sessionID: s.id,
+		source:    s.source,
+		text:      s.text,
+		plan:      s.plan,
 	}
-
-	s.closing = true
-	executions := make([]*Execution, 0, len(s.executions))
-
-	// Keep the children registered until their runtime cleanup releases ownership.
-	for _, execution := range s.executions {
-		executions = append(executions, execution)
-	}
-
-	return executions, true
 }
 
-func (s *Session) releasePlans() (*ferret.Plan, *ferret.Plan) {
+func (s *session) beginRuntimeCreate() bool {
+	return s.children.BeginCreate()
+}
+
+func (s *session) finishRuntimeCreate() {
+	s.children.EndCreate()
+}
+
+func (s *session) beginClose() bool {
+	return s.children.BeginClose()
+}
+
+func (s *session) waitForRuntimeCreates() {
+	s.children.WaitForCreates()
+}
+
+func (s *session) releasePlans() (*ferret.Plan, *ferret.Plan) {
 	s.mu.Lock()
 	compileDone := s.debugCompileDone
-	targetDone := s.debugTargetDone
+	runtimeDone := s.debugRuntimeDone
 	s.mu.Unlock()
 
 	if compileDone != nil {
 		<-compileDone
 	}
 
-	if targetDone != nil {
-		<-targetDone
+	if runtimeDone != nil {
+		<-runtimeDone
 	}
 
 	s.mu.Lock()
@@ -254,18 +214,27 @@ func (s *Session) releasePlans() (*ferret.Plan, *ferret.Plan) {
 	return plan, debugPlan
 }
 
-func (s *Session) finishClose(err error) {
-	s.mu.Lock()
-	s.closeErr = err
-	close(s.closeDone)
-	s.mu.Unlock()
+func (s *session) finishClose(err error) {
+	s.children.FinishClose(err)
 }
 
-func (s *Session) closeResult() error {
-	<-s.closeDone
+func (s *session) waitClose(ctx context.Context) error {
+	return s.children.WaitClose(ctx)
+}
 
+func (s *session) closeStarted() bool {
+	return !s.children.Accepting()
+}
+
+func (s *session) closeUnpublished() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	plan := s.plan
+	s.plan = nil
+	s.mu.Unlock()
 
-	return s.closeErr
+	if plan == nil {
+		return nil
+	}
+
+	return plan.Close()
 }

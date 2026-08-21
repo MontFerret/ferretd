@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-func documentKey(relativePath string) (string, bool) {
+func normalizeDocumentPath(relativePath string) (string, bool) {
 	if relativePath == "" || filepath.IsAbs(relativePath) {
 		return "", false
 	}

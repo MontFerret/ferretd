@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -14,8 +15,29 @@ import (
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
+func TestNewRequiresLanguageService(t *testing.T) {
+	server, err := New(nil)
+	if server != nil {
+		t.Fatal("New returned a server for a nil language dependency")
+	}
+	if !errors.Is(err, errNilLanguageService) {
+		t.Fatalf("New error = %v, want %v", err, errNilLanguageService)
+	}
+}
+
+func TestNewUsesSuppliedLanguageService(t *testing.T) {
+	service := newTestLanguageService(t)
+	server, err := New(service)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if server.language != service {
+		t.Fatal("New did not retain the supplied language service")
+	}
+}
+
 func TestInitializeAdvertisesFullDocumentSync(t *testing.T) {
-	server := New(language.New(language.Options{}))
+	server := newTestServer(t)
 
 	value, err := server.initialize(nil, &protocol.InitializeParams{})
 	if err != nil {
@@ -65,8 +87,8 @@ func TestInitializeAdvertisesFullDocumentSync(t *testing.T) {
 }
 
 func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
-	service := language.New(language.Options{})
-	server := New(service)
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
 	uri := documentURI(t, "query.fql")
 
 	var published []protocol.PublishDiagnosticsParams
@@ -81,7 +103,7 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 
 	if err := server.didOpen(glspContext, &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
-			URI:        uri,
+			URI:        uri.String(),
 			LanguageID: "ferret",
 			Version:    1,
 			Text:       "RETURN 1",
@@ -96,7 +118,7 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 
 	if err := server.didChange(glspContext, &protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
-			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.String()},
 			Version:                2,
 		},
 		ContentChanges: []any{protocol.TextDocumentContentChangeEventWhole{Text: "RETURN missing"}},
@@ -109,15 +131,15 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	}
 
 	if err := server.didClose(glspContext, &protocol.DidCloseTextDocumentParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
 	}); err != nil {
 		t.Fatalf("didClose: %v", err)
 	}
 	if len(published) != 3 || len(published[2].Diagnostics) != 0 || published[2].Version != nil {
 		t.Fatalf("didClose published = %#v", published)
 	}
-	if _, ok := service.GetDocument(context.Background(), uri); ok {
-		t.Fatal("didClose did not remove document")
+	if err := service.ChangeDocument(context.Background(), uri, 3, []language.TextChange{{Text: "RETURN 3"}}); !errors.Is(err, language.ErrDocumentNotOpen) {
+		t.Fatalf("didClose retained document: %v", err)
 	}
 }
 
@@ -132,16 +154,16 @@ func waitForNotification(t *testing.T, signal <-chan struct{}) {
 }
 
 func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
-	service := language.New(language.Options{})
-	server := New(service)
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
 	uri := documentURI(t, "query.fql")
-	if err := service.OpenDocument(context.Background(), uri, "ferret", 1, "RETURN 1"); err != nil {
+	if err := service.OpenDocument(context.Background(), uri, 1, "RETURN 1"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
 	}
 
 	err := server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
-			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.String()},
 			Version:                2,
 		},
 		ContentChanges: []any{protocol.TextDocumentContentChangeEvent{
@@ -149,22 +171,42 @@ func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
 			Text:  "RETURN 2",
 		}},
 	})
-	if err == nil {
-		t.Fatal("didChange returned nil error")
+	if !errors.Is(err, errIncrementalTextChanges) {
+		t.Fatalf("didChange error = %v, want %v", err, errIncrementalTextChanges)
 	}
 
-	document, _ := service.GetDocument(context.Background(), uri)
-	if document.Version != 1 || document.Text != "RETURN 1" {
-		t.Fatalf("document changed after rejected incremental update: %#v", document)
+	report, reportErr := service.Diagnostics(context.Background(), uri)
+	if reportErr != nil || report.Version == nil || *report.Version != 1 {
+		t.Fatalf("document changed after rejected incremental update: %+v, %v", report, reportErr)
 	}
 }
 
-func documentURI(t *testing.T, name string) string {
+func TestDidChangeRejectsUnsupportedChanges(t *testing.T) {
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
+	uri := documentURI(t, "query.fql")
+	if err := service.OpenDocument(context.Background(), uri, 1, "RETURN 1"); err != nil {
+		t.Fatalf("OpenDocument: %v", err)
+	}
+
+	err := server.didChange(&glsp.Context{}, &protocol.DidChangeTextDocumentParams{
+		TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.String()},
+			Version:                2,
+		},
+		ContentChanges: []any{struct{}{}},
+	})
+	if !errors.Is(err, errUnsupportedDocumentChange) {
+		t.Fatalf("didChange error = %v, want %v", err, errUnsupportedDocumentChange)
+	}
+}
+
+func documentURI(t *testing.T, name string) source.URI {
 	t.Helper()
 
-	uri, err := source.PathToURI(filepath.Join(t.TempDir(), name))
+	uri, err := source.URIFromPath(filepath.Join(t.TempDir(), name))
 	if err != nil {
-		t.Fatalf("PathToURI: %v", err)
+		t.Fatalf("URIFromPath: %v", err)
 	}
 	return uri
 }

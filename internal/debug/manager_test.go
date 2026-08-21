@@ -10,6 +10,156 @@ import (
 	"github.com/MontFerret/ferretd/internal/exec"
 )
 
+func TestNewRequiresExecutionManager(t *testing.T) {
+	manager, err := New(nil)
+	if manager != nil {
+		t.Fatal("New returned a manager for a nil execution dependency")
+	}
+	if !errors.Is(err, errNilExecutionManager) {
+		t.Fatalf("New error = %v, want %v", err, errNilExecutionManager)
+	}
+}
+
+func TestManagerDoesNotOwnExecutionManager(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+	if fixture.manager.executions != fixture.executions {
+		t.Fatal("New did not retain the supplied execution manager")
+	}
+
+	if err := fixture.manager.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := fixture.executions.GetSession(context.Background(), fixture.session.ID); err != nil {
+		t.Fatalf("execution Session after debug manager Close: %v", err)
+	}
+	if _, err := fixture.manager.CreateSession(
+		context.Background(),
+		fixture.session.ID,
+		nil,
+		exec.RuntimeOptions{},
+	); !errors.Is(err, ErrClosed) {
+		t.Fatalf("CreateSession after Close error = %v, want ErrClosed", err)
+	}
+}
+
+func TestManagerCloseSettlesMultipleParentGroups(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+	ctx := context.Background()
+	secondParent, err := fixture.executions.CreateSession(ctx, fixture.workspace.ID(), "query.fql")
+	if err != nil {
+		t.Fatalf("CreateSession second parent: %v", err)
+	}
+
+	parents := []exec.SessionSnapshot{fixture.session, secondParent}
+	created := make([]SessionSnapshot, 0, len(parents)*2)
+	for _, parent := range parents {
+		for range 2 {
+			session, err := fixture.manager.CreateSession(ctx, parent.ID, nil, exec.RuntimeOptions{})
+			if err != nil {
+				t.Fatalf("CreateSession debug child: %v", err)
+			}
+			created = append(created, session)
+		}
+	}
+
+	if err := fixture.manager.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	for _, session := range created {
+		if _, err := fixture.manager.GetSession(ctx, session.ID); !errors.Is(err, ErrSessionNotFound) {
+			t.Fatalf("GetSession after Close error = %v, want ErrSessionNotFound", err)
+		}
+	}
+	for _, parent := range parents {
+		if _, err := fixture.executions.GetSession(ctx, parent.ID); err != nil {
+			t.Fatalf("borrowed execution Session after debug Close: %v", err)
+		}
+	}
+
+	fixture.manager.mu.RLock()
+	groups := len(fixture.manager.groups)
+	fixture.manager.mu.RUnlock()
+	if groups != 0 {
+		t.Fatalf("debug parent groups after Close = %d, want 0", groups)
+	}
+	if err := fixture.manager.Close(ctx); err != nil {
+		t.Fatalf("repeated Close: %v", err)
+	}
+}
+
+func TestCreateSessionCopiesParameters(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+	input := map[string]any{
+		"value":  7,
+		"nested": map[string]any{"items": []any{"one", "two"}},
+	}
+
+	created, err := fixture.manager.CreateSession(
+		context.Background(),
+		fixture.session.ID,
+		input,
+		exec.RuntimeOptions{},
+	)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	input["value"] = 99
+	input["nested"].(map[string]any)["items"].([]any)[0] = "caller"
+	created.Parameters["nested"].(map[string]any)["items"].([]any)[1] = "snapshot"
+
+	stored, err := fixture.manager.GetSession(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if stored.Parameters["value"] != 7 ||
+		stored.Parameters["nested"].(map[string]any)["items"].([]any)[0] != "one" ||
+		stored.Parameters["nested"].(map[string]any)["items"].([]any)[1] != "two" {
+		t.Fatalf("stored parameters = %#v, want immutable copy", stored.Parameters)
+	}
+}
+
+func TestCreateSessionRejectsInvalidParameters(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+
+	if _, err := fixture.manager.CreateSession(
+		context.Background(),
+		fixture.session.ID,
+		map[string]any{"invalid": make(chan int)},
+		exec.RuntimeOptions{},
+	); !errors.Is(err, exec.ErrInvalidParameters) {
+		t.Fatalf("CreateSession error = %v, want exec.ErrInvalidParameters", err)
+	}
+}
+
+func TestDebugManagerRequiresContexts(t *testing.T) {
+	t.Run("operation", func(t *testing.T) {
+		fixture := newDebugFixture(t, "RETURN 1")
+		assertPanics(t, func() {
+			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			_, _ = fixture.manager.CreateSession(nil, fixture.session.ID, nil, exec.RuntimeOptions{})
+		})
+	})
+
+	t.Run("close wait", func(t *testing.T) {
+		fixture := newDebugFixture(t, "RETURN 1")
+		created, err := fixture.manager.CreateSession(
+			context.Background(),
+			fixture.session.ID,
+			nil,
+			exec.RuntimeOptions{},
+		)
+		if err != nil {
+			t.Fatalf("CreateSession: %v", err)
+		}
+
+		assertPanics(t, func() {
+			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			_ = fixture.manager.CloseSession(nil, created.ID)
+		})
+	})
+}
+
 func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T) {
 	fixture := newDebugFixture(t, `LET box = {value: 10}
 FUNC add(a) {
@@ -22,7 +172,7 @@ RETURN {result, box}`)
 		context.Background(),
 		fixture.session.ID,
 		map[string]any{"input": 2},
-		SessionOptions{},
+		exec.RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -116,7 +266,7 @@ RETURN {result, box}`)
 func TestDebugSessionRuntimeErrorRemainsInspectableThenFailsOnResume(t *testing.T) {
 	fixture := newDebugFixture(t, `LET x = 7
 RETURN x / 0`)
-	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, SessionOptions{})
+	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -137,6 +287,11 @@ RETURN x / 0`)
 	if runtimeError.Reason != StopRuntimeError || runtimeError.Failure == nil {
 		t.Fatalf("runtime error = %+v", runtimeError)
 	}
+	if diagnostics := runtimeError.Failure.Diagnostics; len(diagnostics) != 1 ||
+		diagnostics[0].URI != fixture.session.Source.URI || diagnostics[0].Code == "" ||
+		diagnostics[0].Range.Start == diagnostics[0].Range.End {
+		t.Fatalf("runtime error diagnostics = %+v, want one source-located diagnostic", diagnostics)
+	}
 
 	scopes, err := fixture.manager.Scopes(context.Background(), created.ID, 0)
 	if err != nil || !debugScopeHas(scopes[0], "x", "7") {
@@ -155,7 +310,7 @@ RETURN x / 0`)
 func TestDebugSessionTerminateCloseAndParentCascade(t *testing.T) {
 	fixture := newDebugFixture(t, `RETURN FOR i IN 1..10000000
   RETURN i`)
-	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, SessionOptions{})
+	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -194,7 +349,7 @@ func TestDebugSessionTerminateCloseAndParentCascade(t *testing.T) {
 func TestDebugSessionCloseRacesTermination(t *testing.T) {
 	fixture := newDebugFixture(t, `RETURN FOR i IN 1..10000000
   RETURN i`)
-	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, SessionOptions{})
+	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -240,7 +395,7 @@ func TestDebugSessionCloseRacesTermination(t *testing.T) {
 func TestSessionCloseCascadesRunningDebugSession(t *testing.T) {
 	fixture := newDebugFixture(t, `RETURN FOR i IN 1..10000000
   RETURN i`)
-	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, SessionOptions{})
+	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -281,15 +436,15 @@ func TestParentCloseWaitsForInFlightDebugCreation(t *testing.T) {
 	if err := fixture.manager.closeExecutionSession(ctx, parentID); !errors.Is(err, context.Canceled) {
 		t.Fatalf("closeExecutionSession error = %v, want context.Canceled", err)
 	}
+	if err := fixture.manager.beginCreate(parentID); !errors.Is(err, exec.ErrSessionClosed) {
+		t.Fatalf("beginCreate during parent close error = %v, want exec.ErrSessionClosed", err)
+	}
 
 	fixture.manager.mu.RLock()
 	group := fixture.manager.groups[parentID]
-	done := group.closeDone
 	fixture.manager.mu.RUnlock()
-	select {
-	case <-done:
-		t.Fatal("parent debug cleanup completed while creation was in flight")
-	default:
+	if err := group.gate.WaitClose(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("parent debug cleanup while creation was in flight = %v, want context.Canceled", err)
 	}
 
 	fixture.manager.finishCreate(parentID)
@@ -307,15 +462,15 @@ func TestParentCloseWaitsForInFlightDebugCreation(t *testing.T) {
 
 func TestDebugWatcherOverflowDisconnectsLaggingWatcher(t *testing.T) {
 	fixture := newDebugFixture(t, "RETURN 1")
-	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, SessionOptions{})
+	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 	fixture.manager.mu.RLock()
 	debugSession := fixture.manager.sessions[created.ID]
 	fixture.manager.mu.RUnlock()
-	lagging := debugSession.Subscribe()
-	independent := debugSession.Subscribe()
+	lagging := debugSession.subscribe()
+	independent := debugSession.subscribe()
 	defer independent.Cancel()
 
 	for range watcherBufferSize + 1 {

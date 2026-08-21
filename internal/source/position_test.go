@@ -83,3 +83,29 @@ func TestMapperRoundTripSafeBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestMapperRequiresReceiver(t *testing.T) {
+	var mapper *Mapper
+	tests := []struct {
+		name string
+		call func()
+	}{
+		{name: "OffsetToPosition", call: func() { _ = mapper.OffsetToPosition(0) }},
+		{name: "PositionToOffset", call: func() { _ = mapper.PositionToOffset(Position{}) }},
+		{name: "SpanToRange", call: func() { _ = mapper.SpanToRange(Span{}) }},
+		{name: "RangeToSpan", call: func() { _ = mapper.RangeToSpan(Range{}) }},
+		{name: "Text", call: func() { _ = mapper.Text() }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("call did not panic")
+				}
+			}()
+
+			tt.call()
+		})
+	}
+}

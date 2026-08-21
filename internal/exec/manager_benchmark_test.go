@@ -21,7 +21,7 @@ func BenchmarkManagerCreateSessionUnchanged(b *testing.B) {
 	if err != nil {
 		b.Fatalf("workspace Open: %v", err)
 	}
-	manager := New(workspaces)
+	manager := mustNewManager(b, workspaces)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -48,7 +48,7 @@ func BenchmarkManagerExecutionSameSession(b *testing.B) {
 	b.ResetTimer()
 
 	for range b.N {
-		created, err := manager.CreateExecution(ctx, session.ID, map[string]any{"value": 1}, ExecutionOptions{})
+		created, err := manager.CreateExecution(ctx, session.ID, map[string]any{"value": 1}, RuntimeOptions{})
 		if err != nil {
 			b.Fatalf("CreateExecution: %v", err)
 		}
@@ -85,7 +85,7 @@ func BenchmarkManagerExecutionSameSessionConcurrent(b *testing.B) {
 				ctx,
 				session.ID,
 				map[string]any{"value": 1},
-				ExecutionOptions{},
+				RuntimeOptions{},
 			)
 			if err != nil {
 				b.Errorf("CreateExecution: %v", err)
@@ -133,7 +133,7 @@ func benchmarkExecutionManager(b *testing.B) (*Manager, SessionSnapshot, *worksp
 	if err != nil {
 		b.Fatalf("workspace Open: %v", err)
 	}
-	manager := New(workspaces)
+	manager := mustNewManager(b, workspaces)
 	session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
 	if err != nil {
 		b.Fatalf("CreateSession: %v", err)

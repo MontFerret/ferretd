@@ -8,67 +8,56 @@ import (
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
-// Resolution combines the compiler facts available at one source position.
-type Resolution struct {
+type resolution struct {
 	Symbol      *compiler.Symbol
-	Reference   *compiler.Reference
 	Call        *compiler.Call
 	Type        *compiler.TypeFact
 	Range       source.Range
 	Declaration *source.Range
 	Offset      int
-	Snapshot    SnapshotID
-}
-
-// ResolveAt resolves compiler identity, reference, call, and type facts at position.
-func (s *Service) ResolveAt(ctx context.Context, uri string, position source.Position) (Resolution, error) {
-	_, resolved, err := s.resolveAt(ctx, uri, position)
-
-	return resolved, err
 }
 
 func (s *Service) resolveAt(
 	ctx context.Context,
-	uri string,
+	uri source.URI,
 	position source.Position,
-) (analyzedDocument, Resolution, error) {
+) (analyzedDocument, resolution, error) {
 	document, err := s.analyzedDocument(ctx, uri)
 	if err != nil {
-		return analyzedDocument{}, Resolution{}, err
+		return analyzedDocument{}, resolution{}, err
 	}
 
-	return document, resolveAnalyzed(document, position), nil
+	return document, document.resolve(position), nil
 }
 
-func resolveAnalyzed(document analyzedDocument, position source.Position) Resolution {
-	offset := document.mapper.PositionToOffset(position)
-	result := Resolution{Offset: offset, Snapshot: document.snapshot.id}
+func (d analyzedDocument) resolve(position source.Position) resolution {
+	offset := d.mapper.PositionToOffset(position)
+	result := resolution{Offset: offset}
 
-	if symbol, ok := document.analysis.SymbolAt(offset); ok {
+	if symbol, ok := d.analysis.SymbolAt(offset); ok {
 		result.Symbol = &symbol
 		if symbol.HasDeclaration {
-			declaration := document.mapper.SpanToRange(toSourceSpan(symbol.SelectionSpan))
+			declaration := d.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan))
 			result.Range = declaration
 			result.Declaration = &declaration
 		}
 	}
 
-	if reference, ok := document.analysis.ReferenceAt(offset); ok {
-		result.Reference = &reference
-		result.Range = document.mapper.SpanToRange(toSourceSpan(reference.Span))
+	if reference, ok := d.analysis.ReferenceAt(offset); ok {
+		result.Range = d.mapper.SpanToRange(source.SpanFromFerret(reference.Span))
 	}
 
-	if call, ok := document.analysis.CallAt(offset); ok {
+	if call, ok := d.analysis.CallAt(offset); ok {
 		result.Call = &call
 		if offset >= call.CalleeSpan.Start && offset < call.CalleeSpan.End {
-			result.Range = document.mapper.SpanToRange(toSourceSpan(call.CalleeSpan))
+			result.Range = d.mapper.SpanToRange(source.SpanFromFerret(call.CalleeSpan))
 		}
 	}
 
-	if fact, ok := document.analysis.TypeAt(offset); ok {
+	if fact, ok := d.analysis.TypeAt(offset); ok {
 		result.Type = &fact
 		if result.Range == (source.Range{}) {
-			result.Range = document.mapper.SpanToRange(toSourceSpan(fact.Span))
+			result.Range = d.mapper.SpanToRange(source.SpanFromFerret(fact.Span))
 		}
 	}
 

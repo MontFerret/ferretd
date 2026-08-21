@@ -12,7 +12,7 @@ func TestWatchExecutionCurrentStateMultipleWatchersAndTerminalEOF(t *testing.T) 
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -60,17 +60,15 @@ func TestWatcherOverflowDisconnectsOnlyLaggingWatcher(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		ExecutionOptions{},
+		RuntimeOptions{},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
 
-	fixture.manager.mu.RLock()
-	execution := fixture.manager.executions[created.ID]
-	fixture.manager.mu.RUnlock()
-	lagging := execution.Subscribe()
-	independent := execution.Subscribe()
+	execution := retainedExecution(t, fixture.manager, created.ID).execution
+	lagging := execution.subscribe()
+	independent := execution.subscribe()
 	defer independent.Cancel()
 
 	for range watcherBufferSize + 1 {

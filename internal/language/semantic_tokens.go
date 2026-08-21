@@ -4,29 +4,11 @@ import (
 	"context"
 	"sort"
 
-	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
-)
-
-type (
-	semanticPriority uint8
-
-	semanticSpan struct {
-		span      ferretsource.Span
-		kind      SemanticTokenKind
-		modifiers SemanticTokenModifiers
-		priority  semanticPriority
-	}
-)
-
-const (
-	semanticPrioritySyntax semanticPriority = iota
-	semanticPriorityCall
-	semanticPriorityReference
-	semanticPriorityDeclaration
+	"github.com/MontFerret/ferretd/internal/source"
 )
 
 // SemanticTokens returns full-document syntax tokens overlaid with compiler identity.
-func (s *Service) SemanticTokens(ctx context.Context, uri string) ([]SemanticToken, error) {
+func (s *Service) SemanticTokens(ctx context.Context, uri source.URI) ([]SemanticToken, error) {
 	document, err := s.analyzedDocument(ctx, uri)
 	if err != nil {
 		return nil, err

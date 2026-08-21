@@ -1,11 +1,13 @@
 package client
 
-// Option configures a daemon connection.
-type Option func(*dialOptions) error
+type (
+	// Option configures a daemon connection.
+	Option func(*dialOptions) error
 
-type dialOptions struct {
-	endpoint *Endpoint
-}
+	dialOptions struct {
+		endpoint *Endpoint
+	}
+)
 
 // WithEndpoint selects an explicit endpoint instead of discovery.
 func WithEndpoint(endpoint Endpoint) Option {

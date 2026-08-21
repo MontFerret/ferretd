@@ -2,15 +2,7 @@ package workspace
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"os"
 )
-
-type documentRead struct {
-	content string
-	err     error
-}
 
 // RefreshDocument rereads one already-discovered document through its
 // root-confined workspace filesystem. It retains the existing revision when
@@ -20,11 +12,11 @@ func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (D
 		return Document{}, err
 	}
 
-	if w == nil || w.closing.Load() {
+	if w.closing.Load() {
 		return Document{}, ErrClosed
 	}
 
-	key, ok := documentKey(relativePath)
+	key, ok := normalizeDocumentPath(relativePath)
 	if !ok {
 		return Document{}, ErrDocumentNotFound
 	}
@@ -46,6 +38,7 @@ func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (D
 	}
 	current, ok := w.documents[key]
 	w.mu.RUnlock()
+
 	if !ok {
 		return Document{}, ErrDocumentNotFound
 	}
@@ -54,11 +47,13 @@ func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (D
 	if err != nil {
 		return Document{}, err
 	}
+
 	loaded := read.err == nil
 	if current.Loaded() == loaded && (!loaded || current.Content() == read.content) {
 		w.mu.RLock()
 		ready := !w.closing.Load() && w.state == StateReady
 		w.mu.RUnlock()
+
 		if !ready {
 			return Document{}, ErrClosed
 		}
@@ -72,9 +67,11 @@ func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (D
 	} else {
 		refreshed = newDocument(current.File(), read.content)
 	}
+
 	if err := ctx.Err(); err != nil {
 		return Document{}, err
 	}
+
 	refreshed = refreshed.withRevision(current.Revision() + 1)
 
 	w.mu.Lock()
@@ -83,6 +80,7 @@ func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (D
 	if w.closing.Load() || w.state != StateReady {
 		return Document{}, ErrClosed
 	}
+
 	if _, ok := w.documents[key]; !ok {
 		return Document{}, ErrDocumentNotFound
 	}
@@ -90,65 +88,4 @@ func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (D
 	w.documents[key] = refreshed
 
 	return refreshed, nil
-}
-
-func readDocument(ctx context.Context, rootPath string, file File) (documentRead, error) {
-	root, err := os.OpenRoot(rootPath)
-	if err != nil {
-		return documentRead{err: fmt.Errorf("open workspace root: %w", err)}, nil
-	}
-	defer func() { _ = root.Close() }()
-
-	pathInfo, err := root.Lstat(file.RelativePath)
-	if err != nil {
-		return documentRead{err: fmt.Errorf("inspect %q: %w", file.RelativePath, err)}, nil
-	}
-	if err := validateRefreshFile(file.RelativePath, pathInfo); err != nil {
-		return documentRead{err: err}, nil
-	}
-
-	handle, err := root.Open(file.RelativePath)
-	if err != nil {
-		return documentRead{err: fmt.Errorf("open %q: %w", file.RelativePath, err)}, nil
-	}
-	defer func() { _ = handle.Close() }()
-
-	openedInfo, err := handle.Stat()
-	if err != nil {
-		return documentRead{err: fmt.Errorf("inspect open %q: %w", file.RelativePath, err)}, nil
-	}
-	pathInfo, err = root.Lstat(file.RelativePath)
-	if err != nil {
-		return documentRead{err: fmt.Errorf("inspect %q: %w", file.RelativePath, err)}, nil
-	}
-	if err := validateRefreshFile(file.RelativePath, pathInfo); err != nil {
-		return documentRead{err: err}, nil
-	}
-	if !openedInfo.Mode().IsRegular() {
-		return documentRead{err: fmt.Errorf("inspect %q: source is not a regular file", file.RelativePath)}, nil
-	}
-	if !os.SameFile(openedInfo, pathInfo) {
-		return documentRead{err: fmt.Errorf("inspect %q: source changed while opening", file.RelativePath)}, nil
-	}
-
-	bytes, err := io.ReadAll(handle)
-	if err != nil {
-		return documentRead{err: fmt.Errorf("read %q: %w", file.RelativePath, err)}, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return documentRead{}, err
-	}
-
-	return documentRead{content: string(bytes)}, nil
-}
-
-func validateRefreshFile(relativePath string, info os.FileInfo) error {
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("inspect %q: symbolic links are not supported", relativePath)
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("inspect %q: source is not a regular file", relativePath)
-	}
-
-	return nil
 }

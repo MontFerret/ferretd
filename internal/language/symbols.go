@@ -5,7 +5,6 @@ import (
 	"sort"
 
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
-	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 
 	"github.com/MontFerret/ferretd/internal/source"
 )
@@ -17,7 +16,7 @@ type documentSymbolNode struct {
 }
 
 // DocumentSymbols returns compiler declarations arranged by their nearest containing UDF.
-func (s *Service) DocumentSymbols(ctx context.Context, uri string) ([]DocumentSymbol, error) {
+func (s *Service) DocumentSymbols(ctx context.Context, uri source.URI) ([]DocumentSymbol, error) {
 	document, err := s.analyzedDocument(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -33,8 +32,8 @@ func (s *Service) DocumentSymbols(ctx context.Context, uri string) ([]DocumentSy
 			symbol: symbol,
 			value: DocumentSymbol{
 				Name:           symbol.Name,
-				Range:          document.mapper.SpanToRange(toSourceSpan(symbol.DeclarationSpan)),
-				SelectionRange: document.mapper.SpanToRange(toSourceSpan(symbol.SelectionSpan)),
+				Range:          document.mapper.SpanToRange(source.SpanFromFerret(symbol.DeclarationSpan)),
+				SelectionRange: document.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan)),
 				Kind:           symbol.Kind,
 				Type:           symbol.Type,
 			},
@@ -52,7 +51,9 @@ func (s *Service) DocumentSymbols(ctx context.Context, uri string) ([]DocumentSy
 			container := nodes[candidate].symbol.DeclarationSpan
 			selection := nodes[i].symbol.SelectionSpan
 
-			if !spanContainsSpan(container, selection) {
+			if container.End <= container.Start || selection.End < selection.Start ||
+				selection.Start < container.Start || selection.End > container.End {
+
 				continue
 			}
 
@@ -93,8 +94,12 @@ func (s *Service) DocumentSymbols(ctx context.Context, uri string) ([]DocumentSy
 }
 
 // Definition returns the compiler declaration for the symbol at position.
-func (s *Service) Definition(ctx context.Context, uri string, position source.Position) (*Location, error) {
-	resolved, err := s.ResolveAt(ctx, uri, position)
+func (s *Service) Definition(
+	ctx context.Context,
+	uri source.URI,
+	position source.Position,
+) (*Location, error) {
+	_, resolved, err := s.resolveAt(ctx, uri, position)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +117,7 @@ func (s *Service) Definition(ctx context.Context, uri string, position source.Po
 // References returns document-local locations for the compiler symbol at position.
 func (s *Service) References(
 	ctx context.Context,
-	uri string,
+	uri source.URI,
 	position source.Position,
 	includeDeclaration bool,
 ) ([]Location, error) {
@@ -130,14 +135,14 @@ func (s *Service) References(
 	if includeDeclaration && symbol.HasDeclaration {
 		locations = append(locations, Location{
 			URI:   uri,
-			Range: document.mapper.SpanToRange(toSourceSpan(symbol.SelectionSpan)),
+			Range: document.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan)),
 		})
 	}
 
 	for _, reference := range document.analysis.ReferencesTo(symbol.ID) {
 		locations = append(locations, Location{
 			URI:   uri,
-			Range: document.mapper.SpanToRange(toSourceSpan(reference.Span)),
+			Range: document.mapper.SpanToRange(source.SpanFromFerret(reference.Span)),
 		})
 	}
 
@@ -149,9 +154,4 @@ func (s *Service) References(
 	})
 
 	return locations, nil
-}
-
-func spanContainsSpan(container, contained ferretsource.Span) bool {
-	return container.End > container.Start && contained.End >= contained.Start &&
-		contained.Start >= container.Start && contained.End <= container.End
 }

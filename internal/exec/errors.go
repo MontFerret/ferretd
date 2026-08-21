@@ -1,14 +1,19 @@
 package exec
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/workspace"
+)
 
 var (
-	errExecutionCanceled = errors.New("execution cancellation requested")
+	errNilWorkspaceManager = errors.New("execution: nil workspace manager")
+	errExecutionCanceled   = errors.New("execution cancellation requested")
 
-	// ErrManagerClosed reports an execution manager that is shutting down.
-	ErrManagerClosed = errors.New("execution manager closed")
-	// ErrWorkspaceClosed reports a workspace whose execution children are closing.
-	ErrWorkspaceClosed = errors.New("workspace closed")
+	// ErrClosed reports an execution service that is shutting down.
+	ErrClosed = errors.New("execution service closed")
 	// ErrSessionNotFound reports an unknown daemon Session ID.
 	ErrSessionNotFound = errors.New("session not found")
 	// ErrSessionClosed reports a daemon Session that cannot create new Executions.
@@ -28,3 +33,20 @@ var (
 	// ErrDebugSourceChanged reports debug compilation from a different source snapshot.
 	ErrDebugSourceChanged = errors.New("debug compilation source changed")
 )
+
+// CompilationError retains structured Ferret compiler diagnostics.
+type CompilationError struct {
+	Source      workspace.SourceSnapshot
+	Diagnostics []diagnostic.Diagnostic
+	Cause       error
+}
+
+// Error describes a failed compilation while preserving its stable classification.
+func (e *CompilationError) Error() string {
+	return fmt.Sprintf("%v: %s", ErrCompilationFailed, e.Source.RelativePath)
+}
+
+// Unwrap exposes the compiler cause and stable classification.
+func (e *CompilationError) Unwrap() []error {
+	return []error{ErrCompilationFailed, e.Cause}
+}

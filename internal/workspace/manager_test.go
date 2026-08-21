@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
@@ -30,10 +28,6 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 	if first != second {
 		t.Fatalf("workspaces differ: %#v != %#v", first, second)
 	}
-	if _, err := uuid.Parse(string(first.ID())); err != nil {
-		t.Fatalf("workspace ID is not a UUID: %v", err)
-	}
-
 	link := filepath.Join(linkParent, "linked-root")
 	if err := os.Symlink(root, link); err != nil {
 		t.Skipf("create symlink: %v", err)
@@ -205,7 +199,7 @@ func TestConcurrentOpenConverges(t *testing.T) {
 	release := make(chan struct{})
 	var loads atomic.Int32
 
-	manager.load = func(context.Context, string) (workspaceContent, error) {
+	manager.loadWorkspace = func(context.Context, string) (workspaceContent, error) {
 		if loads.Add(1) == 1 {
 			close(started)
 		}
@@ -260,7 +254,7 @@ func TestOpenTransitionsFromOpeningToReady(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	manager.load = func(context.Context, string) (workspaceContent, error) {
+	manager.loadWorkspace = func(context.Context, string) (workspaceContent, error) {
 		close(started)
 		<-release
 
@@ -296,7 +290,7 @@ func TestFailedOpenIsClassifiedRemovedAndRetryable(t *testing.T) {
 	wantErr := errors.New("discovery failed")
 	var failed *Workspace
 
-	manager.load = func(_ context.Context, canonical string) (workspaceContent, error) {
+	manager.loadWorkspace = func(_ context.Context, canonical string) (workspaceContent, error) {
 		manager.mu.RLock()
 		failed = manager.opening[canonical].workspace
 		manager.mu.RUnlock()
@@ -315,7 +309,7 @@ func TestFailedOpenIsClassifiedRemovedAndRetryable(t *testing.T) {
 		t.Fatalf("Get failed error = %v, want ErrNotFound", err)
 	}
 
-	manager.load = loadWorkspace
+	manager.loadWorkspace = loadWorkspace
 	retried, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("retry Open: %v", err)
@@ -331,7 +325,7 @@ func TestCanceledWaiterDoesNotCancelOwner(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	manager.load = func(context.Context, string) (workspaceContent, error) {
+	manager.loadWorkspace = func(context.Context, string) (workspaceContent, error) {
 		close(started)
 		<-release
 
@@ -371,7 +365,7 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 	var attemptsMu sync.Mutex
 	var roots []string
 
-	manager.load = func(ctx context.Context, root string) (workspaceContent, error) {
+	manager.loadWorkspace = func(ctx context.Context, root string) (workspaceContent, error) {
 		attemptsMu.Lock()
 		roots = append(roots, root)
 		attempt := len(roots)
@@ -492,7 +486,7 @@ func TestClearPreventsInFlightOpenFromCommitting(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	manager.load = func(context.Context, string) (workspaceContent, error) {
+	manager.loadWorkspace = func(context.Context, string) (workspaceContent, error) {
 		close(started)
 		<-release
 
@@ -537,4 +531,33 @@ func TestOperationsRespectCancellation(t *testing.T) {
 	if err := manager.Close(ctx, "unknown"); err != nil {
 		t.Fatalf("idempotent Close error = %v, want nil", err)
 	}
+}
+
+func TestCloseAndClearRequireContexts(t *testing.T) {
+	t.Run("Close", func(t *testing.T) {
+		manager := New()
+		opened, err := manager.Open(context.Background(), t.TempDir())
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		t.Cleanup(func() { _ = manager.Close(context.Background(), opened.ID()) })
+
+		assertPanics(t, func() {
+			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			_ = manager.Close(nil, opened.ID())
+		})
+	})
+
+	t.Run("Clear", func(t *testing.T) {
+		manager := New()
+		if _, err := manager.Open(context.Background(), t.TempDir()); err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		t.Cleanup(func() { _ = manager.Clear(context.Background()) })
+
+		assertPanics(t, func() {
+			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			_ = manager.Clear(nil)
+		})
+	})
 }

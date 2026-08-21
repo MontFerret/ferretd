@@ -15,14 +15,51 @@ import (
 	daemonv1 "github.com/MontFerret/ferretd/gen/ferretd/daemon/v1"
 	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 	workspacev1 "github.com/MontFerret/ferretd/gen/ferretd/workspace/v1"
-	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
+
+func TestNewRequiresDomainServices(t *testing.T) {
+	workspaces := workspace.New()
+	executions := mustNewExecutionManager(t, workspaces)
+	tests := []struct {
+		name string
+		new  func() (*Server, error)
+		want error
+	}{
+		{
+			name: "workspace manager",
+			new:  func() (*Server, error) { return New(nil, executions, "dev", "instance", nil) },
+			want: errNilWorkspaceManager,
+		},
+		{
+			name: "execution manager",
+			new:  func() (*Server, error) { return New(workspaces, nil, "dev", "instance", nil) },
+			want: errNilExecutionManager,
+		},
+		{
+			name: "shutdown callback",
+			new:  func() (*Server, error) { return New(workspaces, executions, "dev", "instance", nil) },
+			want: errNilShutdown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, err := tt.new()
+			if server != nil {
+				t.Fatal("New returned a server with a nil domain dependency")
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("New error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
 
 func TestServerHealthTransitions(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 	workspaces := workspace.New()
-	server := New(workspaces, exec.New(workspaces), "dev", "instance", nil)
+	server := mustNewServer(t, workspaces, mustNewExecutionManager(t, workspaces))
 	done := make(chan error, 1)
 	go func() {
 		done <- server.Serve(listener)
@@ -69,7 +106,7 @@ func TestServerHealthTransitions(t *testing.T) {
 func TestServerStopForcesAfterDeadline(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 	workspaces := workspace.New()
-	server := New(workspaces, exec.New(workspaces), "dev", "instance", nil)
+	server := mustNewServer(t, workspaces, mustNewExecutionManager(t, workspaces))
 	server.SetServing()
 	done := make(chan error, 1)
 	go func() {

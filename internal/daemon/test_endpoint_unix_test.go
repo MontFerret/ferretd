@@ -10,7 +10,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/transport"
 )
 
-func testEndpoint(t *testing.T) transport.Endpoint {
+func testEndpoint(t testing.TB) transport.Endpoint {
 	t.Helper()
 
 	directory, err := os.MkdirTemp("/tmp", "ferretd-")
@@ -20,7 +20,7 @@ func testEndpoint(t *testing.T) transport.Endpoint {
 	t.Cleanup(func() { _ = os.RemoveAll(directory) })
 
 	return transport.Endpoint{
-		Network: "unix",
+		Network: transport.NetworkUnix,
 		Address: filepath.Join(directory, "ferretd.sock"),
 	}
 }

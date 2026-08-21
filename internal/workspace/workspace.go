@@ -14,11 +14,11 @@ import (
 )
 
 type (
-	// ID is an opaque workspace identifier.
-	ID string
-
 	// State identifies the current workspace lifecycle state.
 	State uint8
+
+	// Revision identifies one retained version of a workspace document.
+	Revision uint64
 
 	// Workspace is the daemon-owned source state for a canonical root.
 	Workspace struct {
@@ -33,7 +33,9 @@ type (
 		documents map[string]Document
 		order     []string
 		engine    *ferret.Engine
-		closing   atomic.Bool
+		// closing is the lock-free admission barrier set before child cleanup;
+		// state records resource teardown once the workspace lock is available.
+		closing atomic.Bool
 	}
 
 	// SourceSnapshot identifies the immutable workspace document compiled into a Plan.
@@ -43,19 +45,13 @@ type (
 		URI          localsource.URI
 		// Revision advances monotonically when the workspace retains changed
 		// source state for this already-discovered document.
-		Revision uint64
-	}
-
-	// Compilation owns a Ferret Plan and the source snapshot that produced it.
-	Compilation struct {
-		Plan   *ferret.Plan
-		Source SourceSnapshot
+		Revision Revision
 	}
 )
 
 const (
 	// StateOpening identifies a workspace whose initial source load is running.
-	StateOpening State = iota
+	StateOpening State = iota + 1
 	// StateReady identifies a successfully loaded workspace.
 	StateReady
 	// StateFailed identifies a workspace whose initial source load failed.
@@ -80,28 +76,16 @@ func newWorkspace(id ID, root string) *Workspace {
 
 // ID returns the workspace's opaque identifier.
 func (w *Workspace) ID() ID {
-	if w == nil {
-		return ""
-	}
-
 	return w.id
 }
 
 // Root returns the canonical workspace root.
 func (w *Workspace) Root() string {
-	if w == nil {
-		return ""
-	}
-
 	return w.root
 }
 
 // State returns the workspace's current lifecycle state.
 func (w *Workspace) State() State {
-	if w == nil {
-		return StateClosed
-	}
-
 	w.mu.RLock()
 	state := w.state
 	w.mu.RUnlock()
@@ -114,10 +98,6 @@ func (w *Workspace) State() State {
 
 // Failure returns the retained cause of a failed initial load.
 func (w *Workspace) Failure() error {
-	if w == nil {
-		return nil
-	}
-
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -126,10 +106,6 @@ func (w *Workspace) Failure() error {
 
 // Files returns deterministic value snapshots of discovered source files.
 func (w *Workspace) Files() []File {
-	if w == nil {
-		return nil
-	}
-
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -141,10 +117,6 @@ func (w *Workspace) Files() []File {
 
 // Documents returns deterministic daemon-owned document snapshots.
 func (w *Workspace) Documents() []Document {
-	if w == nil {
-		return nil
-	}
-
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -158,11 +130,7 @@ func (w *Workspace) Documents() []Document {
 
 // Document returns a document by its workspace-relative path.
 func (w *Workspace) Document(relativePath string) (Document, bool) {
-	if w == nil {
-		return Document{}, false
-	}
-
-	key, ok := documentKey(relativePath)
+	key, ok := normalizeDocumentPath(relativePath)
 	if !ok {
 		return Document{}, false
 	}
@@ -176,10 +144,6 @@ func (w *Workspace) Document(relativePath string) (Document, bool) {
 
 // Diagnostics returns copies of all document diagnostics in document order.
 func (w *Workspace) Diagnostics() []*ferretdiagnostics.Diagnostic {
-	if w == nil {
-		return nil
-	}
-
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -191,16 +155,6 @@ func (w *Workspace) Diagnostics() []*ferretdiagnostics.Diagnostic {
 	return result
 }
 
-// Compile compiles one retained document through the workspace-owned Ferret engine.
-func (w *Workspace) Compile(ctx context.Context, relativePath string) (Compilation, error) {
-	return w.compile(ctx, relativePath, false)
-}
-
-// CompileDebug compiles one retained document with Ferret debug metadata.
-func (w *Workspace) CompileDebug(ctx context.Context, relativePath string) (Compilation, error) {
-	return w.compile(ctx, relativePath, true)
-}
-
 // CompileDocument compiles an immutable document returned by RefreshDocument.
 // A later workspace refresh cannot change the source selected for this compile.
 func (w *Workspace) CompileDocument(ctx context.Context, document Document) (Compilation, error) {
@@ -208,11 +162,11 @@ func (w *Workspace) CompileDocument(ctx context.Context, document Document) (Com
 		return Compilation{}, err
 	}
 
-	if w == nil || w.closing.Load() {
+	if w.closing.Load() {
 		return Compilation{}, ErrClosed
 	}
 
-	key, ok := documentKey(document.File().RelativePath)
+	key, ok := normalizeDocumentPath(document.File().RelativePath)
 	if !ok {
 		return Compilation{}, ErrDocumentNotFound
 	}
@@ -229,7 +183,7 @@ func (w *Workspace) CompileDocument(ctx context.Context, document Document) (Com
 		return Compilation{}, ErrDocumentNotFound
 	}
 
-	return w.compileDocumentLocked(ctx, document, false)
+	return w.compileDocumentLocked(ctx, document)
 }
 
 // CompileDebugSnapshot compiles retained Session source with Ferret debug metadata.
@@ -244,11 +198,11 @@ func (w *Workspace) CompileDebugSnapshot(
 		return Compilation{}, err
 	}
 
-	if w == nil || w.closing.Load() || snapshot.Workspace != w.id {
+	if w.closing.Load() || snapshot.Workspace != w.id {
 		return Compilation{}, ErrClosed
 	}
 
-	key, ok := documentKey(snapshot.RelativePath)
+	key, ok := normalizeDocumentPath(snapshot.RelativePath)
 	if !ok {
 		return Compilation{}, ErrDocumentNotFound
 	}
@@ -277,39 +231,9 @@ func (w *Workspace) CompileDebugSnapshot(
 	return Compilation{Source: snapshot, Plan: plan}, nil
 }
 
-func (w *Workspace) compile(ctx context.Context, relativePath string, debug bool) (Compilation, error) {
-	if err := ctx.Err(); err != nil {
-		return Compilation{}, err
-	}
-
-	if w.closing.Load() {
-		return Compilation{}, ErrClosed
-	}
-
-	key, ok := documentKey(relativePath)
-	if !ok {
-		return Compilation{}, ErrDocumentNotFound
-	}
-
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	if w.closing.Load() || w.state != StateReady || w.engine == nil {
-		return Compilation{}, ErrClosed
-	}
-
-	document, ok := w.documents[key]
-	if !ok {
-		return Compilation{}, ErrDocumentNotFound
-	}
-
-	return w.compileDocumentLocked(ctx, document, debug)
-}
-
 func (w *Workspace) compileDocumentLocked(
 	ctx context.Context,
 	document Document,
-	debug bool,
 ) (Compilation, error) {
 	snapshot := SourceSnapshot{
 		Workspace:    w.id,
@@ -326,13 +250,7 @@ func (w *Workspace) compileDocumentLocked(
 		)
 	}
 
-	var plan *ferret.Plan
-	var err error
-	if debug {
-		plan, err = w.engine.CompileDebug(ctx, document.Source())
-	} else {
-		plan, err = w.engine.Compile(ctx, document.Source())
-	}
+	plan, err := w.engine.Compile(ctx, document.Source())
 	if err != nil {
 		return Compilation{Source: snapshot}, err
 	}

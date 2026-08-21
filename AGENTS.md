@@ -1,786 +1,506 @@
 # AGENTS.md
 
-This file is the canonical operating guide for coding agents working in this repository. It describes the current experimental `ferretd` implementation, not an aspirational implementation of the architecture. If repository documentation conflicts with this file, prefer `Makefile`, `go.mod`, `.github/workflows/ci.yml`, and the current tests for commands, toolchains, CI behavior, and executable contracts.
+This file is the canonical operating guide for coding agents working in this
+repository. It contains rules that apply to essentially every non-trivial
+change. Detailed contributor documentation for individual subsystems lives
+under `docs/development/` and should be read only when relevant to the task.
 
-## Repo snapshot
+## Purpose and sources of truth
 
-* Module path: `github.com/MontFerret/ferretd`
-* Go version in `go.mod`: Go 1.26.1
-* `ferretd` is the experimental long-running developer service for Ferret.
-* The current executable provides `serve`, `lsp`, `dap`, and version/help behavior.
-* The current language server tracks open `.fql` documents and publishes Ferret parser and compiler diagnostics over LSP stdio.
-* `serve` exposes daemon information, API negotiation, graceful shutdown, workspace lifecycle, and execution sessions over a local gRPC transport.
-* Opening a workspace synchronously discovers `.fql` files, retains daemon-owned source, syntax state, and document diagnostics, and constructs one rooted read-write Ferret engine until explicit close.
-* The execution manager owns compiled Sessions and one-shot Executions, the debug manager owns retained DebugSessions, and `dap` is a single-session stdio adapter over both protocol-neutral models.
-* Buf generates the implemented daemon/workspace/execution protobuf and gRPC packages under `gen/`. Debug protobufs remain ungenerated placeholders.
-* Ferret remains the owner of FQL parsing, compilation, runtime semantics, VM execution, and core debugging behavior.
+`ferretd` is the experimental long-running developer service for Ferret. It
+coordinates language tooling, local workspaces, execution, and debugging while
+Ferret remains the owner of FQL parsing, compilation, runtime semantics, VM
+execution, and core debugger behavior.
 
-Do not infer implemented behavior from architecture diagrams, placeholder service definitions, future-facing type names, or historical discussion. Current source, tests, dependency contracts, and build configuration are authoritative.
+Describe the implementation that exists, not an aspirational architecture.
+When information conflicts, use this precedence:
 
-## Architectural mental model
+1. current source, tests, and dependency contracts for executable behavior;
+2. `go.mod` for the Go toolchain and dependencies;
+3. `Makefile` and `.github/workflows/` for commands and CI or release behavior;
+4. `buf.yaml` and `buf.gen.yaml` for protobuf linting and generation;
+5. `.goreleaser.yml` and `scripts/` for versioning and release behavior;
+6. repository documentation for explanation and design direction.
 
-The implemented language-tooling flow is:
+Do not infer implemented behavior from diagrams, placeholder declarations,
+future-facing names, historical discussion, or another Ferret checkout. Verify
+the exact dependency selected by `go.mod` when behavior crosses into Ferret.
 
-```text
-editor or language client
-    -> ferretd lsp over stdin/stdout
-    -> internal/lsp protocol adapter
-    -> internal/language protocol-neutral document service
-    -> Ferret compiler and diagnostics
-    -> internal/source rune-to-UTF-16 mapping
-    -> LSP diagnostics notification
-```
+## Development documentation
 
-The current daemon flow is:
+Before making a substantial subsystem change, read the relevant guide. Do not
+require every guide for every task.
 
-```text
-ferretd serve
-    -> internal/daemon
-    -> internal/transport local listener
-    -> internal/grpc DaemonService, WorkspaceService, ExecutionService, and health
-    -> protocol-neutral workspace and execution managers
-    -> root-confined source discovery, Ferret compilation, and one-shot execution
-    -> signal, RPC, or context-triggered graceful shutdown
-```
+* Architecture and package boundaries: `docs/development/architecture.md`
+* Daemon, local transport, gRPC, client, and protobufs:
+  `docs/development/daemon.md`
+* Workspace discovery and retained source: `docs/development/workspace.md`
+* Language service, source mapping, and LSP: `docs/development/language.md`
+* Compiled Sessions and one-shot Executions:
+  `docs/development/execution.md`
+* Debug Sessions and DAP: `docs/development/debugging.md`
+* Build, generation, CI, and releases: `docs/development/release.md`
 
-The intended longer-term architecture is:
+The user-facing protocol guides remain `docs/lsp.md` and `docs/dap.md`.
 
-```text
-CLI, Lab, and editor integrations
-    -> LSP, DAP, or versioned gRPC adapters
-    -> protocol-neutral language, workspace, execution, and debug services
-    -> Ferret-owned compiler, runtime, VM, and debugger capabilities
-```
+## Universal architecture and ownership
 
-Agents should reason about changes by ownership boundary:
+Begin with the package that owns the behavior. Protocol adapters validate and
+translate; they do not become alternate owners of domain behavior.
 
-* `cmd/ferretd` owns process startup, command parsing, process-facing output, signal handling, and top-level service wiring.
+* `cmd/ferretd` owns process startup, Cobra command behavior, signal handling,
+  process-facing output, and top-level composition.
 * `internal/daemon` owns long-running service lifecycle and coordination.
-* `internal/grpc` owns gRPC translation and health behavior, not daemon domain state.
-* `internal/transport` owns default endpoint discovery and Unix-socket/named-pipe I/O.
-* `internal/lsp` owns LSP translation and transport behavior, not language semantics.
-* `internal/language` owns protocol-neutral open-document state and language-service behavior built on Ferret.
-* `internal/source` owns protocol-neutral source locations, file-URI conversion, and source-position conversion.
-* `internal/workspace` owns workspace state as that capability is implemented.
-* `internal/exec` owns compiled execution Sessions, ordinary Executions, lazy debug Plans, and leased immutable debug targets.
-* `internal/debug` owns retained debug-session coordination, debugger commands, inspection, events, and debug child cleanup.
-* `internal/dap` owns DAP translation, stdio framing, and protocol handle allocation, not debugger semantics.
-* `client` owns the supported Go client, compatibility negotiation, and public error classification.
-* `proto/ferretd` owns versioned daemon RPC source contracts; `gen/` is checked-in generated output.
-* The Ferret dependency owns parsing, compilation, diagnostics primitives, runtime semantics, VM execution, and core debugging machinery.
+* `internal/transport` owns local endpoint discovery, listening, and dialing.
+* `internal/grpc`, `internal/lsp`, and `internal/dap` own their protocol
+  translation, framing, handles, and transport-facing state.
+* `internal/language` owns protocol-neutral editor overlays, snapshot
+  resolution, analysis coordination, and language features.
+* `internal/workspace` owns process-local workspace identity, discovery,
+  retained source and syntax state, engines, refresh, and close coordination.
+* `internal/exec` owns compiled Sessions, the shared per-run execution runtime,
+  caller parameters (`Parameters`), one-shot Executions, lazy debug Plans,
+  DebugRuntime leases, and execution lifecycle observation.
+* `internal/debug` owns retained DebugSessions, debugger commands, inspection,
+  events, and debug child cleanup.
+* `internal/source`, `internal/diagnostic`, and `internal/lifecycle` own their
+  protocol-neutral shared concepts. Do not move those semantics into adapters
+  or process setup.
+* `client` is the supported public Go client. Keep generated protobuf details
+  behind its API and preserve its error-classification contracts.
+* `proto/ferretd` owns versioned wire source contracts. `gen/` contains
+  checked-in generated output and must not be edited manually.
+* The Ferret dependency owns language, compiler, runtime, VM, standard-library,
+  and core debugger semantics. Change those in Ferret rather than copying or
+  redefining them here.
 
-Protocol adapters should translate and delegate. They must not become alternate owners of language, execution, workspace, or debugging behavior.
+Keep dependency direction clear: commands compose adapters and services;
+adapters depend on protocol-neutral services; domain services consume Ferret.
+Do not export internal APIs merely to share implementation across packages.
 
-## Canonical invariants
+## Compatibility and observable behavior
 
-* `ferretd` coordinates Ferret capabilities; it does not replace or fork Ferret's compiler, runtime, VM, or language semantics.
-* The language service is protocol-neutral. LSP-specific request and response types stay in `internal/lsp`.
-* LSP stdout is protocol-only. Do not print logs, progress messages, diagnostics, or ordinary CLI text to stdout while serving LSP.
-* The current language server uses full-document synchronization. Incremental text edits are rejected.
-* Open document contents are supplied by the client, kept in memory, and removed on close. The current language service does not read document contents from disk.
-* A document change must advance the stored version. Stale or same-version changes are rejected.
-* Closing an unknown document is safe and idempotent.
-* Current document URIs must be local `file` URIs. Unsupported schemes, non-local hosts, queries, fragments, and empty paths remain errors.
-* Ferret compiler spans use rune offsets. Protocol-neutral positions and LSP positions use zero-based lines and UTF-16 code units with half-open ranges.
-* Source mapping must clamp invalid offsets safely and preserve CR, LF, CRLF, Unicode, and astral-character behavior.
-* Shared service state must remain safe for concurrent callers. Do not bypass or leak mutable state protected by service synchronization.
-* Context cancellation must remain effective at process and service boundaries. Long-running operations must not outlive their owning context without an explicit lifecycle reason.
-* Daemon shutdown must remain safe after cancellation and `Stop` must remain idempotent.
-* The daemon remains local-only: Unix sockets or Windows named pipes, permission-restricted to the current user, with no TCP, TLS, or remote mode.
-* API major mismatch is rejected; minor versions are additive. Workspace, Session, and Execution state survive client disconnects but not daemon restarts.
-* Workspace roots are existing absolute directories, cleaned without resolving symlinks; repeated opens converge and closes are idempotent.
-* Workspace loading is synchronous with static discovery. It retains lowercase `.fql` regular files recursively and skips nested symlinks. `CreateSession` refreshes only its already-discovered target; close/reopen is required to discover creates, deletes, and renames.
-* `.git`, `.hg`, `.svn`, `node_modules`, and `vendor` directories are pruned during discovery. There is no ignore-file or project-manifest contract.
-* Workspace documents retain source and Ferret syntax state only. A refresh atomically advances changed retained state, while compilation into immutable Plans and one-shot runtime state belong to execution Sessions and Executions; editor overlays and filesystem watching remain separate capabilities.
-* Document load and syntax diagnostics do not fail an otherwise coherent workspace; fatal root/discovery failures do not leave manager entries.
-* A Session owns one immutable compiled Ferret Plan. An Execution owns one fresh runtime Session, one run attempt, isolated parameters, terminal output or failure, and bounded lifecycle observation.
-* A Session lazily compiles and caches one matching debug Plan. `internal/exec` leases immutable debug targets while independent retained DebugSessions in `internal/debug` own exactly one Ferret debugger session, asynchronous commands, paused-state inspection, terminal retention, and bounded lifecycle observation.
-* DAP is single-session stdio only. DAP stdout is protocol-only, DAP owns all integer handles, and every handle becomes stale when execution runs or becomes terminal.
-* Debug placeholder protobuf declarations do not imply generated clients, servers, or service behavior.
-* Current package names, protobuf package names, `go_package` values, service versions, CLI behavior, and LSP wire behavior are compatibility-sensitive.
-* Preserve existing behavior unless the task explicitly changes it. Do not implement future architecture as a side effect of an unrelated change.
+Treat observable behavior as intentional until the task explicitly changes it.
+Compatibility-sensitive surfaces include:
 
-## Package and source map
+* public `client` APIs and error identity;
+* CLI commands, arguments, version text, exit behavior, cancellation, and
+  stdout/stderr separation;
+* LSP and DAP capabilities, synchronization or launch semantics, event ordering,
+  coordinates, payloads, handles, and protocol-pure stdout;
+* protobuf packages, `go_package` paths, services, RPCs, messages, field numbers,
+  field types, enum values, and version directories;
+* local endpoint syntax, API negotiation, source URI acceptance, source ranges,
+  and other integration-visible conversions.
 
-Begin with the package that owns the requested behavior. Do not move logic into a protocol adapter or top-level command merely because that call site is convenient.
+For a compatibility-sensitive change, make the behavior change explicit, add
+focused coverage at the observable boundary, preserve old behavior unless
+incompatibility is required, and update affected user-facing documentation.
+Do not implement planned architecture as collateral cleanup.
 
-### Command entry point
+LSP and DAP stdout contain framed protocol messages only. Logs, progress,
+ordinary CLI text, and process-facing errors must go elsewhere. Generated
+protobuf code changes only through source/configuration changes and regeneration.
 
-* `cmd/ferretd`
-    * Owns the `ferretd` process, Cobra command tree, version output, help behavior, signal-aware root context, and composition of top-level services.
-    * `serve` starts the local gRPC daemon and supports explicit `--endpoint` selection.
-    * `lsp` starts the language server over stdin and stdout.
-    * `dap` starts the single-session debug adapter over stdin and stdout.
-    * Keep command parsing and process-facing error context here.
-    * Preserve protocol-pure stdout for `lsp` and `dap`.
-    * Do not move language, workspace, execution, debug, or transport-independent lifecycle behavior into `main`.
+## Protocol and boundary rules
 
-### Daemon coordination
+* Keep LSP, DAP, gRPC, and generated protobuf types in their adapters.
+* Put reusable behavior below adapters even when only one adapter calls it.
+* Keep wire identifiers, handles, framing, client capability state,
+  serialization, and notifications in the owning adapter.
+* Validate unsupported protocol forms explicitly; do not silently reinterpret
+  them as supported forms.
+* Preserve request and notification ordering when state transitions depend on
+  it.
+* Map errors without destroying identities needed by `errors.Is` or `errors.As`.
+* Avoid transport callbacks, blocking I/O, Ferret operations, or unknown
+  re-entrant code while holding service locks unless an explicit, tested
+  ordering invariant requires it.
+* Test adapter translation separately from domain behavior when practical.
 
-* `internal/daemon`
-    * Owns construction and lifecycle coordination for the services that make up `ferretd`.
-    * Keep orchestration thin and delegate behavior to the owning service.
-    * `Start` listens and serves until context cancellation, RPC shutdown, explicit stop, or transport failure.
-    * `Stop` marks health unavailable, closes execution resources, clears workspace engines, drains or force-stops RPCs, closes the listener, and remains idempotent.
+## Context, lifecycle, and concurrency
 
-### Protocol-neutral language service
+* Accept `context.Context` at operations that block, perform I/O, run potentially
+  long work, or participate in caller-owned lifecycles.
+* Require non-nil contexts at operation boundaries. Do not silently replace a
+  nil caller context with `context.Background()`.
+* Check or propagate cancellation before committing state. Do not store contexts
+  in long-lived structs; store explicit state and cancellation functions.
+* Long-running work must not outlive its owner without a concrete lifecycle
+  reason. Every goroutine needs an owner, termination condition, and cleanup path.
+* Keep cleanup correct on success, errors, cancellation, partial startup, and
+  repeated close or shutdown. Preserve idempotency where it is part of the
+  contract.
+* Identify the lock protecting each state group. Keep lock scope narrow and
+  return copies or immutable views when callers must not mutate shared state.
+* Prefer one authoritative lock-owned lifecycle representation. Do not combine
+  mutexes, atomics, channels, and once-guards for the same transition without a
+  concrete ordering or performance reason.
+* Preserve ordering between state changes and externally visible events.
+* Share lifecycle machinery only when semantics and ownership genuinely match;
+  similar execution and debug state does not make one generic session model.
+* Test cancellation, cleanup, stale state, repeated operations, and concurrency
+  deterministically. Avoid sleeps; use channels, contexts, deadlines, or
+  observable state.
+* Run the race detector for packages whose shared state or goroutine coordination
+  changes materially.
+* Concurrency comments explain ownership, invariants, and non-obvious ordering,
+  not individual statements.
 
-* `internal/language`
-    * Owns open-document snapshots, document version rules, protocol-neutral diagnostics, and calls into the Ferret compiler.
-    * The service stores document values rather than exposing mutable internal references.
-    * Keep Ferret diagnostic extraction and conversion here when it is independent of a wire protocol.
-    * Preserve stable error identity through `errors.Is` when adding context to document lifecycle errors.
-    * Do not introduce LSP types into this package.
-    * Do not reimplement parser, compiler, or diagnostic semantics already owned by Ferret.
+## Error handling
 
-### LSP adapter
-
-* `internal/lsp`
-    * Owns Language Server Protocol capability advertisement, lifecycle handlers, request/notification translation, and LSP diagnostic projection.
-    * Keep the adapter thin and delegate document behavior to `internal/language`.
-    * Preserve full-document synchronization until incremental changes are intentionally implemented through the protocol-neutral service.
-    * Serialize document lifecycle handling where required to keep notification order and shared document state coherent.
-    * Publish diagnostics with the current document version when available and clear diagnostics when a document closes.
-    * LSP callbacks and notifications are wire-facing behavior; test both translated payloads and delegated state changes.
-    * Never write non-protocol output to LSP stdout.
-
-### Source locations and mapping
-
-* `internal/source`
-    * Owns protocol-neutral `URI`, `Position`, `Range`, and `Span` concepts used by services and adapters.
-    * Owns conversion between local filesystem paths and escaped absolute file URIs.
-    * Owns conversion from Ferret's rune-indexed spans to zero-based UTF-16 positions.
-    * URI handling is platform-sensitive. Preserve Unix and Windows path behavior, escaping, localhost handling, and rejection of unsupported URI forms.
-    * Position mapping is correctness-sensitive. Cover newlines, CRLF, Unicode, astral characters, empty text, and invalid offsets.
-    * Do not place LSP-specific types in this package; adapters should convert protocol-neutral values at the boundary.
-
-### Workspace, execution, and debug services
-
-* `internal/workspace`
-    * Owns concurrency-safe, process-local workspace identity, lifecycle, discovery, files, daemon documents, source snapshots, retained Ferret syntax state, and one rooted read-write Ferret engine per open workspace.
-    * Canonicalizes with `filepath.Abs` at the public client boundary and `filepath.Clean` at the service boundary; it deliberately does not resolve symlinks.
-    * Coordinates duplicate in-flight opens without holding manager locks across I/O or parsing and publishes only successfully loaded workspaces.
-    * Returns copies of files, sources, and diagnostics; retained parser state remains shared daemon-owned state that visitors must treat as read-only. State remains independent of connections, lists and documents are sorted deterministically, and repeated open/close operations are convergent.
-    * Uses Ferret source/parser/diagnostic APIs for syntax state and exposes the compile boundary consumed by `internal/exec`. It does not own Ferret semantic behavior.
-* `internal/exec`
-    * Owns concurrency-safe compiled Sessions, one-shot Execution coordination, cancellation, terminal state, bounded execution watchers, lazy debug Plans, immutable debug-target leases, and parent-child cleanup hooks.
-    * Ferret remains the owner of compilation, runtime semantics, and VM execution.
-    * Sessions retain an eager normal Plan and a lazy matching debug Plan; each Execution creates and closes a fresh Ferret runtime Session and runs it at most once.
-* `internal/debug`
-    * Owns retained DebugSessions, breakpoints, debugger commands, paused-state inspection, terminal retention, bounded debug watches, and execution-Session child cleanup.
-    * Acquires only leased immutable debug targets from `internal/exec`; it does not receive mutable execution Session internals or own Plan compilation.
-    * Each DebugSession owns one retained Ferret debugger session while Ferret remains the owner of debugger semantics and VM execution.
-* `internal/dap`
-    * Owns the single-session DAP initialization, launch, configuration, request/event translation, client coordinate conversion, integer handles, and serialized stdio writes.
-    * Delegates workspace and execution Session behavior to `internal/workspace` and `internal/exec`, and all debugger resources and operations to `internal/debug`.
-    * Must not reimplement Ferret debugger behavior or add debug gRPC/client APIs.
-
-### Protobuf contracts
-
-* `proto/ferretd/workspace/v1`
-    * Contains the implemented `WorkspaceService` v1 source contract.
-* `proto/ferretd/daemon/v1`
-    * Contains the implemented `DaemonService` v1 source contract and compatibility detail.
-* `proto/ferretd/execution/v1`
-    * Contains the implemented `ExecutionService` v1 source contract.
-* `proto/ferretd/debug/v1`
-    * Contains the placeholder `DebugService` v1 source contract.
-
-Buf v2 configuration at the repository root pins generation through `make generate`; checked-in output belongs under `gen/` and must never be edited manually. `make proto-lint` validates all source contracts, while generation intentionally targets daemon/workspace/execution v1. Keep debug ungenerated until a debug gRPC service is explicitly implemented.
-
-### Documentation, tooling, and release scripts
-
-* `README.md`
-    * Describes current product status and common user-facing commands.
-* `docs/architecture.md`
-    * Describes intended responsibility boundaries. Treat future-facing statements as design direction, not evidence of implementation.
-* `docs/lsp.md`
-    * Describes the experimental editor integration and currently supported LSP behavior.
-* `Makefile`
-    * Is the source of truth for routine build, test, format, lint, vet, compile, and release entry points.
-* `.github/workflows/ci.yml`
-    * Is the source of truth for CI setup and executed validation.
-* `scripts/versions.sh`
-    * Derives the development/build version and Ferret dependency version used by the linker flags.
-* `scripts/release.sh`
-    * Creates and pushes a release tag from a clean working tree. Run release operations only when explicitly requested.
-
-## Implemented and planned behavior
-
-Keep current behavior distinct from planned architecture in code, tests, documentation, and final summaries.
-
-Currently implemented:
-
-* Cobra-based `serve`, `lsp`, `dap`, help, and version behavior;
-* signal-aware process cancellation;
-* local Unix-socket and Windows named-pipe gRPC serving;
-* API v1.1 negotiation, daemon information, health, and graceful shutdown;
-* supported Go client discovery, dialing, negotiation, and error classification;
-* concurrency-safe, process-local workspace open/get/list/close behavior;
-* deterministic root-confined `.fql` discovery with fixed directory exclusions and nested-symlink avoidance;
-* daemon-owned file and document snapshots with source contents, revision, Ferret parse state, syntax/load diagnostics, and per-Session refresh of already-discovered targets;
-* one rooted read-write Ferret engine per open workspace;
-* immutable compiled Sessions and isolated one-shot Executions with JSON-shaped parameters and encoded output;
-* asynchronous run, cancellation, terminal retention, and latest-plus-future bounded lifecycle watches;
-* workspace-to-Session-to-Execution close cascades and daemon-owned cleanup;
-* lazy per-Session debug Plans and independent retained DebugSessions;
-* asynchronous start, continue, pause, step-in, step-over, step-out, termination, frame scopes, variables, evaluation, and bounded debug watches;
-* single-session DAP over stdio with local launch, source breakpoints, client coordinate conversion, and paused-state handle invalidation;
-* LSP over stdio;
-* open, full-document change, and close notifications;
-* in-memory open-document snapshots and version checks;
-* Ferret parser/compiler diagnostics for open documents;
-* source-span to UTF-16 range conversion;
-* pinned protobuf generation for daemon/workspace/execution v1;
-* placeholder debug protobuf source contract.
-
-Not currently implemented:
-
-* debug protobuf generation, gRPC service behavior, or public Go client APIs;
-* durable workspace persistence or eviction;
-* module resolution;
-* LSP document loading from daemon workspaces or disk;
-* filesystem watching, editor overlays, background reload, create/delete/rename discovery, and incremental workspace parsing;
-* incremental document synchronization;
-* completion, hover, formatting, navigation, semantic tokens, or code actions.
-
-Do not claim planned capabilities are supported. When implementing one, update the relevant current-status documentation and remove only the corresponding obsolete limitation.
-
-## Where to start by task
-
-* Change CLI commands, flags, version text, signals, or process-facing errors:
-    * inspect `cmd/ferretd` and its tests
-    * preserve LSP stdout purity and Cobra error/usage behavior
-* Change daemon startup or shutdown:
-    * inspect `internal/daemon` and `cmd/ferretd`
-    * define ownership, cancellation, partial-startup cleanup, shutdown order, and idempotency before adding concurrency
-* Change open-document state or version semantics:
-    * inspect `internal/language`
-    * preserve synchronization and copy boundaries
-    * test cancellation, missing documents, stale versions, and close behavior
-* Change diagnostics:
-    * inspect `internal/language/diagnostics.go`
-    * inspect the current Ferret diagnostic contract before changing conversion
-    * verify primary ranges, related information, codes, hints, notes, empty documents, and unexpected errors
-* Add or change an LSP feature:
-    * put protocol-neutral behavior in the owning shared service first
-    * translate it in `internal/lsp`
-    * test capability advertisement, payload conversion, lifecycle ordering, and service effects
-* Change URI or position behavior:
-    * inspect `internal/source`
-    * test platform path rules, escaping, Unicode, UTF-16 width, newline forms, and clamping
-* Add workspace behavior:
-    * begin in `internal/workspace`
-    * preserve the distinct filesystem-file and daemon-document models
-    * preserve synchronous static discovery, root confinement, deterministic ordering, per-Session existing-target refresh, and recoverable document diagnostics unless the task explicitly changes them
-    * define workspace identity, ownership, lifecycle, and concurrency before exposing new behavior through an adapter
-* Add or change execution sessions:
-    * begin in `internal/exec`
-    * use Ferret's public embedding/runtime contracts rather than duplicating execution semantics
-    * define cancellation, result ownership, cleanup, and session lifetime explicitly
-* Add debug sessions or DAP:
-    * begin with protocol-neutral retained debugger coordination in `internal/debug`
-    * keep lazy debug Plan compilation and target leases in `internal/exec`
-    * keep DAP translation in `internal/dap`
-    * consume Ferret debugging capabilities rather than redefining them
-* Change a protobuf contract or implement gRPC:
-    * begin with the versioned `.proto` source
-    * treat field numbers and service/message names as compatibility-sensitive
-    * introduce and document reproducible generation before adding generated code
-    * add server/client translation and wire-level tests
-* Change user-visible CLI, LSP, daemon, or configuration behavior:
-    * update `README.md`, `docs/lsp.md`, or `docs/architecture.md` where applicable
-    * keep current-status statements synchronized with implementation
-
-## Ferret ownership boundary
-
-`ferretd` consumes `github.com/MontFerret/ferret/v2`; it does not own Ferret language or runtime behavior.
-
-* Make syntax, parser, compiler, diagnostics-primitive, runtime-value, VM, core debugger, standard-library, or embedding-contract changes in Ferret when that repository owns the requested behavior.
-* Keep daemon-specific document state, session coordination, transport adaptation, and source-position projection in `ferretd`.
-* Do not copy Ferret internals into this repository to avoid a dependency change.
-* Do not use a protocol-specific workaround to redefine a Ferret semantic error or source span.
-* When a task requires coordinated Ferret and `ferretd` changes, identify the cross-repository contract and validate the exact dependency version used here.
-* Do not assume behavior from another Ferret version, branch, or unreleased local checkout unless `go.mod` or the task explicitly selects it.
-
-## Compatibility-sensitive surfaces
-
-The repository contains no intended public Go package today; all service packages are under `internal`. That does not make process and wire behavior freely changeable.
-
-Treat these as compatibility-sensitive:
-
-* CLI command names, arguments, exit behavior, version text, stdout/stderr separation, and cancellation behavior;
-* LSP initialization capabilities, synchronization mode, lifecycle semantics, diagnostic payloads, document versions, and protocol purity;
-* protobuf package names, `go_package` paths, service names, RPC names, message names, field numbers, field types, and version directories;
-* source URI acceptance and source-position conversion observed by clients;
-* error identity relied upon by package tests or future adapters.
-
-For compatibility-sensitive changes:
-
-* make the behavior change explicit in the task summary;
-* add focused tests at the observable boundary;
-* preserve old behavior unless incompatibility is required;
-* update user-facing documentation when support or configuration changes;
-* avoid exporting Go APIs merely to share implementation across internal packages.
-
-## Protocol and adapter rules
-
-* Keep adapters thin: validate and translate protocol values, delegate to protocol-neutral services, and translate results back.
-* Do not let LSP, DAP, or gRPC types leak into shared service packages.
-* Do not place transport lifecycle, serialization, or notification behavior in domain services.
-* Validate unsupported protocol forms explicitly. Do not silently reinterpret incremental changes as full-document changes.
-* Keep output channels pure. In particular, LSP stdout contains framed protocol messages only.
-* Preserve request and notification ordering where state transitions depend on it.
-* Avoid holding service locks while performing transport callbacks, blocking I/O, or potentially long Ferret operations unless a documented invariant requires it.
-* Map errors at boundaries without destroying underlying identity needed by `errors.Is` or `errors.As`.
-* Test translation separately from the underlying service when practical.
-
-## Context, lifecycle, and concurrency rules
-
-* Accept `context.Context` at operation boundaries that can block, be canceled, perform I/O, or participate in a caller-owned lifecycle.
-* Check or propagate cancellation early enough to avoid committing state after cancellation.
-* Do not store contexts in long-lived structs. Store explicit lifecycle state and cancellation functions when ownership requires them.
-* Do not replace an available caller context with `context.Background()` without a concrete protocol or lifecycle reason.
-* Every goroutine must have a clear owner, termination condition, and cleanup path.
-* Avoid goroutine leaks on normal completion, errors, cancellation, partial startup, and repeated shutdown.
-* Keep lock scope narrow and make the protected state obvious.
-* Do not call unknown or external code while holding a lock unless the ordering requirement is explicit and tested.
-* Return copies or immutable views when callers must not mutate synchronized internal state.
-* Preserve ordering between document state changes and diagnostic publication.
-* Test cancellation, idempotent cleanup, stale state, and concurrent access where the behavior is meaningful.
-* Use the race detector for changes that add or materially alter shared mutable state or goroutine coordination.
-
-## Error-handling rules
-
-* Use standard `errors` and `%w` wrapping so callers can inspect error identity.
-* Add context at subsystem and process boundaries without repeating the entire call chain.
-* Error strings should be lowercase sentence fragments unless they contain a proper name or protocol-defined text.
-* Keep sentinel errors for stable conditions callers need to classify.
-* Do not compare error strings in production code when `errors.Is`, `errors.As`, or a typed error can express the contract.
-* Distinguish cancellation, invalid client input, missing state, stale state, dependency failures, transport failures, and internal invariants where callers need different behavior.
-* Do not log and return the same error at every layer. The owning process or transport boundary should decide how to report it.
+* Use standard `errors` and `%w` wrapping so callers can inspect identity.
+* Add context at subsystem and process boundaries without repeating the entire
+  call chain.
+* Error strings are lowercase sentence fragments unless they contain a proper
+  name or protocol-defined text.
+* Use sentinel errors for stable classifiable conditions and typed errors for
+  meaningful structured contracts. Do not compare production error strings.
+* Distinguish cancellation, invalid input, missing or stale state, dependency or
+  transport failures, domain failures, and internal invariant violations when
+  callers need different behavior.
+* Do not log and return the same error at every layer. The process or transport
+  boundary decides how to report it.
 * Never write errors to protocol stdout.
 
-## Go type and file structure rules
+## Go design and API ownership
+
+Use Effective Go, Go Code Review Comments, and standard-library conventions as
+the general baseline. The repository-specific rules below take precedence where
+they make a deliberate choice.
+
+### Semantic types, dependencies, and resources
+
+* Introduce a named type when it can own semantics, invariants, behavior,
+  validation, conversion, lifecycle, or API safety. Otherwise use the underlying
+  type.
+* APIs for an established semantic type should accept or return it rather than
+  bypassing it with primitives. Keep intrinsic behavior with that type.
+* Required peer-service dependencies are explicit. Constructors must not treat a
+  nil required dependency as a request to construct a hidden default.
+* Construct required services once at a clear composition root. Optional
+  dependencies may have defaults only when optionality and the default are
+  intentional.
+* Avoid service locators, hidden globals, implicit initialization, and normally
+  valid nil receivers for domain objects.
+* Make resource ownership and cleanup visible in APIs. State whether a resource
+  is owned, borrowed, leased, or transferred when cleanup depends on it.
+* Release partially acquired resources on every failure path. Do not eagerly
+  retain, copy, or materialize expensive resources without a concrete need.
+* Unless zero has a natural safe meaning, reserve it as unspecified or invalid
+  for enum-like types and keep sibling packages consistent.
+* Keep option validation, trimming, and defaults with the option-owning type or
+  constructor rather than repeating normalization across layers.
+
+### Type declarations and file structure
 
 These rules are mandatory unless the task explicitly requires otherwise.
 
-* Do not define multiple method-bearing structs in the same `.go` file.
-* Prefer declaring a method-bearing struct as a standalone `type Name struct { ... }`.
-* A method-bearing struct should usually live in its own file, named after the primary type or responsibility whenever practical, for example:
-    * `service.go` for `Service`;
-    * `server.go` for `Server`;
-    * `manager.go` for `Manager`;
-    * `session.go` or `sessions.go` for session ownership.
-* Grouped `type ( ... )` declarations are allowed for interfaces, passive data-only structs, and small related value types from one narrow concern.
-* A grouped declaration may contain exactly one method-bearing struct only when it is the file's sole behavioral type and the other types are passive helpers from the same concern.
-* Do not use grouped declarations to hide multiple substantial behavioral types.
-* If a helper gains methods and would create another method-bearing struct in the file, extract it into its own file.
-* Methods should live with their struct unless a strong concern-based split makes the result clearer.
-* Do not place a new method-bearing struct in an existing file merely because the code compiles.
-
-Allowed:
-
-```go
-type (
-	Diagnostic struct {
-		Message  string
-		Severity DiagnosticSeverity
-	}
-	
-	RelatedInformation struct {
-		Message string
-	}
-)
-```
-
-Avoid:
-
-```go
-type (
-	Service struct {
-		// ...
-	}
-	serverState struct {
-		// ...
-	}
-)
-```
-
-## Function and method ownership rules
-
-* A file centered on a method-bearing type should contain that type, its methods, and its constructors.
-* Constructors are the normally allowed package-level functions in a type-centered file.
-* If logic conceptually belongs to the primary type, implement it as a method.
-* If logic is genuinely package-level, place it in a separate helper-focused file.
-* Do not mix unrelated package-level helpers into a type-centered file.
-* Keep protocol conversion helpers near the adapter concern they serve.
-* Keep Ferret-to-protocol-neutral conversion in the language or source layer, not in process setup.
-* Prefer the narrowest ownership level that keeps behavior testable and avoids duplicate semantics.
-* Do not introduce interfaces until there are meaningful alternate implementations, a required test seam, or an external contract.
-
-## Comment rules
-
-* Do not add comments to every function or method by default.
-* Exported declarations should have useful doc comments, even in `internal` packages, when they define package-facing contracts.
-* Comment unexported code only when it carries non-obvious behavior, invariants, side effects, ownership, synchronization, lifecycle, protocol, or compatibility constraints.
-* Explain why the code exists, what must remain true, or how ownership works.
-* Do not restate names or signatures.
-* Keep future plans out of code comments unless the comment describes a deliberate current boundary.
-* Update or remove comments when implementation makes them obsolete.
-* Prefer dense, meaningful comments over comment wallpaper.
+* Prefer grouped `type ( ... )` declarations for package-level types.
+* Types declared in the same file should normally be placed in a single grouped
+  `type` declaration rather than written as independent `type` declarations.
+* This applies equally to structs, interfaces, aliases, named primitive types,
+  and method-bearing types.
+* Do not split types into independent declarations merely because one or more of
+  them have methods.
+* Keep related types together when they belong to the same narrow responsibility
+  and their proximity makes ownership, lifecycle, or state transitions easier
+  to understand.
+* A file may contain multiple related behavioral types when they form one
+  cohesive concern.
+* Split types into separate files based on responsibility and ownership, not
+  simply because multiple types have methods.
+* When a file contains only one package-level type, a standalone declaration is
+  acceptable; do not create an artificial group containing a single type.
+* When adding a package-level type to a file that already contains type
+  declarations, incorporate it into the existing type group when it belongs to
+  the same concern.
+* Keep small state, lifecycle, protocol, or coordination types together when
+  they collectively describe one implementation concern.
+* Avoid scattering a cohesive family of small types across multiple files.
+* Do not use `helpers.go`, `utils.go`, or similar files as dumping grounds.
+  Organize growing concerns by predictable responsibilities.
 
 Preferred:
 
 ```go
-// OffsetToPosition converts a Ferret rune offset to a zero-based UTF-16
-// position suitable for protocol adapters.
-func (m *Mapper) OffsetToPosition(offset int) Position
+type (
+	sessionRegistry struct {
+		mu sync.RWMutex
+
+		entries map[SessionID]*sessionEntry
+		groups  map[workspace.ID]*workspaceGroup
+		closed  bool
+	}
+
+	sessionEntry struct {
+		session *Session
+		state   registryState
+	}
+
+	sessionCreation struct {
+		workspace workspace.ID
+		group     *workspaceGroup
+	}
+
+	workspaceClose struct {
+		id    workspace.ID
+		group *workspaceGroup
+		owner bool
+	}
+)
 ```
 
-Avoid:
+Avoid independent declarations when the types form the same cohesive concern:
 
 ```go
-// OffsetToPosition converts an offset to a position.
-func (m *Mapper) OffsetToPosition(offset int) Position
-```
+type sessionRegistry struct {
+	// ...
+}
 
-## Go control-flow spacing rules
+type sessionEntry struct {
+	// ...
+}
 
-These rules apply to handwritten Go code. Blank lines should separate logical units and make control-transfer boundaries easy to scan.
+type sessionCreation struct {
+	// ...
+}
 
-### Immediate producer and check
-
-A declaration, call, lookup, parse, or assertion may remain directly adjacent to the `if` that immediately checks or consumes its result.
-
-Preferred:
-
-```go
-document, ok := s.documents[uri]
-if !ok {
-	return ErrDocumentNotOpen
+type workspaceClose struct {
+	// ...
 }
 ```
 
+### Functions, methods, packages, and abstractions
+
+* Prefer a method for behavior intrinsic to a semantic type, its state,
+  invariants, lifecycle, synchronization, or resources it owns.
+* Prefer a package-level function only for construction, package-wide
+  conversion, or behavior with no natural receiver.
+* Organize files around cohesive responsibilities rather than individual types.
+  A file may contain multiple related types and their methods when they
+  participate in the same narrow concern.
+* Keep methods close to the types they belong to.
+* A file containing methods must not also contain regular package-level
+  functions unless those functions are constructors for types owned by that
+  file.
+* Constructors include conventional `New...` functions and other explicit
+  construction functions whose primary responsibility is creating or
+  initializing one of the file's types.
+* Do not keep a regular helper function beside methods merely because those
+  methods are its only callers.
+* If behavior belongs to a type's state, invariants, lifecycle,
+  synchronization, or owned resources, make it a method.
+* If package-level behavior genuinely has no natural receiver, place it in a
+  separate responsibility-focused file.
+* Split files when responsibilities diverge, not merely because several types
+  have methods.
+* Keep protocol conversions with their adapter concern and Ferret-to-neutral
+  conversions in the language, diagnostic, or source layer.
+* Keep package boundaries domain-oriented. Do not create packages merely to
+  shorten files or remove a few repeated lines.
+* Prefer concrete and unexported types until a real substitution boundary,
+  multiple meaningful implementations, focused consumer contract, or valuable
+  test seam justifies an interface.
+* Extract shared behavior only when it is the same concept with the same
+  semantics, ownership, and lifecycle.
+* Do not introduce interfaces, wrappers, managers, factories, generic types, or
+  layers for aesthetic symmetry, easier mocking alone, a few repeated lines, or
+  hypothetical future requirements.
+* Avoid both oversized responsibilities and fragmentation across excessive
+  helpers, files, interfaces, or packages. Ownership should remain predictable
+  and the primary execution path easy to follow.
+* Do not split cohesive behavior across files merely to enforce one type or one
+  method-bearing type per file.
+
 Preferred:
 
 ```go
-path, err := source.URIToPath(uri)
+type (
+	sessionRegistry struct {
+		entries map[SessionID]*sessionEntry
+	}
+
+	sessionEntry struct {
+		session *Session
+		state   registryState
+	}
+)
+
+func newSessionRegistry() *sessionRegistry {
+	return &sessionRegistry{
+		entries: make(map[SessionID]*sessionEntry),
+	}
+}
+
+func (r *sessionRegistry) add(session *Session) {
+	// ...
+}
+
+func (r *sessionRegistry) close() error {
+	// ...
+}
+```
+
+Avoid:
+
+```go
+func (r *sessionRegistry) add(session *Session) {
+	// ...
+}
+
+func resolveWorkspaceGroup(id workspace.ID) *workspaceGroup {
+	// ...
+}
+
+func (r *sessionRegistry) close() error {
+	// ...
+}
+```
+
+If `resolveWorkspaceGroup` belongs to registry state or lifecycle, make it a
+method. If it is genuinely package-level behavior, move it to an appropriately
+named responsibility-focused file.
+
+### Comments
+
+* Do not comment every function or method by default.
+* Exported declarations should have useful doc comments, including in `internal`
+  packages, when they define package-facing contracts.
+* Comment unexported code only for non-obvious behavior, invariants, side effects,
+  ownership, synchronization, lifecycle, cleanup, protocol, or compatibility.
+* Explain why, what must remain true, what is guaranteed, or why ordering matters.
+  Do not restate names or signatures.
+* Keep speculative future plans out of code comments. Update or remove comments
+  when the implementation makes them obsolete.
+
+### Control-flow spacing
+
+These rules apply to handwritten Go code.
+
+* A declaration, call, lookup, parse, or assertion stays adjacent to the `if`
+  that immediately checks or consumes its result.
+* Separate that producer-and-check pair from preceding independent work.
+* Separate independent consecutive `if` statements with a blank line.
+* Add a blank line after completed control flow before independent work.
+* When another statement precedes `return` or `break` in the same block, start
+  the control transfer as a new logical group. No blank line is required when it
+  is already the first statement in the block.
+* Do not add artificial leading blank lines or surround every return mechanically.
+
+```go
+path, err := uri.Path()
 if err != nil {
 	return fmt.Errorf("resolve document URI: %w", err)
-}
-```
-
-If that producer-and-check unit follows another logical unit, separate it from the preceding work:
-
-```go
-validateRequest(request)
-
-document, ok := s.documents[uri]
-if !ok {
-	return ErrDocumentNotOpen
-}
-```
-
-### Consecutive control flow
-
-Separate independent `if` statements with a blank line.
-
-```go
-if err := ctx.Err(); err != nil {
-	return err
 }
 
 if len(changes) == 0 {
 	return ErrNoTextChanges
 }
-```
 
-Add a blank line after completed control flow before continuing with an independent statement.
-
-### Return and break separation
-
-When another statement precedes `return` or `break` in the same block, start the control transfer as a new logical group.
-
-Preferred:
-
-```go
 result := buildResult()
 
 return result
 ```
 
-Preferred:
+### Local types and naming
 
-```go
-if ready {
-	state = stateRunning
+Local types are appropriate when small, passive, method-free, used by one
+function, and helpful to its algorithm. Promote a type when it represents a
+domain, lifecycle, protocol, or reusable concept; spans a substantial function;
+clarifies ownership; or may reasonably gain methods.
 
-	break
-}
-```
+Follow Go initialism and package naming conventions. Keep package names short,
+lowercase, and responsibility-oriented; protocol-neutral names independent of a
+transport; receiver names short and consistent; and exported names free of
+package stutter. Treat new protobuf and CLI names as long-lived contracts.
 
-No blank line is required when `return` is already the first statement in its block:
+## Tests and performance
 
-```go
-if err != nil {
-	return err
-}
-```
+* Add or update tests for every behavior change and place them with the package
+  that owns the behavior.
+* Test observable contracts rather than mirroring implementation details. Use
+  focused table tests when several inputs exercise one contract.
+* Use `t.Helper()` in reusable helpers and `t.Cleanup` for restoration,
+  cancellation, goroutine stopping, and resource closure.
+* Cover relevant positive, negative, boundary, invalid-input, cancellation,
+  cleanup, repeated-operation, idempotency, stale-state, error-identity,
+  concurrency, and cross-layer integration cases.
+* Keep timeouts bounded and CI-tolerant. Avoid network-dependent tests unless a
+  task requires integration and the repository provides deterministic fixtures.
+* Bug fixes should include a regression test that fails without the fix whenever
+  practical. Protobuf or gRPC work also requires reproducible generation and
+  wire or translation coverage.
+* Passing tests are evidence, not proof that the design is appropriate.
 
-Do not add artificial leading blank lines or surround every return mechanically. The rule separates a control transfer from preceding work in the same block.
+A change is performance-significant when it may materially affect latency,
+allocations, copying, compilation, mapping, caching, memory retention, lock
+contention, startup or shutdown, resource lifetime, or execution/debug
+throughput. For such changes, identify a focused benchmark, retain a comparable
+pre-change baseline, rerun it afterward, compare `ns/op`, `B/op`, and
+`allocs/op`, investigate meaningful regressions, and report the commands and
+results accurately. Documentation-only, test-only, pure rename, formatting-only,
+and narrow non-hot-path refactors normally do not require benchmarks.
 
-## Local type declarations
+## Required workflow for non-trivial changes
 
-Local types declared inside functions are allowed when they are small, passive, method-free, used only by that function, and make the local algorithm easier to understand.
+1. Identify the owning subsystem and read its development guide, source, and
+   tests.
+2. Identify observable contracts, invariants, lifecycle, resource ownership,
+   error semantics, compatibility, and explicit non-goals.
+3. Choose the smallest coherent design that fits current ownership boundaries;
+   do not rely on historical prose or existing technical debt as precedent.
+4. Determine concurrency, lifecycle, compatibility, and performance risk; retain
+   a focused pre-change benchmark when performance matters.
+5. Add or update correctness tests and implement the focused change without
+   collateral cleanup.
+6. Run the narrowest validation that exercises the change, then broaden by risk
+   with integration, race, lint, build, generation, or repository-wide checks.
+7. Evaluate documentation impact and update affected repository and public
+   documentation.
+8. Perform the mandatory final self-review below and inspect the complete diff.
+9. Fix issues introduced by the task and appropriate small adjacent findings,
+   then repeat every invalidated validation and benchmark.
+10. Report the implementation, preserved invariants, documentation impact,
+    tests, measurements, review, limitations, and unresolved follow-up
+    accurately.
 
-Prefer a package-level unexported type when the type:
-
-* represents a meaningful domain, lifecycle, protocol, or algorithmic concept;
-* is used across a substantial function or by nearby helpers;
-* would make control flow easier to scan when declared separately;
-* may reasonably gain methods;
-* is likely to be reused;
-* clarifies ownership at package scope.
-
-Do not promote a tiny throwaway struct merely for consistency, and do not hide a meaningful state or protocol concept inside a long function merely to avoid another declaration.
-
-## Naming and API style
-
-* Follow standard Go initialism and package naming conventions.
-* Keep package names short, lowercase, and responsibility-oriented.
-* Avoid package names such as `util`, `common`, or `helpers` that obscure ownership.
-* Name protocol-neutral concepts independently from a specific transport.
-* Use `New` when a package has one primary construction path; use a qualified constructor when multiple meanings would otherwise be ambiguous.
-* Keep receiver names short and consistent within a type.
-* Avoid stutter between package and exported names.
-* Prefer concrete types until an interface is required by a real boundary.
-* Do not export symbols from internal packages without a package-to-package need.
-* Treat newly introduced protobuf and CLI names as long-lived contracts.
-
-## Test style and placement
-
-* Add or update tests for every behavior change.
-* Put tests beside the package that owns the behavior.
-* Test observable contracts rather than mirroring implementation details.
-* Prefer focused table-driven tests when several inputs exercise the same contract.
-* Use `t.Helper()` in reusable test helpers.
-* Use `t.Cleanup` for restoring globals, closing resources, canceling contexts, or stopping goroutines.
-* Avoid sleeps as synchronization. Use channels, contexts, deadlines, or observable state.
-* Keep timeouts bounded and generous enough for CI while still detecting leaks or deadlocks.
-* Verify both success and failure paths, including error identity when it is part of the contract.
-* Avoid network-dependent tests unless the task explicitly requires integration coverage and the repository provides a deterministic fixture.
-
-Place coverage according to ownership:
-
-* CLI behavior belongs in `cmd/ferretd` tests.
-* Daemon lifecycle belongs in `internal/daemon` tests.
-* Document state, versioning, diagnostics, and Ferret conversion belong in `internal/language` tests.
-* LSP capability and payload translation belong in `internal/lsp` tests.
-* URI and position behavior belongs in `internal/source` tests.
-* Workspace, execution, and debug behavior belongs in the corresponding manager package plus adapter-level integration tests.
-* Protobuf or gRPC work requires generation reproducibility and wire/translation tests, not only direct method tests.
-
-For bug fixes, add a regression test that fails without the fix whenever practical. For concurrency changes, add deterministic lifecycle tests and run the race detector on affected packages.
-
-## Development practice expectations
-
-### Core principles
-
-* Preserve correctness and protocol compatibility first.
-* Preserve ownership boundaries and lifecycle invariants.
-* Prefer the smallest local change that fully solves the task.
-* Adapt an existing repository pattern before introducing a new abstraction.
-* Avoid speculative implementation of planned architecture.
-* Do not optimize by intuition alone; measure performance-sensitive work.
-* Keep behavior, state ownership, cancellation, and cleanup obvious.
-* Do not treat the first compiling implementation as complete.
-
-### Required workflow for non-trivial changes
-
-1. Identify the owning package and observable contract.
-2. Identify the current invariant, lifecycle, protocol behavior, or compatibility surface being preserved or changed.
-3. Choose the smallest implementation that fits the current architecture.
-4. Determine whether the change is performance-significant or concurrency-sensitive.
-5. Add or update focused correctness tests.
-6. Add or update benchmarks when the change is performance-significant.
-7. Run the narrowest relevant validation first, then broaden as appropriate.
-8. Perform the mandatory final self-review described below.
-9. Correct issues found during self-review without widening scope.
-10. Re-run validation affected by review-driven corrections.
-11. Inspect the complete final diff as a whole.
-12. Report implementation, tests, benchmarks, review, and limitations accurately.
-
-Do not perform opportunistic refactors, dependency upgrades, formatting churn, generated-file changes, or documentation rewrites unrelated to the task.
-
-## Mandatory final self-review
-
-After implementation and initial validation for every non-trivial task, review the complete change before considering the task finished. The review must evaluate the implementation, not merely confirm that tests pass.
-
-Review the final change for:
-
-### Correctness
-
-* Verify every requested behavior and explicit non-goal.
-* Look for missing cases, regressions, invalid assumptions, boundary conditions, and partial state changes.
-* Check cancellation, cleanup, idempotency, error identity, version ordering, and lifecycle transitions where applicable.
-* Check concurrency behavior, lock scope, goroutine termination, and callback ordering where applicable.
-* Verify protocol conversions, URI handling, source ranges, Unicode behavior, and output-channel purity when touched.
-* Ensure tests would detect plausible regressions rather than merely repeat implementation structure.
-
-### Code clarity and Go practices
-
-* Look for unnecessary abstraction, duplication, nesting, misleading names, awkward control flow, and hidden state ownership.
-* Prefer straightforward idiomatic Go over clever implementations.
-* Check error wrapping, context propagation, synchronization, resource ownership, and cleanup.
-* Remove temporary code, debugging output, dead branches, obsolete helpers, and comments describing abandoned approaches.
-* Verify compliance with the type/file, method ownership, comment, and control-flow rules in this guide.
-
-### Architecture and organization
-
-* Verify behavior remains in the owning package and dependency direction remains clear.
-* Keep protocol types in adapters and protocol-neutral behavior in shared services.
-* Keep Ferret-owned semantics in Ferret.
-* Avoid exposing new APIs or wire contracts unless the task requires them.
-* Check that files, types, methods, helpers, and packages each have a coherent responsibility without excessive fragmentation.
-* Distinguish implemented behavior from placeholder or planned architecture.
-
-### Tests and performance
-
-* Review positive, negative, boundary, cancellation, cleanup, stale-state, and concurrency coverage as relevant.
-* Check assertions for meaningful observable behavior and error classification.
-* Look for flaky timing, leaked goroutines, mutable global state, or unnecessary dependence on implementation details.
-* For significant changes, inspect allocations, repeated conversions, lock contention, blocking work, and hot-path overhead.
-* Compare relevant benchmark results against a baseline when performance is in scope.
-
-When review finds a problem, fix it, add or improve coverage where necessary, and re-run affected validation. Do not leave known correctness, lifecycle, protocol, ownership, architecture, or significant test-coverage issues unresolved merely because initial tests passed.
-
-Do not use self-review to justify unrelated cleanup, speculative refactoring, broad package reshuffling, dependency upgrades, or implementation of future features.
-
-### Final diff inspection
-
-Immediately before finishing, inspect the complete final diff and verify that:
-
-* every changed line belongs to the requested task or a necessary supporting change;
-* unrelated user changes remain intact;
-* no debugging or temporary artifacts remain;
-* no accidental behavior, API, protocol, dependency, generated-file, or documentation changes slipped in;
-* tests describe intended behavior;
-* comments describe current contracts and invariants;
-* package, file, type, and function ownership remains coherent;
-* cancellation, concurrency, cleanup, and resource lifetimes remain correct;
-* the result is the smallest coherent change that fully solves the task.
-
-If final inspection causes another edit, repeat the affected validation afterward.
-
-## Significant changes and benchmarks
-
-A change is significant when it could reasonably affect:
-
-* request or diagnostic latency;
-* repeated source mapping or compilation cost;
-* allocation patterns for open documents or protocol payloads;
-* lock contention or concurrency throughput;
-* daemon startup, shutdown, or long-running memory behavior;
-* execution or debug-session throughput.
-
-For significant changes:
-
-* identify or add a focused benchmark;
-* run it before the implementation and save a baseline;
-* run the same benchmark after the implementation;
-* compare `ns/op`, `B/op`, and `allocs/op` where applicable;
-* investigate meaningful regressions;
-* report the command and comparison accurately.
-
-Documentation-only, test-only, pure rename, and narrow non-hot-path refactoring changes are normally not significant. If benchmark tooling or the environment is unavailable, state that explicitly rather than claiming benchmark validation.
-
-## Command matrix
-
-Run commands from the repository root.
-
-* Download dependencies: `make install`
-* Compile the binary: `make compile`
-* Run all Go tests: `go test ./...` or `make test`
-* Run vet: `go vet ./...` or `make vet`
-* Run static analysis and revive: `make lint`
-* Format Go code: `make fmt`
-* Run the broad local build gate: `make build`
-* Install lint and formatting tools: `make install-tools`
-* Generate daemon/workspace/execution protobuf code: `make generate`
-* Lint all protobuf sources: `make proto-lint`
-* Verify checked-in generated code: `make check-generate`
-
-`make build` runs vet, lint, tests, and compilation. It therefore requires `staticcheck`, `revive`, and the normal Go toolchain in addition to project dependencies.
-
-`make generate` uses the pinned Buf CLI and pinned Go protobuf plugins declared by the repository. It intentionally generates only implemented daemon/workspace/execution contracts. Always inspect generated diffs and run `make check-generate` when contracts or generation configuration change.
-
-`make fmt` mutates Go files. Use it only when formatting changes are within task scope, and inspect the resulting diff for unrelated churn.
-
-The release target creates and pushes a tag. Run `make release <version>` only when the user explicitly requests a release and the release preconditions have been verified.
+Do not perform opportunistic refactors, dependency upgrades, formatting churn,
+API redesign, package reshuffling, generated-file changes, or implementation of
+future features unrelated to the task. Do not perform unrelated documentation
+rewrites; documentation updates required to keep affected contracts, behavior,
+examples, and guidance accurate are part of the task.
 
 ## Validation expectations
 
-Run the narrowest validation that proves the changed behavior, then broaden according to risk.
+Use the `Makefile` and current CI workflows as command sources. Start narrow and
+broaden according to risk.
 
-* Package-local Go changes: run `go test` for the affected package first.
-* Cross-package language or LSP changes: run affected package tests, then `go test ./...`.
-* Shared-state or goroutine changes: run affected tests with `-race`, then broader tests as appropriate.
-* CLI or daemon lifecycle changes: run the relevant package tests and compile the binary.
-* Lint-sensitive or exported-contract changes: run `make lint` when the required tools are available.
-* Broad or release-facing changes: finish with `make build` when the environment supports the toolchain.
-* Documentation-only changes: validate exact scope, referenced commands and paths, Markdown structure, whitespace, and the complete diff. Do not run unrelated code tests merely to create validation theater.
+* Handwritten Go changes require formatting of affected code and focused package
+  tests. Inspect formatter output for unrelated churn.
+* Cross-package changes normally require affected tests followed by
+  `go test ./...` when practical.
+* Shared-state or goroutine changes require `-race` on every affected domain and
+  adapter package; do not assume the current CI package list is exhaustive.
+* CLI or daemon lifecycle changes require relevant package tests and compilation.
+* Lint-sensitive or exported-contract changes require repository lint when the
+  tools are available.
+* Protobuf changes require source lint, pinned regeneration, generated-diff
+  inspection, and the checked-in generation gate.
+* Broad or release-facing Go changes should finish with the broad build gate when
+  the environment supports it.
+* Documentation-only changes require exact-scope, link/path, Markdown structure,
+  whitespace, and complete-diff validation; do not run unrelated suites for
+  validation theater.
 
-After review-driven code changes, re-run every command whose result may have been invalidated.
+After review-driven changes, rerun every command whose result may be invalid.
+Report tooling, environment, permission, or dependency limitations explicitly.
+Never claim tests, lint, builds, race checks, benchmarks, generation, or review
+succeeded unless they actually completed.
 
-When finishing a non-trivial change, report:
+## Mandatory final self-review
 
-* owning subsystem;
-* files changed;
-* behavior and invariants changed or preserved;
-* tests added or updated;
-* validation commands actually run;
-* benchmarks and baseline comparison, if applicable;
-* final self-review completion and meaningful corrections;
-* remaining limitations or environmental failures.
-
-Never claim tests, lint, builds, benchmarks, generation, or review succeeded unless the work was actually completed.
-
-## Editing and change-discipline rules
-
-* Preserve unrelated dirty or untracked files.
-* Keep the diff focused on the requested behavior.
-* Do not update dependencies unless the task requires a dependency change.
-* Do not edit files under `gen/` manually; update protobuf sources/configuration and regenerate.
-* Do not add protocol, session, workspace, or debug abstractions for hypothetical future use.
-* Avoid changing CLI, LSP, or protobuf contracts as collateral cleanup.
-* Keep documentation statements precise about current versus planned support.
-* If a necessary cleanup directly supports correctness, lifecycle safety, or maintainability of the requested change, keep it narrow and explain it.
-
-## Documentation synchronization
-
-Update repository documentation when a change affects user-visible or integration-facing behavior.
-
-* Update `README.md` for commands, supported capabilities, requirements, or current status.
-* Update `docs/lsp.md` for editor setup, LSP capabilities, synchronization, or language features.
-* Update `docs/architecture.md` for ownership boundaries or intended service relationships.
-* Keep implemented behavior and future plans clearly separated.
-* Do not document the debug placeholder protobuf service as a running endpoint.
-* Keep examples consistent with actual command names, arguments, and transport behavior.
-
-Documentation synchronization is part of a behavior change when existing documentation would otherwise become incorrect. It does not authorize unrelated documentation cleanup.
-
-## Decision bias when uncertain
-
-When uncertain:
-
-* verify current source and tests before relying on architecture prose;
-* preserve existing observable behavior;
-* keep protocol adapters thin;
-* keep Ferret semantics in Ferret;
-* prefer the smaller local change;
-* make cancellation, ownership, and lifecycle explicit;
-* add a focused test;
-* measure before optimizing;
-* treat CLI, LSP, and protobuf changes as compatibility-sensitive;
-* leave already-correct code alone.
+Every coding task ends with a design and style review after implementation and
+initial validation. Review changed and directly adjacent code as though reviewing
+another engineer's pull request; for non-trivial work, inspect the complete diff
+as one coherent change.

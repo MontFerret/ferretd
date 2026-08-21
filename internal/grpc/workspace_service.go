@@ -15,12 +15,12 @@ type workspaceService struct {
 	workspaces *workspace.Manager
 }
 
-func newWorkspaceService(workspaces *workspace.Manager) *workspaceService {
+func newWorkspaceService(workspaces *workspace.Manager) (*workspaceService, error) {
 	if workspaces == nil {
-		workspaces = workspace.New()
+		return nil, errNilWorkspaceManager
 	}
 
-	return &workspaceService{workspaces: workspaces}
+	return &workspaceService{workspaces: workspaces}, nil
 }
 
 func (s *workspaceService) Open(
@@ -33,7 +33,7 @@ func (s *workspaceService) Open(
 
 	result, err := s.workspaces.Open(ctx, request.Root)
 	if err != nil {
-		return nil, toStatusError(err)
+		return nil, toWorkspaceStatusError(err)
 	}
 
 	return &workspacev1.OpenResponse{Workspace: toProtoWorkspace(result)}, nil
@@ -49,7 +49,7 @@ func (s *workspaceService) Get(
 
 	result, err := s.workspaces.Get(ctx, workspace.ID(request.Id.Value))
 	if err != nil {
-		return nil, toStatusError(err)
+		return nil, toWorkspaceStatusError(err)
 	}
 
 	return &workspacev1.GetResponse{Workspace: toProtoWorkspace(result)}, nil
@@ -61,7 +61,7 @@ func (s *workspaceService) List(
 ) (*workspacev1.ListResponse, error) {
 	items, err := s.workspaces.List(ctx)
 	if err != nil {
-		return nil, toStatusError(err)
+		return nil, toWorkspaceStatusError(err)
 	}
 
 	result := &workspacev1.ListResponse{
@@ -83,7 +83,7 @@ func (s *workspaceService) Close(
 	}
 
 	if err := s.workspaces.Close(ctx, workspace.ID(request.Id.Value)); err != nil {
-		return nil, toStatusError(err)
+		return nil, toWorkspaceStatusError(err)
 	}
 
 	return &workspacev1.CloseResponse{}, nil

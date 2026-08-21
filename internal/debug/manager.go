@@ -1,15 +1,13 @@
+// Package debug coordinates retained debugger-specific Sessions and their lifecycle.
 package debug
 
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2"
-	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
 
 type (
@@ -18,54 +16,47 @@ type (
 		mu sync.RWMutex
 
 		executions *exec.Manager
-		sessions   map[SessionID]*Session
-		closing    map[SessionID]*Session
+		sessions   map[SessionID]*session
+		closing    map[SessionID]*session
 		groups     map[exec.SessionID]*sessionGroup
 		closed     bool
 	}
 
 	sessionGroup struct {
-		closing      bool
-		closeStarted bool
-		closeDone    chan struct{}
-		closeErr     error
-		creating     int
-		createDone   chan struct{}
-		sessions     map[SessionID]*Session
+		// Manager.mu is acquired before gate when both are needed. Gate never
+		// calls back into the Manager, so the lock order cannot reverse.
+		gate     lifecycle.Gate
+		sessions map[SessionID]*session
 	}
 )
 
-// New creates a debug manager parented by an execution manager.
-func New(executions *exec.Manager) *Manager {
+// New creates a debug manager that borrows an execution manager.
+// It returns an error when the execution manager is nil.
+func New(executions *exec.Manager) (*Manager, error) {
 	if executions == nil {
-		panic("debug: nil execution manager")
+		return nil, errNilExecutionManager
 	}
 
 	result := &Manager{
 		executions: executions,
-		sessions:   make(map[SessionID]*Session),
-		closing:    make(map[SessionID]*Session),
+		sessions:   make(map[SessionID]*session),
+		closing:    make(map[SessionID]*session),
 		groups:     make(map[exec.SessionID]*sessionGroup),
 	}
 	executions.RegisterSessionCloseHook(result.closeExecutionSession)
 
-	return result
+	return result, nil
 }
 
 // CreateSession creates one retained debugger child of an executable Session.
 func (m *Manager) CreateSession(
 	ctx context.Context,
 	parentID exec.SessionID,
-	parameters map[string]any,
-	options SessionOptions,
+	parameters exec.Parameters,
+	options exec.RuntimeOptions,
 ) (SessionSnapshot, error) {
-	if err := contextError(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
-	}
-
-	params, err := runtime.NewParamsFrom(parameters)
-	if err != nil {
-		return SessionSnapshot{}, fmt.Errorf("%w: %v", exec.ErrInvalidParameters, err)
 	}
 
 	id, err := newSessionID()
@@ -73,44 +64,27 @@ func (m *Manager) CreateSession(
 		return SessionSnapshot{}, err
 	}
 
-	options.OutputContentType = strings.TrimSpace(options.OutputContentType)
-	if options.OutputContentType == "" {
-		options.OutputContentType = "application/json"
-	}
-
 	if err := m.beginCreate(parentID); err != nil {
 		return SessionSnapshot{}, err
 	}
+
 	defer m.finishCreate(parentID)
 
-	target, err := m.executions.AcquireDebugTarget(ctx, parentID)
+	runtime, err := m.executions.CreateDebugRuntime(ctx, parentID, parameters, options)
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
 
-	sessionOptions := []ferret.SessionOption{ferret.WithSessionRuntimeParams(params)}
-	if options.OutputContentType != "" {
-		sessionOptions = append(sessionOptions, ferret.WithOutputContentType(options.OutputContentType))
-	}
-
-	ferretSession, err := target.NewDebugSession(ctx, sessionOptions...)
-	if err != nil {
-		target.Release()
-
-		return SessionSnapshot{}, err
-	}
-
-	created := newSession(id, target, ferretSession, parameters, options)
+	created := newSession(id, runtime)
 	m.mu.Lock()
 	group := m.groups[parentID]
-	if m.closed || group == nil || group.closing {
+	if m.closed || group == nil || !group.gate.Accepting() {
 		managerClosed := m.closed
 		m.mu.Unlock()
 
-		closeErr := ferretSession.Close()
-		target.Release()
+		closeErr := runtime.Close()
 		if managerClosed {
-			return SessionSnapshot{}, errors.Join(ErrManagerClosed, closeErr)
+			return SessionSnapshot{}, errors.Join(ErrClosed, closeErr)
 		}
 
 		return SessionSnapshot{}, errors.Join(exec.ErrSessionClosed, closeErr)
@@ -120,7 +94,7 @@ func (m *Manager) CreateSession(
 	group.sessions[id] = created
 	m.mu.Unlock()
 
-	return created.Snapshot(), nil
+	return created.snapshot(), nil
 }
 
 // GetSession returns an immutable debug Session snapshot.
@@ -130,7 +104,7 @@ func (m *Manager) GetSession(ctx context.Context, id SessionID) (SessionSnapshot
 		return SessionSnapshot{}, err
 	}
 
-	return session.Snapshot(), nil
+	return session.snapshot(), nil
 }
 
 // StartSession starts a debug Session asynchronously.
@@ -140,7 +114,7 @@ func (m *Manager) StartSession(ctx context.Context, id SessionID) (SessionSnapsh
 		return SessionSnapshot{}, err
 	}
 
-	return session.Start(ctx)
+	return session.start(ctx)
 }
 
 // ContinueSession resumes a stopped debug Session.
@@ -150,7 +124,7 @@ func (m *Manager) ContinueSession(ctx context.Context, id SessionID) (SessionSna
 		return SessionSnapshot{}, err
 	}
 
-	return session.Continue(ctx)
+	return session.continueExecution(ctx)
 }
 
 // PauseSession requests a stop from a running debug Session.
@@ -160,7 +134,7 @@ func (m *Manager) PauseSession(ctx context.Context, id SessionID) (SessionSnapsh
 		return SessionSnapshot{}, err
 	}
 
-	return session.Pause(ctx)
+	return session.pause(ctx)
 }
 
 // StepInSession steps into the next logical source location.
@@ -170,7 +144,7 @@ func (m *Manager) StepInSession(ctx context.Context, id SessionID) (SessionSnaps
 		return SessionSnapshot{}, err
 	}
 
-	return session.StepIn(ctx)
+	return session.stepIn(ctx)
 }
 
 // StepOverSession steps over calls at the current depth.
@@ -180,7 +154,7 @@ func (m *Manager) StepOverSession(ctx context.Context, id SessionID) (SessionSna
 		return SessionSnapshot{}, err
 	}
 
-	return session.StepOver(ctx)
+	return session.stepOver(ctx)
 }
 
 // StepOutSession resumes until execution returns to a caller.
@@ -190,7 +164,7 @@ func (m *Manager) StepOutSession(ctx context.Context, id SessionID) (SessionSnap
 		return SessionSnapshot{}, err
 	}
 
-	return session.StepOut(ctx)
+	return session.stepOut(ctx)
 }
 
 // ReplaceBreakpoints replaces all breakpoints for one source.
@@ -205,7 +179,7 @@ func (m *Manager) ReplaceBreakpoints(
 		return nil, err
 	}
 
-	return session.ReplaceBreakpoints(ctx, file, locations)
+	return session.replaceBreakpoints(ctx, file, locations)
 }
 
 // Frames returns the current-to-caller paused frame stack.
@@ -215,7 +189,7 @@ func (m *Manager) Frames(ctx context.Context, id SessionID) ([]Frame, error) {
 		return nil, err
 	}
 
-	return session.Frames(ctx)
+	return session.frames(ctx)
 }
 
 // Scopes returns Locals and Parameters for one paused frame.
@@ -225,7 +199,7 @@ func (m *Manager) Scopes(ctx context.Context, id SessionID, frame int) ([]Scope,
 		return nil, err
 	}
 
-	return session.Scopes(ctx, frame)
+	return session.scopes(ctx, frame)
 }
 
 // Variables expands one paused-state value reference.
@@ -239,7 +213,7 @@ func (m *Manager) Variables(
 		return nil, err
 	}
 
-	return session.Variables(ctx, reference)
+	return session.variables(ctx, reference)
 }
 
 // Evaluate evaluates an expression in one paused frame.
@@ -254,7 +228,7 @@ func (m *Manager) Evaluate(
 		return Value{}, err
 	}
 
-	return session.Evaluate(ctx, frame, expression)
+	return session.evaluate(ctx, frame, expression)
 }
 
 // TerminateSession idempotently requests termination and retains the resource.
@@ -264,7 +238,7 @@ func (m *Manager) TerminateSession(ctx context.Context, id SessionID) (SessionSn
 		return SessionSnapshot{}, err
 	}
 
-	return session.Terminate(ctx)
+	return session.terminateExecution(ctx)
 }
 
 // WatchSession subscribes to current and future lifecycle events.
@@ -274,7 +248,7 @@ func (m *Manager) WatchSession(ctx context.Context, id SessionID) (Subscription,
 		return Subscription{}, err
 	}
 
-	return session.Subscribe(), nil
+	return session.subscribe(), nil
 }
 
 // CloseSession removes a debug Session and guarantees eventual cleanup.
@@ -288,7 +262,7 @@ func (m *Manager) CloseSession(ctx context.Context, id SessionID) error {
 		go m.finishSessionClose(session)
 	}
 
-	return waitForDone(ctx, session.closeDone, session.closeResult)
+	return session.close.Wait(ctx)
 }
 
 // Close prevents new resources and settles every retained debug Session.
@@ -309,8 +283,8 @@ func (m *Manager) Close(ctx context.Context) error {
 	return result
 }
 
-func (m *Manager) session(ctx context.Context, id SessionID) (*Session, error) {
-	if err := contextError(ctx); err != nil {
+func (m *Manager) session(ctx context.Context, id SessionID) (*session, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -329,23 +303,18 @@ func (m *Manager) beginCreate(parentID exec.SessionID) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return ErrManagerClosed
+		return ErrClosed
 	}
 
 	group := m.groups[parentID]
 	if group == nil {
-		group = &sessionGroup{sessions: make(map[SessionID]*Session)}
+		group = &sessionGroup{sessions: make(map[SessionID]*session)}
 		m.groups[parentID] = group
 	}
 
-	if group.closing {
+	if !group.gate.BeginCreate() {
 		return exec.ErrSessionClosed
 	}
-
-	if group.creating == 0 {
-		group.createDone = make(chan struct{})
-	}
-	group.creating++
 
 	return nil
 }
@@ -355,22 +324,16 @@ func (m *Manager) finishCreate(parentID exec.SessionID) {
 	defer m.mu.Unlock()
 
 	group := m.groups[parentID]
-	if group == nil || group.creating == 0 {
+	if group == nil {
 		return
 	}
 
-	group.creating--
-	if group.creating == 0 {
-		close(group.createDone)
-		group.createDone = nil
-
-		if !group.closing && len(group.sessions) == 0 {
-			delete(m.groups, parentID)
-		}
+	if group.gate.EndCreate() && group.gate.Accepting() && len(group.sessions) == 0 {
+		delete(m.groups, parentID)
 	}
 }
 
-func (m *Manager) detachSession(id SessionID) *Session {
+func (m *Manager) detachSession(id SessionID) *session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -389,18 +352,18 @@ func (m *Manager) detachSession(id SessionID) *Session {
 	return session
 }
 
-func (m *Manager) finishSessionClose(session *Session) {
+func (m *Manager) finishSessionClose(session *session) {
 	session.settleClose()
 	session.completeClose()
 
 	m.mu.Lock()
-	if group := m.groups[session.session]; group != nil {
+	if group := m.groups[session.runtime.SessionID()]; group != nil {
 		if group.sessions[session.id] == session {
 			delete(group.sessions, session.id)
 		}
 
-		if !group.closing && group.creating == 0 && len(group.sessions) == 0 {
-			delete(m.groups, session.session)
+		if group.gate.Accepting() && group.gate.Idle() && len(group.sessions) == 0 {
+			delete(m.groups, session.runtime.SessionID())
 		}
 	}
 	delete(m.closing, session.id)
@@ -416,30 +379,18 @@ func (m *Manager) closeExecutionSession(ctx context.Context, parentID exec.Sessi
 		return nil
 	}
 
-	group.closing = true
-	owner := !group.closeStarted
-	if owner {
-		group.closeStarted = true
-		group.closeDone = make(chan struct{})
-	}
-	done := group.closeDone
+	owner := group.gate.BeginClose()
 	m.mu.Unlock()
 
 	if owner {
 		go m.finishExecutionSessionClose(parentID, group)
 	}
 
-	return waitForDone(ctx, done, func() error { return group.closeErr })
+	return group.gate.WaitClose(ctx)
 }
 
 func (m *Manager) finishExecutionSessionClose(parentID exec.SessionID, group *sessionGroup) {
-	m.mu.RLock()
-	creating := group.creating
-	createDone := group.createDone
-	m.mu.RUnlock()
-	if creating > 0 {
-		_ = waitForDone(context.Background(), createDone, func() error { return nil })
-	}
+	group.gate.WaitForCreates()
 
 	m.mu.RLock()
 	ids := make([]SessionID, 0, len(group.sessions))
@@ -453,25 +404,11 @@ func (m *Manager) finishExecutionSessionClose(parentID exec.SessionID, group *se
 		result = errors.Join(result, m.CloseSession(context.Background(), id))
 	}
 
-	group.closeErr = result
-	close(group.closeDone)
+	group.gate.FinishClose(result)
 
 	m.mu.Lock()
 	if m.groups[parentID] == group {
 		delete(m.groups, parentID)
 	}
 	m.mu.Unlock()
-}
-
-func waitForDone(ctx context.Context, done <-chan struct{}, result func() error) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return result()
-	}
 }

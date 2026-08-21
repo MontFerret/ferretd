@@ -2,7 +2,6 @@ package grpc
 
 import (
 	"context"
-	"errors"
 
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -18,12 +17,12 @@ type executionService struct {
 	executions *exec.Manager
 }
 
-func newExecutionService(executions *exec.Manager) *executionService {
+func newExecutionService(executions *exec.Manager) (*executionService, error) {
 	if executions == nil {
-		executions = exec.New(nil)
+		return nil, errNilExecutionManager
 	}
 
-	return &executionService{executions: executions}
+	return &executionService{executions: executions}, nil
 }
 
 func (s *executionService) CreateSession(
@@ -95,7 +94,7 @@ func (s *executionService) CreateExecution(
 		parameters = request.Parameters.AsMap()
 	}
 
-	options := exec.ExecutionOptions{}
+	options := exec.RuntimeOptions{}
 	if request.Options != nil {
 		options.OutputContentType = request.Options.OutputContentType
 	}
@@ -103,7 +102,7 @@ func (s *executionService) CreateExecution(
 	result, err := s.executions.CreateExecution(
 		ctx,
 		exec.SessionID(request.SessionId.Value),
-		parameters,
+		exec.Parameters(parameters),
 		options,
 	)
 	if err != nil {
@@ -250,147 +249,4 @@ func (s *executionService) WatchExecution(
 			}
 		}
 	}
-}
-
-func sendExecutionEvent(
-	stream grpcgo.ServerStreamingServer[executionv1.WatchExecutionResponse],
-	event exec.Event,
-) error {
-	encoded, err := toProtoExecutionEvent(event)
-	if err != nil {
-		return toExecutionStatusError(err)
-	}
-
-	return stream.Send(encoded)
-}
-
-func subscriptionStatusError(errorsChannel <-chan error) error {
-	for watchErr := range errorsChannel {
-		if watchErr != nil {
-			return toExecutionStatusError(watchErr)
-		}
-	}
-
-	return nil
-}
-
-func toExecutionStatusError(err error) error {
-	var compilation *exec.CompilationError
-
-	if errors.As(err, &compilation) {
-		base := status.New(codes.InvalidArgument, exec.ErrCompilationFailed.Error())
-		withDetails, detailErr := base.WithDetails(&executionv1.CompilationFailure{
-			Source:      toProtoSourceSnapshot(compilation.Source),
-			Diagnostics: toProtoDiagnostics(compilation.Diagnostics),
-		})
-
-		if detailErr != nil {
-			return base.Err()
-		}
-
-		return withDetails.Err()
-	}
-
-	switch {
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return status.FromContextError(err).Err()
-	case errors.Is(err, workspace.ErrNotFound):
-		return resourceStatusError(
-			codes.NotFound,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_WORKSPACE,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND,
-		)
-	case errors.Is(err, workspace.ErrDocumentNotFound):
-		return resourceStatusError(
-			codes.NotFound,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_SOURCE,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND,
-		)
-	case errors.Is(err, exec.ErrSessionNotFound):
-		return resourceStatusError(
-			codes.NotFound,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_SESSION,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND,
-		)
-	case errors.Is(err, exec.ErrExecutionNotFound):
-		return resourceStatusError(
-			codes.NotFound,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND,
-		)
-	case errors.Is(err, exec.ErrInvalidParameters):
-		return resourceStatusError(
-			codes.InvalidArgument,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_PARAMETERS,
-		)
-	case errors.Is(err, workspace.ErrDocumentUnavailable):
-		return resourceStatusError(
-			codes.FailedPrecondition,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_SOURCE,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
-		)
-	case errors.Is(err, workspace.ErrClosed), errors.Is(err, exec.ErrWorkspaceClosed):
-		return resourceStatusError(
-			codes.FailedPrecondition,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_WORKSPACE,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
-		)
-	case errors.Is(err, exec.ErrManagerClosed):
-		return resourceStatusError(
-			codes.FailedPrecondition,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
-		)
-	case errors.Is(err, exec.ErrSessionClosed):
-		return resourceStatusError(
-			codes.FailedPrecondition,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_SESSION,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED,
-		)
-	case errors.Is(err, exec.ErrExecutionRunning), errors.Is(err, exec.ErrExecutionTerminal):
-		return resourceStatusError(
-			codes.FailedPrecondition,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_STATE,
-		)
-	case errors.Is(err, exec.ErrWatcherLagged):
-		return resourceStatusError(
-			codes.ResourceExhausted,
-			err,
-			executionv1.ResourceKind_RESOURCE_KIND_WATCHER,
-			executionv1.ResourceCondition_RESOURCE_CONDITION_LAGGED,
-		)
-	default:
-		return status.Error(codes.Internal, "execution operation failed")
-	}
-}
-
-func resourceStatusError(
-	code codes.Code,
-	err error,
-	resource executionv1.ResourceKind,
-	condition executionv1.ResourceCondition,
-) error {
-	base := status.New(code, err.Error())
-	withDetails, detailErr := base.WithDetails(&executionv1.ResourceErrorDetail{
-		Resource:  resource,
-		Condition: condition,
-	})
-
-	if detailErr != nil {
-		return base.Err()
-	}
-
-	return withDetails.Err()
 }

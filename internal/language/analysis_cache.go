@@ -17,12 +17,12 @@ type (
 		origin      snapshotOrigin
 		generation  uint64
 		workspaceID workspace.ID
-		revision    uint64
+		revision    workspace.Revision
 	}
 
 	documentSnapshot struct {
 		id      SnapshotID
-		uri     string
+		uri     source.URI
 		path    string
 		text    string
 		version *int32
@@ -51,7 +51,7 @@ const (
 	snapshotWorkspace
 )
 
-func (s *Service) analyzedDocument(ctx context.Context, uri string) (analyzedDocument, error) {
+func (s *Service) analyzedDocument(ctx context.Context, uri source.URI) (analyzedDocument, error) {
 	var entry *analysisEntry
 
 	for {
@@ -99,7 +99,7 @@ func (s *Service) analyzedDocument(ctx context.Context, uri string) (analyzedDoc
 	}, nil
 }
 
-func (s *Service) runAnalysis(uri string, entry *analysisEntry) {
+func (s *Service) runAnalysis(uri source.URI, entry *analysisEntry) {
 	analysis, err := s.analyze(ferretsource.New(entry.snapshot.path, entry.snapshot.text))
 	entry.analysis = analysis
 	entry.err = err
@@ -112,12 +112,12 @@ func (s *Service) runAnalysis(uri string, entry *analysisEntry) {
 	s.mu.Unlock()
 }
 
-func (s *Service) resolveSnapshot(ctx context.Context, uri string) (documentSnapshot, error) {
+func (s *Service) resolveSnapshot(ctx context.Context, uri source.URI) (documentSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return documentSnapshot{}, err
 	}
 
-	path, err := source.URIToPath(uri)
+	path, err := uri.Path()
 	if err != nil {
 		return documentSnapshot{}, fmt.Errorf("resolve document URI: %w", err)
 	}
@@ -144,7 +144,7 @@ func (s *Service) resolveSnapshot(ctx context.Context, uri string) (documentSnap
 	}
 
 	if !ok {
-		return documentSnapshot{}, fmtDocumentNotOpen(uri)
+		return documentSnapshot{}, fmt.Errorf("%w: %s", ErrDocumentNotOpen, uri)
 	}
 
 	return documentSnapshot{
@@ -169,8 +169,9 @@ func (s *Service) snapshotCurrentLocked(snapshot documentSnapshot) bool {
 		return false
 	}
 
-	// This check is cache-owned and contains no I/O: workspace snapshots are
-	// static, and the manager call only reads retained daemon state.
+	// The caller holds Service.mu so an overlay cannot interleave with this
+	// retained-state lookup. Workspace never calls back into language, establishing
+	// the intentional language-to-workspace lock order without a reverse edge.
 	lookup, found, err := s.workspaces.LookupDocument(context.Background(), snapshot.path)
 	if err != nil || !found {
 		return false
@@ -180,7 +181,7 @@ func (s *Service) snapshotCurrentLocked(snapshot documentSnapshot) bool {
 }
 
 // IsCurrent reports whether id still identifies the source currently resolved for uri.
-func (s *Service) IsCurrent(ctx context.Context, uri string, id SnapshotID) bool {
+func (s *Service) IsCurrent(ctx context.Context, uri source.URI, id SnapshotID) bool {
 	if ctx.Err() != nil {
 		return false
 	}
@@ -190,7 +191,7 @@ func (s *Service) IsCurrent(ctx context.Context, uri string, id SnapshotID) bool
 
 	snapshot := documentSnapshot{id: id, uri: uri}
 	if id.origin == snapshotWorkspace {
-		path, err := source.URIToPath(uri)
+		path, err := uri.Path()
 		if err != nil {
 			return false
 		}

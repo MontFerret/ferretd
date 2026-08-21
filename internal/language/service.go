@@ -8,7 +8,6 @@ import (
 
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
-	"github.com/MontFerret/ferret/v2/pkg/stdlib"
 
 	"github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
@@ -17,49 +16,44 @@ import (
 // Service provides protocol-neutral Ferret language behavior.
 type Service struct {
 	mu            sync.RWMutex
-	overlays      map[string]Document
-	cache         map[string]*analysisEntry
+	overlays      map[source.URI]overlay
+	cache         map[source.URI]*analysisEntry
 	compiler      *compiler.Compiler
 	workspaces    *workspace.Manager
 	functionIndex functionIndex
-	params        runtime.Params
+	parameters    runtime.Params
 	generation    uint64
 	analyze       analyzeFunc
 }
 
-// New creates a language service with immutable compiler and runtime environments.
-func New(options Options) *Service {
-	workspaces := options.Workspaces
+// New creates a language service using the supplied workspace and immutable runtime environment.
+// It returns an error when either required dependency is nil.
+func New(
+	workspaces *workspace.Manager,
+	functions *runtime.Functions,
+	options Options,
+) (*Service, error) {
 	if workspaces == nil {
-		workspaces = workspace.New()
+		return nil, errNilWorkspaceManager
 	}
 
-	functions := options.Functions
 	if functions == nil {
-		library := runtime.NewLibrary()
-		if err := stdlib.Full().Register(library); err != nil {
-			panic(fmt.Errorf("register Ferret standard library: %w", err))
-		}
-
-		var err error
-		functions, err = library.Build()
-		if err != nil {
-			panic(fmt.Errorf("build Ferret standard library: %w", err))
-		}
+		return nil, errNilFunctions
 	}
 
+	options = options.normalized()
 	compilerInstance := compiler.New()
 	result := &Service{
-		overlays:      make(map[string]Document),
-		cache:         make(map[string]*analysisEntry),
+		overlays:      make(map[source.URI]overlay),
+		cache:         make(map[source.URI]*analysisEntry),
 		compiler:      compilerInstance,
 		workspaces:    workspaces,
 		functionIndex: newFunctionIndex(functions),
-		params:        options.Params.Clone(),
+		parameters:    options.Parameters,
 	}
 	result.analyze = compilerInstance.Analyze
 
-	return result
+	return result, nil
 }
 
 // OpenWorkspace synchronously opens a static workspace root.
@@ -70,19 +64,24 @@ func (s *Service) OpenWorkspace(ctx context.Context, root string) error {
 }
 
 // OpenDocument stores or replaces an editor overlay snapshot.
-func (s *Service) OpenDocument(ctx context.Context, uri, _ string, version int32, text string) error {
+func (s *Service) OpenDocument(
+	ctx context.Context,
+	uri source.URI,
+	version int32,
+	text string,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	path, err := source.URIToPath(uri)
+	path, err := uri.Path()
 	if err != nil {
 		return fmt.Errorf("resolve document URI: %w", err)
 	}
 
 	s.mu.Lock()
 	s.generation++
-	s.overlays[uri] = Document{
+	s.overlays[uri] = overlay{
 		URI:        uri,
 		Path:       path,
 		Version:    version,
@@ -96,7 +95,12 @@ func (s *Service) OpenDocument(ctx context.Context, uri, _ string, version int32
 }
 
 // ChangeDocument applies full-document changes to an editor overlay.
-func (s *Service) ChangeDocument(ctx context.Context, uri string, version int32, changes []TextChange) error {
+func (s *Service) ChangeDocument(
+	ctx context.Context,
+	uri source.URI,
+	version int32,
+	changes []TextChange,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -128,7 +132,7 @@ func (s *Service) ChangeDocument(ctx context.Context, uri string, version int32,
 }
 
 // CloseDocument removes an editor overlay. Closing an unknown overlay is safe.
-func (s *Service) CloseDocument(ctx context.Context, uri string) error {
+func (s *Service) CloseDocument(ctx context.Context, uri source.URI) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -141,8 +145,7 @@ func (s *Service) CloseDocument(ctx context.Context, uri string) error {
 	return nil
 }
 
-// GetDocument returns a copy of an editor overlay.
-func (s *Service) GetDocument(ctx context.Context, uri string) (*Document, bool) {
+func (s *Service) overlay(ctx context.Context, uri source.URI) (*overlay, bool) {
 	if ctx.Err() != nil {
 		return nil, false
 	}

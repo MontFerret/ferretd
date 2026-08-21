@@ -217,12 +217,12 @@ func TestRefreshDocumentSnapshotsCompileIndependently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile first: %v", err)
 	}
-	defer func() { _ = firstCompilation.Plan.Close() }()
+	defer func() { _ = firstCompilation.Close() }()
 	secondCompilation, err := opened.CompileDocument(context.Background(), second)
 	if err != nil {
 		t.Fatalf("compile second: %v", err)
 	}
-	defer func() { _ = secondCompilation.Plan.Close() }()
+	defer func() { _ = secondCompilation.Close() }()
 
 	if firstCompilation.Source.Revision != 1 || secondCompilation.Source.Revision != 2 {
 		t.Fatalf("source revisions = %d and %d, want 1 and 2",
