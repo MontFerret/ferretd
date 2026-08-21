@@ -60,7 +60,6 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 
 	var arguments launchArguments
 	decoder := json.NewDecoder(strings.NewReader(string(request.Arguments)))
-	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&arguments); err != nil {
 		return s.sendFailure(request.GetRequest(), fmt.Sprintf("invalid launch arguments: %v", err))
