@@ -32,6 +32,19 @@ Language-word completions use canonical lowercase labels and insertion text.
 Source-defined names, namespace aliases, bind parameters, and registered
 functions retain their declared spelling.
 
+Standard-library completion, hover, and signature help use the structured API
+Reference matching the Ferret dependency used to build `ferretd`. Authored
+overloads, parameter names and semantic types, descriptions, returns, failures,
+variadic state, and deprecation are preserved. Runtime-only host functions
+remain available with limited placeholder metadata. A standard-library API
+entry that has no executable runtime function is omitted and reported as a
+warning on stderr.
+
+The reference is embedded in the executable. Language requests do not download
+documentation or depend on an installed reference file, so these features work
+fully offline. Deprecation appears in completion and documentation where LSP
+supports it; the server does not emit deprecation diagnostics.
+
 Formatting delegates to Ferret's canonical formatter. `tabSize` selects its
 indent width, but canonical output remains space-indented even when the client
 sets `insertSpaces` to false. Invalid source receives no formatting edit.

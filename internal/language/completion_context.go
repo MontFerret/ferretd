@@ -126,8 +126,23 @@ func sortedCompletionItems(items map[string]CompletionItem) []CompletionItem {
 			return result[i].Label < result[j].Label
 		}
 
+		leftPriority := completionKindPriority(result[i].Kind)
+		rightPriority := completionKindPriority(result[j].Kind)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+
 		return result[i].Detail < result[j].Detail
 	})
 
 	return result
+}
+
+func completionKindPriority(kind CompletionKind) int {
+	switch kind {
+	case CompletionKindKeyword, CompletionKindLiteral, CompletionKindOperator:
+		return 0
+	default:
+		return 1
+	}
 }

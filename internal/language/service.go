@@ -15,22 +15,22 @@ import (
 
 // Service provides protocol-neutral Ferret language behavior.
 type Service struct {
-	mu            sync.RWMutex
-	overlays      map[source.URI]overlay
-	cache         map[source.URI]*analysisEntry
-	compiler      *compiler.Compiler
-	workspaces    *workspace.Manager
-	functionIndex functionIndex
-	parameters    runtime.Params
-	generation    uint64
-	analyze       analyzeFunc
+	mu         sync.RWMutex
+	overlays   map[source.URI]overlay
+	cache      map[source.URI]*analysisEntry
+	compiler   *compiler.Compiler
+	workspaces *workspace.Manager
+	functions  *FunctionCatalog
+	parameters runtime.Params
+	generation uint64
+	analyze    analyzeFunc
 }
 
-// New creates a language service using the supplied workspace and immutable runtime environment.
+// New creates a language service using the supplied workspace and immutable function catalog.
 // It returns an error when either required dependency is nil.
 func New(
 	workspaces *workspace.Manager,
-	functions *runtime.Functions,
+	functions *FunctionCatalog,
 	options Options,
 ) (*Service, error) {
 	if workspaces == nil {
@@ -38,18 +38,18 @@ func New(
 	}
 
 	if functions == nil {
-		return nil, errNilFunctions
+		return nil, errNilFunctionCatalog
 	}
 
 	options = options.normalized()
 	compilerInstance := compiler.New()
 	result := &Service{
-		overlays:      make(map[source.URI]overlay),
-		cache:         make(map[source.URI]*analysisEntry),
-		compiler:      compilerInstance,
-		workspaces:    workspaces,
-		functionIndex: newFunctionIndex(functions),
-		parameters:    options.Parameters,
+		overlays:   make(map[source.URI]overlay),
+		cache:      make(map[source.URI]*analysisEntry),
+		compiler:   compilerInstance,
+		workspaces: workspaces,
+		functions:  functions,
+		parameters: options.Parameters,
 	}
 	result.analyze = compilerInstance.Analyze
 

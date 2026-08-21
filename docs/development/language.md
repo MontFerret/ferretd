@@ -16,9 +16,10 @@ The user-facing setup and supported feature summary lives in
 
 ## Composition and roots
 
-The `lsp` command constructs one workspace manager, the default immutable Ferret
-function registry, one language service, and one LSP server. It does not connect
-to `ferretd serve`.
+The `lsp` command constructs one workspace manager, the default immutable
+function catalog, one language service, and one LSP server. The catalog merges
+executable registration facts from Ferret's runtime with the embedded Standard
+Library API Reference. It does not connect to `ferretd serve`.
 
 During LSP initialization, the adapter resolves and deduplicates local roots
 from `workspaceFolders`, then `rootUri`, then `rootPath`. Opening each root is a
@@ -58,15 +59,31 @@ protocol-neutral diagnostics and feature models. It does not maintain a second
 parser, semantic walk, or language definition.
 
 The default function environment is built once at composition. Runtime
-parameters and function metadata are copied or treated as immutable so requests
-do not mutate shared registry state.
+registration determines whether a function is executable. For a matching
+standard-library function, the embedded API Reference is authoritative for its
+authored signatures, parameter names and semantic types, documentation,
+returns, failures, variadic state, and deprecation. Runtime-only host functions
+retain arity-based placeholder metadata. Reference-only standard-library
+functions are omitted and reported as degraded metadata on process stderr;
+they are never presented as executable functions.
+
+`internal/language/stdlib/api.json` is checked-in generated content. It is
+embedded in the binary, parsed through the Specs API Reference v1 model, and
+never read from disk or downloaded while the language server is running.
+Completion, hover, and signature help consume normalized catalog symbols rather
+than depending on the embedded-reference package. Recursive named, union, and
+list types have one shared renderer; language code must not parse legacy opaque
+type-expression strings.
 
 ## Features and diagnostics
 
 The current service provides compiler diagnostics, document symbols, hover,
 document-local definitions and references, completion, signature help, full
-semantic tokens, and full-document formatting. Formatting delegates to Ferret's
-canonical formatter; invalid source receives no edit.
+semantic tokens, and full-document formatting. Standard-library completion,
+hover, and signature help include the embedded authored API metadata. Structured
+deprecation is surfaced through those features and does not create diagnostics.
+Formatting delegates to Ferret's canonical formatter; invalid source receives
+no edit.
 
 Diagnostics preserve primary ranges, related information, codes, severity,
 source, and messages from Ferret's current contract. LSP publication includes

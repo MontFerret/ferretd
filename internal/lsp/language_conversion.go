@@ -98,12 +98,26 @@ func toProtocolCompletionItem(value language.CompletionItem) protocol.Completion
 		kind = protocol.CompletionItemKindOperator
 	}
 
-	return protocol.CompletionItem{
+	result := protocol.CompletionItem{
 		Label:      value.Label,
 		Kind:       &kind,
 		Detail:     &value.Detail,
 		InsertText: &value.InsertText,
 	}
+
+	if value.Documentation != "" {
+		result.Documentation = protocol.MarkupContent{
+			Kind:  protocol.MarkupKindMarkdown,
+			Value: value.Documentation,
+		}
+	}
+
+	if value.Deprecated {
+		result.Tags = []protocol.CompletionItemTag{protocol.CompletionItemTagDeprecated}
+		result.Deprecated = &protocol.True
+	}
+
+	return result
 }
 
 func encodeSemanticTokens(values []language.SemanticToken) []protocol.UInteger {

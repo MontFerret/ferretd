@@ -261,6 +261,114 @@ func TestCompletionPreservesCanonicalLowercaseText(t *testing.T) {
 	}
 }
 
+func TestStandardLibraryMetadataMapsToLSPDocumentation(t *testing.T) {
+	service := newTestLanguageService(t)
+	server := mustNewServer(t, service)
+	uri := documentURI(t, "stdlib.fql")
+	query := "RETURN abs(-1)"
+	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
+		t.Fatal(err)
+	}
+	mapper := source.NewMapper(query)
+
+	completionValue, err := server.completion(nil, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
+			Position:     toProtocolPosition(mapper.OffsetToPosition(strings.Index(query, "abs") + 2)),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := completionValue.([]protocol.CompletionItem)
+	completion := protocolCompletionByLabel(t, items, "abs")
+	if completion.Detail == nil || *completion.Detail != "abs(number: Int | Float) → Float" {
+		t.Fatalf("abs completion detail = %#v", completion.Detail)
+	}
+	documentation, ok := completion.Documentation.(protocol.MarkupContent)
+	if !ok || documentation.Kind != protocol.MarkupKindMarkdown ||
+		!strings.Contains(documentation.Value, "### Parameters") || !strings.Contains(documentation.Value, "### Returns") {
+		t.Fatalf("abs completion documentation = %#v", completion.Documentation)
+	}
+
+	help, err := server.signatureHelp(nil, &protocol.SignatureHelpParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
+		Position:     toProtocolPosition(mapper.OffsetToPosition(strings.Index(query, "-1"))),
+	}})
+	if err != nil || help == nil || len(help.Signatures) != 1 {
+		t.Fatalf("abs signature help = %+v, %v", help, err)
+	}
+	parameter := help.Signatures[0].Parameters[0]
+	if parameter.Label != "number: Int | Float" || parameter.Documentation == nil {
+		t.Fatalf("abs parameter = %+v", parameter)
+	}
+	signatureDocumentation, ok := help.Signatures[0].Documentation.(protocol.MarkupContent)
+	if !ok || !strings.Contains(signatureDocumentation.Value, "### Returns") || !strings.Contains(signatureDocumentation.Value, "`Float`") {
+		t.Fatalf("abs signature documentation = %#v", help.Signatures[0].Documentation)
+	}
+
+	hover, err := server.hover(nil, &protocol.HoverParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri.String()},
+		Position:     toProtocolPosition(mapper.OffsetToPosition(strings.Index(query, "abs"))),
+	}})
+	if err != nil || hover == nil {
+		t.Fatalf("abs hover = %+v, %v", hover, err)
+	}
+	hoverContent := hover.Contents.(protocol.MarkupContent)
+	if !strings.Contains(hoverContent.Value, "```fql\nabs(number: Int | Float)\n```") ||
+		!strings.Contains(hoverContent.Value, "### Description") ||
+		!strings.Contains(hoverContent.Value, "### Parameters") || !strings.Contains(hoverContent.Value, "### Returns") {
+		t.Fatalf("abs hover Markdown = %q", hoverContent.Value)
+	}
+}
+
+func TestCompletionDeprecationMapsToTagsAndDocumentation(t *testing.T) {
+	item := toProtocolCompletionItem(language.CompletionItem{
+		Label:      "old",
+		Detail:     "old(value: String) → Object",
+		InsertText: "old",
+		Kind:       language.CompletionKindFunction,
+		Deprecated: true,
+		Documentation: language.RenderSignaturesMarkdown([]language.Signature{{
+			Label:       "old(value: String)",
+			Description: "Old function.",
+			Deprecated:  "Use replacement.",
+			Parameters: []language.SignatureParameter{{
+				Name:        "value",
+				Label:       "value: String",
+				Type:        "String",
+				Description: "Input value.",
+			}},
+			Return: &language.SignatureReturn{Type: "Object", Description: "Result value."},
+			Throws: []language.SignatureThrow{{Error: "TypeError", Description: "Input is invalid."}},
+		}}),
+	})
+
+	if item.Deprecated == nil || !*item.Deprecated || !reflect.DeepEqual(item.Tags, []protocol.CompletionItemTag{protocol.CompletionItemTagDeprecated}) {
+		t.Fatalf("deprecated completion = %+v", item)
+	}
+	documentation := item.Documentation.(protocol.MarkupContent)
+	for _, want := range []string{"### Description", "### Parameters", "### Returns", "### Throws", "### Deprecated", "Use replacement."} {
+		if !strings.Contains(documentation.Value, want) {
+			t.Fatalf("deprecated completion documentation = %q, want %q", documentation.Value, want)
+		}
+	}
+}
+
+func protocolCompletionByLabel(t testing.TB, values []protocol.CompletionItem, label string) protocol.CompletionItem {
+	t.Helper()
+
+	for _, value := range values {
+		if value.Label == label {
+			return value
+		}
+	}
+
+	t.Fatalf("completion omits %q", label)
+
+	return protocol.CompletionItem{}
+}
+
 func toProtocolPosition(value source.Position) protocol.Position {
 	return protocol.Position{Line: value.Line, Character: value.Character}
 }

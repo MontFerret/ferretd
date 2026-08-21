@@ -59,12 +59,19 @@ func (s *Service) Completion(
 		prefix := namespacePrefixAt(document.snapshot.text, offset)
 		normalizedPrefix := runtime.NormalizeRegisteredName(prefix)
 
-		for _, function := range s.functionIndex.ordered {
+		for _, function := range s.functions.ordered {
 			if normalizedPrefix != "" && !strings.HasPrefix(function.identity, normalizedPrefix+runtime.NamespaceSeparator) {
 				continue
 			}
 
-			add("registered\x00"+function.identity, CompletionItem{Label: function.name, InsertText: terminalName(function.name), Detail: "registered function", Kind: CompletionKindFunction})
+			add("registered\x00"+function.identity, CompletionItem{
+				Label:         function.name,
+				InsertText:    terminalName(function.name),
+				Detail:        function.detail,
+				Kind:          CompletionKindFunction,
+				Documentation: function.documentation,
+				Deprecated:    function.deprecated,
+			})
 		}
 
 		return sortedCompletionItems(items), nil
@@ -103,8 +110,15 @@ func (s *Service) Completion(
 		add("visible\x00"+label, CompletionItem{Label: label, InsertText: label, Detail: detail, Kind: kind})
 	}
 
-	for _, function := range s.functionIndex.ordered {
-		add("registered\x00"+function.identity, CompletionItem{Label: function.name, InsertText: function.name, Detail: "registered function", Kind: CompletionKindFunction})
+	for _, function := range s.functions.ordered {
+		add("registered\x00"+function.identity, CompletionItem{
+			Label:         function.name,
+			InsertText:    function.name,
+			Detail:        function.detail,
+			Kind:          CompletionKindFunction,
+			Documentation: function.documentation,
+			Deprecated:    function.deprecated,
+		})
 	}
 
 	for _, item := range languageCompletionItems {
