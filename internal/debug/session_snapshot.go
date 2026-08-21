@@ -11,21 +11,21 @@ type (
 
 	// Failure is the debugger Session name for shared runtime failure details.
 	Failure = exec.RuntimeFailure
-)
 
-// SessionSnapshot is an immutable view of one daemon debug Session.
-type SessionSnapshot struct {
-	ID               SessionID
-	Session          exec.SessionID
-	State            State
-	Reason           StopReason
-	Location         Location
-	HitBreakpointIDs []uint64
-	Parameters       map[string]any
-	Options          SessionOptions
-	Output           *Output
-	Failure          *Failure
-}
+	// SessionSnapshot is an immutable view of one daemon debug Session.
+	SessionSnapshot struct {
+		ID               SessionID
+		Session          exec.SessionID
+		State            State
+		Reason           StopReason
+		Location         Location
+		HitBreakpointIDs []uint64
+		Parameters       map[string]any
+		Options          SessionOptions
+		Output           *Output
+		Failure          *Failure
+	}
+)
 
 // Clone returns an independent copy of the snapshot's retained mutable data.
 // Parameter copying follows the recursive container contract in internal/params.

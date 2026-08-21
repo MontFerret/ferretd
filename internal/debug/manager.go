@@ -1,4 +1,4 @@
-// Package debug coordinates retained Ferret debugger sessions.
+// Package debug coordinates retained debugger-specific Sessions and their lifecycle.
 package debug
 
 import (

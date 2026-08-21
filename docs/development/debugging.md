@@ -26,8 +26,8 @@ consistently with the Session's source snapshot.
 ordinary execution. The common runtime owns prepared parameters, normalized
 options, immutable source/Plan data, manager-owned cancellation, the concrete
 Ferret session, shared output/failure conversion, and idempotent cleanup. The
-DebugRuntime adds the Ferret debugger capability and owns the debug-Plan lease.
-It does not expose mutable Session maps, locks, or child state.
+DebugRuntime exposes the Ferret debugger capability and owns the debug-Plan
+lease. It does not expose mutable Session maps, locks, or child state.
 
 ## Retained DebugSessions
 
@@ -86,9 +86,11 @@ inventing a normal process exit.
 
 Adapter cleanup cancels the active watch, terminates and closes the DebugSession,
 closes its execution Session, closes the workspace, and then closes each manager.
-The DebugRuntime cancels and closes its Ferret session exactly once and releases
-its debug-Plan lease even when cleanup fails. Repeated disconnect, termination,
-context cancellation, or transport failure cannot release resources twice.
+The common execution runtime owns the concrete Ferret session and performs
+cancellation and its one-time close attempt. The DebugRuntime releases its
+debug-Plan lease afterward even when cleanup reports failure. Repeated
+disconnect, termination, context cancellation, or transport failure cannot
+release resources twice.
 
 ## Deliberate exclusions
 

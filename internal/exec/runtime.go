@@ -54,7 +54,7 @@ type (
 	}
 )
 
-func prepareRuntimeInput(parameters map[string]any, options RuntimeOptions) (runtimeInput, error) {
+func newRuntimeInput(parameters map[string]any, options RuntimeOptions) (runtimeInput, error) {
 	values, retained, err := daemonparams.Prepare(parameters)
 	if err != nil {
 		return runtimeInput{}, fmt.Errorf("%w: %v", ErrInvalidParameters, err)

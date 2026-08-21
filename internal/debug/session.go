@@ -11,8 +11,9 @@ import (
 )
 
 type (
-	// Session owns one retained Ferret debugger session. Its mutex precedes the
-	// embedded close operation when both locks are required for a transition.
+	// Session owns one exec.DebugRuntime and its retained debugger-specific state.
+	// Its mutex precedes the embedded close operation when both locks are required
+	// for a transition.
 	Session struct {
 		mu        sync.Mutex
 		controlMu sync.Mutex
@@ -437,7 +438,7 @@ func (d *Session) applyFerretEventLocked(event *ferret.DebugEvent, runtimeErrorR
 	case ferret.DebugReasonRuntimeError:
 		d.reason = StopRuntimeError
 		d.state = StateStopped
-		d.failure = d.debugFailure(event.Error)
+		d.failure = d.runtime.Failure(event.Error)
 		d.publishLocked(EventStopped, false)
 	case ferret.DebugReasonCompleted:
 		d.state = StateCompleted
@@ -464,16 +465,8 @@ func (d *Session) stopLocked(reason StopReason) {
 
 func (d *Session) failLocked(err error) {
 	d.state = StateFailed
-	d.failure = d.debugFailure(err)
+	d.failure = d.runtime.Failure(err)
 	d.publishLocked(EventFailed, true)
-}
-
-func (d *Session) debugFailure(err error) *Failure {
-	if err == nil {
-		return nil
-	}
-
-	return d.runtime.Failure(err)
 }
 
 func (d *Session) requireInspectable() error {

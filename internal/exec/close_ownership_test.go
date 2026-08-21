@@ -13,33 +13,24 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-type (
-	closeOwnershipFixture struct {
-		manager               *Manager
-		session               *Session
-		execution             *Execution
-		sessionID             SessionID
-		executionID           ExecutionID
-		runStarted            chan struct{}
-		runtimeCloseStarted   chan struct{}
-		releaseRuntimeClose   chan struct{}
-		planCloseStarted      chan struct{}
-		releaseClose          func()
-		runtimeCloseCalls     atomic.Int64
-		planCloseCalls        atomic.Int64
-		planClosedTooEarly    atomic.Bool
-		runStartOnce          sync.Once
-		runtimeCloseStartOnce sync.Once
-		planCloseStartOnce    sync.Once
-	}
-
-	observedDoneContext struct {
-		context.Context
-
-		once     sync.Once
-		observed chan struct{}
-	}
-)
+type closeOwnershipFixture struct {
+	manager               *Manager
+	session               *Session
+	execution             *Execution
+	sessionID             SessionID
+	executionID           ExecutionID
+	runStarted            chan struct{}
+	runtimeCloseStarted   chan struct{}
+	releaseRuntimeClose   chan struct{}
+	planCloseStarted      chan struct{}
+	releaseClose          func()
+	runtimeCloseCalls     atomic.Int64
+	planCloseCalls        atomic.Int64
+	planClosedTooEarly    atomic.Bool
+	runStartOnce          sync.Once
+	runtimeCloseStartOnce sync.Once
+	planCloseStartOnce    sync.Once
+}
 
 func TestCloseExecutionRetainsSessionOwnershipUntilRuntimeCleanup(t *testing.T) {
 	fixture := newCloseOwnershipFixture(t)
@@ -339,19 +330,6 @@ func newCloseOwnershipFixture(t *testing.T) *closeOwnershipFixture {
 	waitForSignal(t, fixture.runStarted, "runtime Session run")
 
 	return fixture
-}
-
-func newObservedDoneContext() *observedDoneContext {
-	return &observedDoneContext{
-		Context:  context.Background(),
-		observed: make(chan struct{}),
-	}
-}
-
-func (c *observedDoneContext) Done() <-chan struct{} {
-	c.once.Do(func() { close(c.observed) })
-
-	return c.Context.Done()
 }
 
 func waitForSessionClosing(t *testing.T, session *Session) {

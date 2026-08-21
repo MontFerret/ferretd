@@ -173,7 +173,7 @@ func (m *Manager) CreateExecution(
 		return ExecutionSnapshot{}, err
 	}
 
-	input, err := prepareRuntimeInput(parameters, options)
+	input, err := newRuntimeInput(parameters, options)
 	if err != nil {
 		return ExecutionSnapshot{}, err
 	}

@@ -426,7 +426,7 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 			t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
 		}
 
-		input, err := prepareRuntimeInput(nil, RuntimeOptions{})
+		input, err := newRuntimeInput(nil, RuntimeOptions{})
 		if err != nil {
 			t.Fatalf("prepare runtime input: %v", err)
 		}

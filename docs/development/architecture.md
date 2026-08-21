@@ -111,14 +111,15 @@ immutable compiled Plan. Each ordinary Execution is a one-shot child of a
 Session and uses a fresh `internal/exec` execution runtime around one Ferret
 runtime Session.
 
-A Session can also lazily own one matching debug Plan. `internal/exec` builds a
-DebugRuntime from the same execution-runtime machinery, adds one Ferret debugger
-session, and retains the debug-Plan lease until that runtime closes.
-`internal/debug` layers DebugSession identity, commands, inspection, events, and
-state on that DebugRuntime. Ordinary Executions and DebugSessions remain sibling
-resources with distinct observable state machines. Closing a parent stops new
-runtime creation, settles both child kinds, releases leases, and only then
-closes its Plans.
+A Session can also lazily own one matching debug Plan. `internal/exec` builds an
+execution runtime that owns one concrete Ferret debugger session. A DebugRuntime
+exposes that session's debugger capability and owns the debug-Plan lease through
+the common runtime's one-time session close attempt. `internal/debug` layers
+DebugSession identity, commands, inspection, events, and state on that
+DebugRuntime. Ordinary Executions and DebugSessions remain sibling resources
+with distinct observable state machines. Closing a parent stops new runtime
+creation, settles both child kinds, releases leases, and only then closes its
+Plans.
 
 The language service consumes workspace documents as static baselines but owns
 editor overlays separately. Opening or changing an editor document does not

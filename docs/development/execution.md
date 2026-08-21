@@ -35,7 +35,8 @@ Executions.
 The Session also coordinates lazy construction of one matching debug Plan. That
 Plan is separate because it carries debugger instrumentation. Debug consumers
 receive an `exec.DebugRuntime`, never mutable Session internals or a raw Plan.
-The DebugRuntime owns its Plan lease until its Ferret debugger session closes.
+The DebugRuntime owns its Plan lease through the common runtime's one-time
+Ferret-session close attempt.
 
 ## Common runtime and Executions
 

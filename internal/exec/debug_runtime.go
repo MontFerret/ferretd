@@ -37,66 +37,6 @@ func newDebugRuntime(
 	}
 }
 
-// CreateDebugRuntime prepares and creates one debugger-capable runtime for an
-// executable Session.
-func (m *Manager) CreateDebugRuntime(
-	ctx context.Context,
-	id SessionID,
-	parameters map[string]any,
-	options RuntimeOptions,
-) (*DebugRuntime, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	input, err := prepareRuntimeInput(parameters, options)
-	if err != nil {
-		return nil, err
-	}
-
-	creation, err := m.sessions.beginRuntimeCreate(id)
-	if err != nil {
-		return nil, err
-	}
-	defer creation.finish()
-
-	parent := creation.session()
-	target, err := parent.acquireDebugRuntimeTarget(ctx)
-	if err != nil {
-		return nil, m.debugCompilationError(parent, err)
-	}
-
-	runtime := newExecutionRuntime(target, input)
-	debugger, err := target.plan.NewDebugSession(ctx, runtime.sessionOptions()...)
-	if err != nil {
-		runtime.cancel(errExecutionCanceled)
-		parent.releaseDebugRuntime()
-
-		return nil, err
-	}
-	runtime.ferretSession = debugger
-
-	return newDebugRuntime(runtime, debugger, parent), nil
-}
-
-func (l *debugPlanLease) release() {
-	l.once.Do(l.parent.releaseDebugRuntime)
-}
-
-func (m *Manager) debugCompilationError(session *Session, err error) error {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, ErrSessionClosed) || errors.Is(err, workspace.ErrClosed) ||
-		errors.Is(err, workspace.ErrDocumentNotFound) {
-		return err
-	}
-
-	return &CompilationError{
-		Source:      session.source,
-		Diagnostics: diagnostic.FromError(session.source.URI, session.text, err),
-		Cause:       err,
-	}
-}
-
 // SessionID returns the parent executable Session identifier.
 func (r *DebugRuntime) SessionID() SessionID {
 	return r.runtime.target.session
@@ -107,7 +47,9 @@ func (r *DebugRuntime) Context() context.Context {
 	return r.runtime.ctx
 }
 
-// Debugger returns the Ferret debugger capability owned by this runtime.
+// Debugger returns the Ferret debugger capability for debugger-specific
+// commands. The common execution runtime retains ownership of the underlying
+// Ferret session.
 func (r *DebugRuntime) Debugger() *ferret.DebugSession {
 	return r.debugger
 }
@@ -132,12 +74,69 @@ func (r *DebugRuntime) Failure(err error) *RuntimeFailure {
 	return r.runtime.failure(err)
 }
 
-// Close cancels execution, closes the Ferret debugger session, and releases the
-// debug-Plan lease. Concurrent callers observe the same session close result.
+// Close cancels the common execution runtime, closes the Ferret debugger session
+// owned by that runtime, and releases the debug-Plan lease. Concurrent callers
+// observe the same session close result.
 func (r *DebugRuntime) Close() error {
 	r.runtime.cancel(errExecutionCanceled)
 	err := r.runtime.closeSession()
 	r.lease.release()
 
 	return err
+}
+
+func (l *debugPlanLease) release() {
+	l.once.Do(l.parent.releaseDebugRuntime)
+}
+
+// CreateDebugRuntime prepares and creates one debugger-capable runtime for an
+// executable Session.
+func (m *Manager) CreateDebugRuntime(
+	ctx context.Context,
+	id SessionID,
+	parameters map[string]any,
+	options RuntimeOptions,
+) (*DebugRuntime, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	input, err := newRuntimeInput(parameters, options)
+	if err != nil {
+		return nil, err
+	}
+
+	creation, err := m.sessions.beginRuntimeCreate(id)
+	if err != nil {
+		return nil, err
+	}
+	defer creation.finish()
+
+	parent := creation.session()
+	target, err := parent.acquireDebugRuntimeTarget(ctx)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, ErrSessionClosed) || errors.Is(err, workspace.ErrClosed) ||
+			errors.Is(err, workspace.ErrDocumentNotFound) {
+			return nil, err
+		}
+
+		return nil, &CompilationError{
+			Source:      parent.source,
+			Diagnostics: diagnostic.FromError(parent.source.URI, parent.text, err),
+			Cause:       err,
+		}
+	}
+
+	runtime := newExecutionRuntime(target, input)
+	debugger, err := target.plan.NewDebugSession(ctx, runtime.sessionOptions()...)
+	if err != nil {
+		runtime.cancel(errExecutionCanceled)
+		parent.releaseDebugRuntime()
+
+		return nil, err
+	}
+	runtime.ferretSession = debugger
+
+	return newDebugRuntime(runtime, debugger, parent), nil
 }
