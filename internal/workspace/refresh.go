@@ -52,8 +52,14 @@ func (w *Workspace) reconcileDocument(
 	w.mu.RUnlock()
 	if watcher != nil {
 		for _, directory := range discovered.directories {
-			if err := watcher.AddDirectory(directory); err != nil && errors.Is(err, ErrClosed) {
-				return Document{}, false, ErrClosed
+			if err := watcher.AddDirectory(directory); err != nil {
+				if directory != "." && isOnlyNotExist(err) {
+					discovered.found = false
+
+					break
+				}
+
+				return Document{}, false, err
 			}
 		}
 	}

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 func TestRefreshDocumentRetainsAndAdvancesSourceRevisions(t *testing.T) {
@@ -145,6 +147,28 @@ func TestRefreshDocumentRejectsInvalidReplacementsAndUndiscoveredPaths(t *testin
 			t.Fatalf("discovered document = revision %d content %q", document.Revision(), document.Content())
 		}
 	})
+}
+
+func TestRefreshDocumentPropagatesWatchRegistrationFailure(t *testing.T) {
+	root := t.TempDir()
+	manager := newTestManager(t)
+	opened, err := manager.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	watcher := workspaceWatcherForTest(t, opened)
+	if err := watcher.backend.Close(); err != nil {
+		t.Fatalf("close watcher backend: %v", err)
+	}
+
+	writeWorkspaceSource(t, root, "nested/query.fql", "RETURN 1")
+	if _, err := opened.RefreshDocument(context.Background(), "nested/query.fql"); !errors.Is(err, fsnotify.ErrClosed) {
+		t.Fatalf("RefreshDocument error = %v, want fsnotify.ErrClosed", err)
+	}
+	if _, found := opened.Document("nested/query.fql"); found {
+		t.Fatal("document was admitted after watch registration failed")
+	}
 }
 
 func TestRefreshDocumentSerializesConcurrentCommits(t *testing.T) {
