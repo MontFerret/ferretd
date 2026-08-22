@@ -21,6 +21,11 @@ type (
 	// Revision identifies one retained version of a workspace document.
 	Revision uint64
 
+	// Generation identifies one retained instance of a workspace document.
+	// Assigned generations increase monotonically across deletion and same-path
+	// recreation.
+	Generation uint64
+
 	// Workspace is the daemon-owned source state for a canonical root.
 	Workspace struct {
 		mu           sync.RWMutex
@@ -33,7 +38,7 @@ type (
 		files                  []File
 		documents              map[string]Document
 		order                  []string
-		nextDocumentGeneration uint64
+		nextDocumentGeneration Generation
 		engine                 *ferret.Engine
 		watcher                *workspaceWatcher
 		// closing is the lock-free admission barrier set before child cleanup;

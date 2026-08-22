@@ -5,5 +5,5 @@ type DocumentLookup struct {
 	Document   Document
 	Workspace  ID
 	Revision   Revision
-	Generation uint64
+	Generation Generation
 }

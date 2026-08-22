@@ -18,7 +18,7 @@ import (
 type Document struct {
 	file        File
 	revision    Revision
-	generation  uint64
+	generation  Generation
 	loaded      bool
 	source      *ferretsource.Source
 	syntax      *parser.Parser
@@ -84,7 +84,7 @@ func (d Document) withRevision(revision Revision) Document {
 	return d
 }
 
-func (d Document) withGeneration(generation uint64) Document {
+func (d Document) withGeneration(generation Generation) Document {
 	d.generation = generation
 
 	return d

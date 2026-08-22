@@ -39,12 +39,12 @@ incremental ranges are rejected by the adapter. Closing removes the overlay and
 is idempotent. If a workspace baseline exists, subsequent requests fall back to
 the latest tracked saved-source snapshot.
 
-Overlay and workspace document generations form snapshot identities. Workspace
-generations are internal and remain monotonic across deletion and same-path
-recreation; they are distinct from client-visible per-file revisions. The
-service stores private overlay values rather than exposing lookup APIs or
-mutable references. `DiagnosticReport` carries `diagnostic.Diagnostic` values
-directly rather than language-owned aliases.
+Overlay and workspace document generations form snapshot identities. Typed
+`workspace.Generation` values are internal and remain monotonic across deletion
+and same-path recreation; they are distinct from client-visible per-file
+revisions. The service stores private overlay values rather than exposing lookup
+APIs or mutable references. `DiagnosticReport` carries
+`diagnostic.Diagnostic` values directly rather than language-owned aliases.
 Editor lifecycle events do not mutate workspace discovery or execution source;
 the workspace watcher tracks saved filesystem state independently.
 

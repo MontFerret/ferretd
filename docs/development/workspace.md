@@ -71,10 +71,10 @@ Fatal root, discovery, or engine failures prevent publication of the entire
 workspace.
 
 Retained parser state is daemon-owned and treated as read-only by visitors. The
-workspace also assigns an internal monotonic generation that does not reset
-when a path is deleted and recreated. The language analysis cache uses this
-identity instead of the client-visible per-file revision. The workspace owns
-syntax state, not semantic compilation Plans or runtime state.
+workspace also assigns a typed, internal `workspace.Generation` that does not
+reset when a path is deleted and recreated. The language analysis cache uses
+this identity instead of the client-visible per-file revision. The workspace
+owns syntax state, not semantic compilation Plans or runtime state.
 
 ## Refresh and compilation boundary
 

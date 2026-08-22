@@ -17,7 +17,7 @@ type (
 		origin             snapshotOrigin
 		overlayGeneration  uint64
 		workspaceID        workspace.ID
-		documentGeneration uint64
+		documentGeneration workspace.Generation
 	}
 
 	documentSnapshot struct {
