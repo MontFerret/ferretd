@@ -128,6 +128,10 @@ func validateDocumentAncestors(root *os.Root, relativePath string) ([]string, bo
 
 		entries, err := fs.ReadDir(root.FS(), current)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return directories, false, nil
+			}
+
 			return nil, false, fmt.Errorf("read directory %q: %w", current, err)
 		}
 

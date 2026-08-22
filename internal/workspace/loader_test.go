@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -232,6 +233,99 @@ func TestLoadWorkspaceRespectsCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("loadWorkspaceFS error = %v, want context.Canceled", err)
 	}
+}
+
+func TestLoadWorkspaceSubtreeTreatsVanishedDirectoryAsEmpty(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "nested/query.fql", "RETURN 1")
+
+	content, err := loadWorkspaceSubtree(
+		context.Background(),
+		root,
+		"nested",
+		func(string) error {
+			return &fs.PathError{
+				Op:   "GetFileAttributes",
+				Path: filepath.Join(root, "nested"),
+				Err:  fs.ErrNotExist,
+			}
+		},
+	)
+	if err != nil {
+		t.Fatalf("loadWorkspaceSubtree: %v", err)
+	}
+	if content.documents == nil {
+		t.Fatal("vanished subtree documents map is nil")
+	}
+	if len(content.files) != 0 || len(content.documents) != 0 || len(content.order) != 0 || len(content.directories) != 0 {
+		t.Fatalf("vanished subtree content = %+v, want initialized empty content", content)
+	}
+}
+
+func TestLoadWorkspaceSubtreePreservesRootAndObservationErrors(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "nested/query.fql", "RETURN 1")
+
+	t.Run("root disappearance", func(t *testing.T) {
+		_, err := loadWorkspaceSubtree(
+			context.Background(),
+			root,
+			".",
+			func(string) error {
+				return fs.ErrNotExist
+			},
+		)
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("loadWorkspaceSubtree error = %v, want fs.ErrNotExist", err)
+		}
+	})
+
+	t.Run("unrelated nested error", func(t *testing.T) {
+		observeErr := errors.New("observe directory")
+		_, err := loadWorkspaceSubtree(
+			context.Background(),
+			root,
+			"nested",
+			func(string) error {
+				return observeErr
+			},
+		)
+		if !errors.Is(err, observeErr) {
+			t.Fatalf("loadWorkspaceSubtree error = %v, want %v", err, observeErr)
+		}
+	})
+
+	t.Run("mixed nested error", func(t *testing.T) {
+		observeErr := errors.New("remove stale watch")
+		_, err := loadWorkspaceSubtree(
+			context.Background(),
+			root,
+			"nested",
+			func(string) error {
+				return errors.Join(fs.ErrNotExist, observeErr)
+			},
+		)
+		if !errors.Is(err, observeErr) {
+			t.Fatalf("loadWorkspaceSubtree error = %v, want %v", err, observeErr)
+		}
+	})
+
+	t.Run("cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := loadWorkspaceSubtree(
+			ctx,
+			root,
+			"nested",
+			func(string) error {
+				return fs.ErrNotExist
+			},
+		)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("loadWorkspaceSubtree error = %v, want context.Canceled", err)
+		}
+	})
 }
 
 func writeWorkspaceFile(t *testing.T, root, relativePath, content string) {

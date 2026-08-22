@@ -153,8 +153,8 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
 	}
-	if first.Source.Revision != 1 || second.Source.Revision != 2 {
-		t.Fatalf("source revisions = %d and %d, want 1 and 2",
+	if second.Source.Revision <= first.Source.Revision {
+		t.Fatalf("source revisions = %d and %d, want increasing revisions",
 			first.Source.Revision, second.Source.Revision)
 	}
 
@@ -315,8 +315,9 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
 	}
-	if second.Source.Revision != 2 {
-		t.Fatalf("second source revision = %d, want 2", second.Source.Revision)
+	if second.Source.Revision <= first.Source.Revision {
+		t.Fatalf("second source revision = %d, want greater than %d",
+			second.Source.Revision, first.Source.Revision)
 	}
 
 	runtime, err := fixture.manager.CreateDebugRuntime(

@@ -104,6 +104,15 @@ func loadWorkspaceSubtree(
 	}
 
 	content, loadErr := loadWorkspaceTreeFS(ctx, rootPath, root.FS(), key, observeDirectory)
+	if key != "." && isOnlyNotExist(loadErr) {
+		if err := ctx.Err(); err != nil {
+			loadErr = err
+		} else {
+			content = workspaceContent{documents: make(map[string]Document)}
+			loadErr = nil
+		}
+	}
+
 	closeErr := root.Close()
 	if loadErr != nil {
 		if closeErr != nil {
@@ -118,6 +127,33 @@ func loadWorkspaceSubtree(
 	}
 
 	return content, nil
+}
+
+// isOnlyNotExist keeps an expected disappearance from hiding another joined failure.
+func isOnlyNotExist(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	switch current := err.(type) {
+	case interface{ Unwrap() []error }:
+		unwrapped := current.Unwrap()
+		if len(unwrapped) == 0 {
+			return false
+		}
+
+		for _, nested := range unwrapped {
+			if !isOnlyNotExist(nested) {
+				return false
+			}
+		}
+
+		return true
+	case interface{ Unwrap() error }:
+		return isOnlyNotExist(current.Unwrap())
+	default:
+		return errors.Is(err, fs.ErrNotExist)
+	}
 }
 
 func loadWorkspaceTreeFS(
@@ -192,6 +228,10 @@ func validateWorkspaceDirectory(root *os.Root, relativePath string) (bool, error
 
 		entries, err := fs.ReadDir(root.FS(), current)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return false, nil
+			}
+
 			return false, fmt.Errorf("read directory %q: %w", current, err)
 		}
 
