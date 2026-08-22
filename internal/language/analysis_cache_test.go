@@ -192,7 +192,10 @@ func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
 	if err != nil || len(oldReport.Items) == 0 {
 		t.Fatalf("old diagnostics = %+v, %v", oldReport, err)
 	}
-	oldDocument, _ := opened.Document("query.fql")
+	oldLookup, found, err := workspaces.LookupDocument(ctx, filePath)
+	if err != nil || !found {
+		t.Fatalf("old workspace lookup = %+v, %t, %v", oldLookup, found, err)
+	}
 
 	if err := os.Remove(filePath); err != nil {
 		t.Fatal(err)
@@ -211,9 +214,17 @@ func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recreate RefreshDocument: %v", err)
 	}
-	if newDocument.Revision() != oldDocument.Revision() {
-		t.Fatalf("recreated revision = %d, want reused public revision %d",
-			newDocument.Revision(), oldDocument.Revision())
+	newLookup, found, err := workspaces.LookupDocument(ctx, filePath)
+	if err != nil || !found {
+		t.Fatalf("new workspace lookup = %+v, %t, %v", newLookup, found, err)
+	}
+	if newLookup.Revision != newDocument.Revision() {
+		t.Fatalf("lookup revision = %d, want document revision %d",
+			newLookup.Revision, newDocument.Revision())
+	}
+	if newLookup.Generation <= oldLookup.Generation {
+		t.Fatalf("recreated generation = %d, want greater than %d",
+			newLookup.Generation, oldLookup.Generation)
 	}
 
 	newReport, err := service.Diagnostics(ctx, uri)
