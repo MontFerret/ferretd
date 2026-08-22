@@ -27,6 +27,10 @@ Launch arguments:
 * `stopOnEntry` (optional): emit the initial `stopped(entry)` event when `true`;
   the default is `false`, which continues past Ferret's entry stop.
 
+Launch arguments may contain additional client-supplied properties. The adapter
+ignores properties it does not recognize while continuing to decode and validate
+the supported Ferret arguments above.
+
 Example launch configuration:
 
 ```json

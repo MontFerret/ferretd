@@ -332,6 +332,130 @@ func TestDAPInitializeClientOptionDefaultsAndConventions(t *testing.T) {
 	}
 }
 
+func TestDAPLaunchIgnoresUnknownMetadataAndPreservesSupportedArguments(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]any
+	}{
+		{
+			name: "client_metadata",
+			metadata: map[string]any{
+				"type":        "ferret",
+				"request":     "launch",
+				"name":        "Debug Ferret",
+				"__sessionId": "test-session",
+			},
+		},
+		{
+			name: "arbitrary_metadata",
+			metadata: map[string]any{
+				"clientSpecificThing": map[string]any{"foo": "bar"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			program := writeDAPProgram(t, root, "RETURN @input")
+			client := newTestClient(t)
+			initializeDAP(t, client)
+
+			arguments := map[string]any{
+				"program":     filepath.Base(program),
+				"cwd":         root,
+				"parameters":  map[string]any{"input": "value"},
+				"stopOnEntry": true,
+			}
+			for key, value := range test.metadata {
+				arguments[key] = value
+			}
+
+			body, err := json.Marshal(arguments)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			launch := client.request("launch")
+			client.send(&protocol.LaunchRequest{Request: launch, Arguments: body})
+			if _, ok := client.read().(*protocol.InitializedEvent); !ok {
+				t.Fatal("expected initialized event")
+			}
+
+			client.server.stateMu.Lock()
+			owned := client.server.owned
+			client.server.stateMu.Unlock()
+			if owned.program != program || !owned.stopOnEntry {
+				t.Fatalf("owned Session = %+v, want program %q and stopOnEntry", owned, program)
+			}
+
+			opened, err := client.server.workspaces.Get(context.Background(), owned.workspace)
+			if err != nil {
+				t.Fatalf("Get workspace: %v", err)
+			}
+			if opened.Root() != root {
+				t.Fatalf("workspace root = %q, want %q", opened.Root(), root)
+			}
+
+			snapshot, err := client.server.debugs.GetSession(context.Background(), owned.debug)
+			if err != nil {
+				t.Fatalf("GetSession: %v", err)
+			}
+			if snapshot.Parameters["input"] != "value" {
+				t.Fatalf("parameters = %#v, want input value", snapshot.Parameters)
+			}
+
+			configurationDone := client.request("configurationDone")
+			client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+			if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
+				t.Fatalf("configurationDone response = %#v", response)
+			}
+			if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
+				t.Fatalf("launch response = %#v", response)
+			}
+			if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
+				t.Fatalf("stopped event = %#v", stopped)
+			}
+
+			client.disconnect()
+		})
+	}
+}
+
+func TestDAPLaunchUnknownMetadataPreservesSupportedArgumentValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments string
+		want      string
+	}{
+		{
+			name:      "required_program",
+			arguments: `{"progam":"query.fql","clientSpecificThing":{"foo":"bar"}}`,
+			want:      "launch program is required",
+		},
+		{
+			name:      "malformed_program",
+			arguments: `{"program":{"path":"query.fql"},"clientSpecificThing":true}`,
+			want:      "invalid launch arguments:",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := newTestClient(t)
+			initializeDAP(t, client)
+
+			client.sendRawRequest("launch", test.arguments)
+			response, ok := client.read().(*protocol.ErrorResponse)
+			if !ok || response.Success || !strings.Contains(response.Message, test.want) {
+				t.Fatalf("launch response = %#v, want failure containing %q", response, test.want)
+			}
+
+			client.disconnect()
+		})
+	}
+}
+
 func TestDAPLaunchConfigurationFramesScopesVariablesEvaluateAndCompletion(t *testing.T) {
 	root := t.TempDir()
 	program := writeDAPProgram(t, root, `LET box = {value: 10}
