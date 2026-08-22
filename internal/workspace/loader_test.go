@@ -235,6 +235,50 @@ func TestLoadWorkspaceRespectsCancellation(t *testing.T) {
 	}
 }
 
+func TestLoadWorkspaceRootPrunesVanishedNestedDirectory(t *testing.T) {
+	root := t.TempDir()
+	fileSystem := fstest.MapFS{
+		"kept.fql":         {Data: []byte("RETURN 1")},
+		"nested/query.fql": {Data: []byte("RETURN 2")},
+	}
+	var observed []string
+
+	content, err := loadWorkspaceFS(
+		context.Background(),
+		root,
+		fileSystem,
+		func(relativePath string) error {
+			observed = append(observed, relativePath)
+			if relativePath == "nested" {
+				return os.NewSyscallError("GetFileAttributes", fs.ErrNotExist)
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("loadWorkspaceFS: %v", err)
+	}
+	if got, want := observed, []string{".", "nested"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("observed directories = %#v, want %#v", got, want)
+	}
+	if got, want := content.directories, []string{"."}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("retained directories = %#v, want %#v", got, want)
+	}
+	if got, want := relativePaths(content.files), []string{"kept.fql"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("relative paths = %#v, want %#v", got, want)
+	}
+	if got, want := content.order, []string{"kept.fql"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("document order = %#v, want %#v", got, want)
+	}
+	if kept, found := content.documents["kept.fql"]; !found || kept.Content() != "RETURN 1" {
+		t.Fatalf("kept document = %#v, %t", kept, found)
+	}
+	if _, found := content.documents["nested/query.fql"]; found {
+		t.Fatal("vanished nested document was retained")
+	}
+}
+
 func TestLoadWorkspaceSubtreeTreatsVanishedDirectoryAsEmpty(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "nested/query.fql", "RETURN 1")
@@ -244,11 +288,7 @@ func TestLoadWorkspaceSubtreeTreatsVanishedDirectoryAsEmpty(t *testing.T) {
 		root,
 		"nested",
 		func(string) error {
-			return &fs.PathError{
-				Op:   "GetFileAttributes",
-				Path: filepath.Join(root, "nested"),
-				Err:  fs.ErrNotExist,
-			}
+			return os.NewSyscallError("GetFileAttributes", fs.ErrNotExist)
 		},
 	)
 	if err != nil {
@@ -312,13 +352,15 @@ func TestLoadWorkspaceSubtreePreservesRootAndObservationErrors(t *testing.T) {
 
 	t.Run("cancellation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
+		defer cancel()
 
 		_, err := loadWorkspaceSubtree(
 			ctx,
 			root,
 			"nested",
 			func(string) error {
+				cancel()
+
 				return fs.ErrNotExist
 			},
 		)

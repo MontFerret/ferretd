@@ -261,11 +261,19 @@ func discoverFiles(
 
 		entries, err := fs.ReadDir(fileSystem, relativePath)
 		if err != nil {
+			if !selectedRoot && isOnlyNotExist(err) {
+				return ctx.Err()
+			}
+
 			return err
 		}
 
 		if observeDirectory != nil {
 			if err := observeDirectory(relativePath); err != nil {
+				if !selectedRoot && isOnlyNotExist(err) {
+					return ctx.Err()
+				}
+
 				return err
 			}
 		}
