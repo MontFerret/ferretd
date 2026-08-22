@@ -73,7 +73,7 @@ func discoverWorkspaceDocumentRoot(
 
 	pathInfo, err := root.Lstat(key)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+		if workspacePathMissing(root.FS(), key, err) {
 			return discoveredDocument{directories: directories}, nil
 		}
 
@@ -115,7 +115,7 @@ func validateDocumentAncestors(root *os.Root, relativePath string) ([]string, bo
 		current = path.Join(current, component)
 		info, err := root.Lstat(current)
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+			if workspacePathMissing(root.FS(), current, err) {
 				return directories, false, nil
 			}
 
@@ -128,7 +128,7 @@ func validateDocumentAncestors(root *os.Root, relativePath string) ([]string, bo
 
 		entries, err := fs.ReadDir(root.FS(), current)
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+			if workspacePathMissing(root.FS(), current, err) {
 				return directories, false, nil
 			}
 
@@ -160,7 +160,7 @@ func readDiscoveredDocument(
 ) (Document, bool, error) {
 	handle, err := root.Open(file.RelativePath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+		if workspacePathMissing(root.FS(), file.RelativePath, err) {
 			return Document{}, false, nil
 		}
 
@@ -175,7 +175,7 @@ func readDiscoveredDocument(
 
 	currentInfo, err := root.Lstat(file.RelativePath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+		if workspacePathMissing(root.FS(), file.RelativePath, err) {
 			return Document{}, false, nil
 		}
 

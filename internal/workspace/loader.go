@@ -131,6 +131,10 @@ func loadWorkspaceSubtree(
 
 // isOnlyNotExist keeps an expected disappearance from hiding another joined failure.
 func isOnlyNotExist(err error) bool {
+	return errorOnlyMatches(err, fs.ErrNotExist)
+}
+
+func errorOnlyMatches(err error, target error) bool {
 	if err == nil {
 		return false
 	}
@@ -143,16 +147,16 @@ func isOnlyNotExist(err error) bool {
 		}
 
 		for _, nested := range unwrapped {
-			if !isOnlyNotExist(nested) {
+			if !errorOnlyMatches(nested, target) {
 				return false
 			}
 		}
 
 		return true
 	case interface{ Unwrap() error }:
-		return isOnlyNotExist(current.Unwrap())
+		return errorOnlyMatches(current.Unwrap(), target)
 	default:
-		return errors.Is(err, fs.ErrNotExist)
+		return errors.Is(err, target)
 	}
 }
 
@@ -211,7 +215,7 @@ func validateWorkspaceDirectory(root *os.Root, relativePath string) (bool, error
 		current = path.Join(current, component)
 		info, err := root.Lstat(current)
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+			if workspacePathMissing(root.FS(), current, err) {
 				return false, nil
 			}
 
@@ -228,7 +232,7 @@ func validateWorkspaceDirectory(root *os.Root, relativePath string) (bool, error
 
 		entries, err := fs.ReadDir(root.FS(), current)
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+			if workspacePathMissing(root.FS(), current, err) {
 				return false, nil
 			}
 
@@ -261,7 +265,7 @@ func discoverFiles(
 
 		entries, err := fs.ReadDir(fileSystem, relativePath)
 		if err != nil {
-			if !selectedRoot && isOnlyNotExist(err) {
+			if !selectedRoot && workspacePathMissing(fileSystem, relativePath, err) {
 				return ctx.Err()
 			}
 
@@ -351,6 +355,32 @@ func discoverFiles(
 	})
 
 	return result, directories, nil
+}
+
+// workspacePathMissing distinguishes a Windows delete-pending traversal error
+// from a retained permission failure by checking the entry in its rooted parent.
+func workspacePathMissing(fileSystem fs.FS, relativePath string, err error) bool {
+	if isOnlyNotExist(err) {
+		return true
+	}
+
+	if !errorOnlyMatches(err, fs.ErrPermission) {
+		return false
+	}
+
+	entries, readErr := fs.ReadDir(fileSystem, path.Dir(relativePath))
+	if readErr != nil {
+		return isOnlyNotExist(readErr)
+	}
+
+	name := path.Base(relativePath)
+	for _, entry := range entries {
+		if entry.Name() == name {
+			return false
+		}
+	}
+
+	return true
 }
 
 func isExcludedDirectory(name string) bool {

@@ -235,6 +235,31 @@ func TestLoadWorkspaceRespectsCancellation(t *testing.T) {
 	}
 }
 
+func TestWorkspacePathMissing(t *testing.T) {
+	fileSystem := fstest.MapFS{
+		"present/query.fql": {Data: []byte("RETURN 1")},
+	}
+	tests := []struct {
+		name         string
+		relativePath string
+		err          error
+		want         bool
+	}{
+		{name: "not exist", relativePath: "missing", err: fs.ErrNotExist, want: true},
+		{name: "delete pending", relativePath: "missing", err: fs.ErrPermission, want: true},
+		{name: "retained permission", relativePath: "present", err: fs.ErrPermission, want: false},
+		{name: "mixed permission", relativePath: "missing", err: errors.Join(fs.ErrPermission, errors.New("inspect directory")), want: false},
+		{name: "unrelated", relativePath: "missing", err: errors.New("inspect directory"), want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := workspacePathMissing(fileSystem, test.relativePath, test.err); got != test.want {
+				t.Fatalf("workspacePathMissing = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func TestLoadWorkspaceRootPrunesVanishedNestedDirectory(t *testing.T) {
 	root := t.TempDir()
 	fileSystem := fstest.MapFS{
