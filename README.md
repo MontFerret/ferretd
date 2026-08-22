@@ -53,15 +53,19 @@ make proto-lint
 ./bin/ferretd --version
 ./bin/ferretd serve
 ./bin/ferretd serve --endpoint unix:///tmp/ferretd.sock
+./bin/ferretd serve --log-level debug
 ./bin/ferretd lsp
 ./bin/ferretd dap
+./bin/ferretd dap --log-level debug
 ```
 
 `serve` starts the local daemon and waits for an interrupt or a `Shutdown` RPC.
 It uses `$XDG_RUNTIME_DIR/ferret/ferretd.sock` on macOS and Linux, falling back
 to the user cache directory, and `\\.\pipe\ferretd` on Windows. Explicit local
 endpoints use `unix:///absolute/path` or `npipe:////./pipe/name`; TCP is not
-supported. Daemon logs go to stderr.
+supported. The `serve` and `dap` commands write newline-delimited JSON
+diagnostics to stderr at `info` level by default. Their shared `--log-level`
+option accepts `debug`, `info`, `warn`, or `error`.
 
 The supported Go client discovers the default endpoint, performs API
 compatibility negotiation, and exposes daemon, workspace, and execution
@@ -127,7 +131,9 @@ stdout. It launches one local `.fql` program, opens its workspace in-process,
 and delegates breakpoints, stepping, frame inspection, variables, and
 evaluation to Ferret through separate transport-neutral execution and debug
 managers. It does not connect to `ferretd serve` or expose debugging through
-gRPC. See
+gRPC. Process diagnostics remain on stderr; `--log-level debug` enables concise
+semantic DAP request, response, and event tracing without logging query text,
+parameters, expressions, or evaluated values. See
 [docs/dap.md](docs/dap.md) for launch arguments and supported requests.
 
 ## Current Status

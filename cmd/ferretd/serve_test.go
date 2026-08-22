@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -15,11 +16,15 @@ import (
 func TestServeStopsOnCancellation(t *testing.T) {
 	endpoint := testClientEndpoint(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
+	type serveResult struct {
+		diagnostics string
+		err         error
+	}
+	done := make(chan serveResult, 1)
 
 	go func() {
-		_, err := executeCommand(ctx, "test-version", "serve", "--endpoint", endpoint.String())
-		done <- err
+		diagnostics, err := executeCommand(ctx, "test-version", "serve", "--endpoint", endpoint.String())
+		done <- serveResult{diagnostics: diagnostics, err: err}
 	}()
 
 	connection := waitForClient(t, endpoint)
@@ -27,9 +32,18 @@ func TestServeStopsOnCancellation(t *testing.T) {
 	cancel()
 
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("execute serve: %v", err)
+	case result := <-done:
+		if result.err != nil {
+			t.Fatalf("execute serve: %v", result.err)
+		}
+
+		var diagnostic map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(result.diagnostics)), &diagnostic); err != nil {
+			t.Fatalf("decode serve diagnostics %q: %v", result.diagnostics, err)
+		}
+		if diagnostic["level"] != "info" || diagnostic["message"] != "ferretd started" ||
+			diagnostic["endpoint"] != endpoint.String() || diagnostic["version"] != "test-version" {
+			t.Fatalf("serve diagnostic = %#v", diagnostic)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("serve did not stop after context cancellation")

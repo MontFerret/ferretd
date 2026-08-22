@@ -10,10 +10,13 @@ owned below the daemon.
 
 ## Process composition
 
-`cmd/ferretd/serve.go` parses an optional local endpoint, creates a logger that
-writes to stderr, constructs the daemon, and starts it with the command context.
-After `Start` returns, it calls `Stop` with a bounded shutdown context. Process
-signals cancel the root context in `cmd/ferretd/main.go`.
+`cmd/ferretd/serve.go` parses an optional local endpoint and the shared
+`--log-level` setting, creates a logger that writes newline-delimited JSON to
+stderr, constructs the daemon, and starts it with the command context. The level
+accepts `debug`, `info`, `warn`, or `error` and defaults to `info`; the DAP
+command uses the same logger construction and level contract. After `Start`
+returns, `serve` calls `Stop` with a bounded shutdown context. Process signals
+cancel the root context in `cmd/ferretd/main.go`.
 
 The daemon constructs one workspace manager, one execution manager, and one
 gRPC server. The execution manager registers its workspace close hook during

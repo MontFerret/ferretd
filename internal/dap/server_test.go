@@ -32,7 +32,7 @@ type testClient struct {
 func mustNewServer(t testing.TB, input io.Reader, output io.Writer) *Server {
 	t.Helper()
 
-	server, err := New(input, output)
+	server, err := New(input, output, Options{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestNewRequiresStreams(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			server, err := New(test.input, test.output)
+			server, err := New(test.input, test.output, Options{})
 			if !errors.Is(err, test.want) {
 				t.Fatalf("New error = %v, want %v", err, test.want)
 			}
@@ -67,10 +67,19 @@ func TestNewRequiresStreams(t *testing.T) {
 func newTestClient(t *testing.T) *testClient {
 	t.Helper()
 
+	return newTestClientWithOptions(t, Options{})
+}
+
+func newTestClientWithOptions(t *testing.T, options Options) *testClient {
+	t.Helper()
+
 	serverInput, clientInput := io.Pipe()
 	clientOutput, serverOutput := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
-	server := mustNewServer(t, serverInput, serverOutput)
+	server, err := New(serverInput, serverOutput, options)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	done := make(chan error, 1)
 	go func() {
 		err := server.Run(ctx)

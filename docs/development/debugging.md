@@ -81,8 +81,22 @@ Handles are cleared whenever execution runs, steps, completes, fails, or
 terminates, so stale paused-state references cannot be reused.
 
 Serialized writes preserve DAP message framing and sequence order. Stdout
-contains DAP messages only; process-facing errors are returned to the command
-and reported on stderr after the adapter exits.
+contains DAP messages only. The command injects the same stderr-backed JSON
+logger and `--log-level` contract used by `serve`; ordinary lifecycle and
+failure diagnostics use the default `info` verbosity, while `debug` adds
+semantic DAP request, response, and event records. Each diagnostic is one JSON
+object followed by a newline.
+
+Request handlers select safe logging fields explicitly, and the common response
+path records failures before writing their unchanged DAP error responses. After
+launch, the logger carries the existing workspace, execution Session, and
+DebugSession IDs. Trace records include compact identifiers, paths, counts, and
+handle values but never serialize arbitrary protocol objects, query contents,
+parameters, expressions, evaluated values, or output contents. DAP `output`
+events remain protocol messages on stdout even when their category is `stderr`;
+process diagnostics always go directly to stderr. Fatal adapter errors are
+returned to the command for process-facing reporting rather than logged and
+returned at both layers.
 
 ## Runtime results and cleanup
 

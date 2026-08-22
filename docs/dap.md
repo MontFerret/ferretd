@@ -1,8 +1,32 @@
 # Debug Adapter Protocol
 
 `ferretd dap` runs a single-session Debug Adapter Protocol server over stdin and
-stdout. Stdout contains framed DAP messages only; process-facing errors are
-reported by the `ferretd` command on stderr after the adapter exits.
+stdout. Stdout contains framed DAP messages only. Adapter diagnostics are
+newline-delimited JSON records on the process stderr stream; process-facing
+errors are also written to stderr.
+
+## Diagnostics
+
+DAP lifecycle transitions, rejected or failed requests, debugger stops, and
+asynchronous debugger failures are logged at the default `info` verbosity.
+Enable semantic request, response, and event tracing with:
+
+```sh
+ferretd dap --log-level debug
+```
+
+The shared `--log-level` option accepts `debug`, `info`, `warn`, or `error`.
+Debug records identify message direction and ordering and include compact fields
+such as source paths, breakpoint counts, thread IDs, frame handles, variable
+references, and evaluation-expression length. Existing workspace, execution
+Session, and DebugSession IDs correlate records after a successful launch.
+
+Diagnostics never serialize whole DAP payloads. Query contents, parameters,
+environment variables, evaluation expressions and results, source contents, and
+debug output contents are omitted. Output-event diagnostics include only the
+category and byte count. DAP `output` events, including events whose category is
+`stderr`, remain framed protocol messages on stdout; they are distinct from the
+process diagnostics written directly to stderr.
 
 ## Launch
 
