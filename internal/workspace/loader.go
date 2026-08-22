@@ -9,23 +9,33 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	localsource "github.com/MontFerret/ferretd/internal/source"
 )
 
-type workspaceContent struct {
-	files     []File
-	documents map[string]Document
-	order     []string
-}
+type (
+	workspaceContent struct {
+		files       []File
+		documents   map[string]Document
+		order       []string
+		directories []string
+	}
 
-func loadWorkspace(ctx context.Context, rootPath string) (workspaceContent, error) {
+	directoryObserver func(string) error
+)
+
+func loadWorkspace(
+	ctx context.Context,
+	rootPath string,
+	observeDirectory directoryObserver,
+) (workspaceContent, error) {
 	root, err := os.OpenRoot(rootPath)
 	if err != nil {
 		return workspaceContent{}, fmt.Errorf("open workspace root: %w", err)
 	}
 
-	content, loadErr := loadWorkspaceFS(ctx, rootPath, root.FS())
+	content, loadErr := loadWorkspaceFS(ctx, rootPath, root.FS(), observeDirectory)
 	closeErr := root.Close()
 
 	if loadErr != nil {
@@ -43,16 +53,130 @@ func loadWorkspace(ctx context.Context, rootPath string) (workspaceContent, erro
 	return content, nil
 }
 
-func loadWorkspaceFS(ctx context.Context, rootPath string, fileSystem fs.FS) (workspaceContent, error) {
-	files, err := discoverFiles(ctx, rootPath, fileSystem)
+func loadWorkspaceFS(
+	ctx context.Context,
+	rootPath string,
+	fileSystem fs.FS,
+	observers ...directoryObserver,
+) (workspaceContent, error) {
+	var observeDirectory directoryObserver
+	if len(observers) != 0 {
+		observeDirectory = observers[0]
+	}
+
+	return loadWorkspaceTreeFS(ctx, rootPath, fileSystem, ".", observeDirectory)
+}
+
+func loadWorkspaceSubtree(
+	ctx context.Context,
+	rootPath string,
+	relativePath string,
+	observeDirectory directoryObserver,
+) (workspaceContent, error) {
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return workspaceContent{}, fmt.Errorf("open workspace root: %w", err)
+	}
+
+	key, ok := normalizeWorkspacePath(relativePath)
+	if !ok {
+		_ = root.Close()
+
+		return workspaceContent{}, nil
+	}
+
+	if key != "." {
+		eligible, err := validateWorkspaceDirectory(root, key)
+		if err != nil {
+			_ = root.Close()
+
+			return workspaceContent{}, err
+		}
+
+		if !eligible {
+			closeErr := root.Close()
+			if closeErr != nil {
+				return workspaceContent{}, fmt.Errorf("close workspace root: %w", closeErr)
+			}
+
+			return workspaceContent{documents: make(map[string]Document)}, nil
+		}
+	}
+
+	content, loadErr := loadWorkspaceTreeFS(ctx, rootPath, root.FS(), key, observeDirectory)
+	if key != "." && isOnlyNotExist(loadErr) {
+		if err := ctx.Err(); err != nil {
+			loadErr = err
+		} else {
+			content = workspaceContent{documents: make(map[string]Document)}
+			loadErr = nil
+		}
+	}
+
+	closeErr := root.Close()
+	if loadErr != nil {
+		if closeErr != nil {
+			return workspaceContent{}, errors.Join(loadErr, fmt.Errorf("close workspace root: %w", closeErr))
+		}
+
+		return workspaceContent{}, loadErr
+	}
+
+	if closeErr != nil {
+		return workspaceContent{}, fmt.Errorf("close workspace root: %w", closeErr)
+	}
+
+	return content, nil
+}
+
+// isOnlyNotExist keeps an expected disappearance from hiding another joined failure.
+func isOnlyNotExist(err error) bool {
+	return errorOnlyMatches(err, fs.ErrNotExist)
+}
+
+func errorOnlyMatches(err error, target error) bool {
+	if err == nil {
+		return false
+	}
+
+	switch current := err.(type) {
+	case interface{ Unwrap() []error }:
+		unwrapped := current.Unwrap()
+		if len(unwrapped) == 0 {
+			return false
+		}
+
+		for _, nested := range unwrapped {
+			if !errorOnlyMatches(nested, target) {
+				return false
+			}
+		}
+
+		return true
+	case interface{ Unwrap() error }:
+		return errorOnlyMatches(current.Unwrap(), target)
+	default:
+		return errors.Is(err, target)
+	}
+}
+
+func loadWorkspaceTreeFS(
+	ctx context.Context,
+	rootPath string,
+	fileSystem fs.FS,
+	start string,
+	observeDirectory directoryObserver,
+) (workspaceContent, error) {
+	files, directories, err := discoverFiles(ctx, rootPath, fileSystem, start, observeDirectory)
 	if err != nil {
 		return workspaceContent{}, err
 	}
 
 	content := workspaceContent{
-		files:     files,
-		documents: make(map[string]Document, len(files)),
-		order:     make([]string, 0, len(files)),
+		files:       files,
+		documents:   make(map[string]Document, len(files)),
+		order:       make([]string, 0, len(files)),
+		directories: directories,
 	}
 
 	for _, file := range files {
@@ -80,78 +204,208 @@ func loadWorkspaceFS(ctx context.Context, rootPath string, fileSystem fs.FS) (wo
 	return content, nil
 }
 
-func discoverFiles(ctx context.Context, rootPath string, fileSystem fs.FS) ([]File, error) {
-	var result []File
+func validateWorkspaceDirectory(root *os.Root, relativePath string) (bool, error) {
+	current := "."
+	components := splitWorkspacePath(relativePath)
+	for index, component := range components {
+		if isExcludedDirectory(component) {
+			return false, nil
+		}
 
-	err := fs.WalkDir(fileSystem, ".", func(relativePath string, entry fs.DirEntry, walkErr error) error {
+		current = path.Join(current, component)
+		info, err := root.Lstat(current)
+		if err != nil {
+			if workspacePathMissing(root.FS(), current, err) {
+				return false, nil
+			}
+
+			return false, fmt.Errorf("inspect directory %q: %w", current, err)
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return false, nil
+		}
+
+		if index == len(components)-1 {
+			continue
+		}
+
+		entries, err := fs.ReadDir(root.FS(), current)
+		if err != nil {
+			if workspacePathMissing(root.FS(), current, err) {
+				return false, nil
+			}
+
+			return false, fmt.Errorf("read directory %q: %w", current, err)
+		}
+
+		if containsGoModule(entries) {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func discoverFiles(
+	ctx context.Context,
+	rootPath string,
+	fileSystem fs.FS,
+	start string,
+	observeDirectory directoryObserver,
+) ([]File, []string, error) {
+	var result []File
+	var directories []string
+
+	var walk func(string, bool) error
+	walk = func(relativePath string, selectedRoot bool) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		if walkErr != nil {
-			return walkErr
-		}
-
-		if relativePath == "." {
-			return nil
-		}
-
-		if entry.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-
-		if entry.IsDir() {
-			if isExcludedDirectory(path.Base(relativePath)) {
-				return fs.SkipDir
+		entries, err := fs.ReadDir(fileSystem, relativePath)
+		if err != nil {
+			if !selectedRoot && workspacePathMissing(fileSystem, relativePath, err) {
+				return ctx.Err()
 			}
 
-			return nil
-		}
-
-		if path.Ext(relativePath) != ".fql" {
-			return nil
-		}
-
-		info, err := entry.Info()
-		if err != nil {
 			return err
 		}
 
-		if !info.Mode().IsRegular() {
+		if observeDirectory != nil {
+			if err := observeDirectory(relativePath); err != nil {
+				if !selectedRoot && isOnlyNotExist(err) {
+					return ctx.Err()
+				}
+
+				return err
+			}
+		}
+		directories = append(directories, path.Clean(relativePath))
+
+		if !selectedRoot && containsGoModule(entries) {
 			return nil
 		}
 
-		canonical := path.Clean(relativePath)
-		absolute := filepath.Join(rootPath, filepath.FromSlash(canonical))
-		uri, err := localsource.URIFromPath(absolute)
-		if err != nil {
-			return fmt.Errorf("resolve source URI for %q: %w", canonical, err)
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			child := path.Join(relativePath, entry.Name())
+			if entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+
+			if entry.IsDir() {
+				if isExcludedDirectory(entry.Name()) {
+					continue
+				}
+
+				if err := walk(child, false); err != nil {
+					return err
+				}
+
+				continue
+			}
+
+			if !isWorkspaceSource(entry.Name()) {
+				continue
+			}
+
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+
+			if !info.Mode().IsRegular() {
+				continue
+			}
+
+			canonical := path.Clean(child)
+			absolute := filepath.Join(rootPath, filepath.FromSlash(canonical))
+			uri, err := localsource.URIFromPath(absolute)
+			if err != nil {
+				return fmt.Errorf("resolve source URI for %q: %w", canonical, err)
+			}
+
+			result = append(result, File{
+				RelativePath: canonical,
+				Path:         absolute,
+				URI:          uri,
+			})
 		}
 
-		result = append(result, File{
-			RelativePath: canonical,
-			Path:         absolute,
-			URI:          uri,
-		})
-
 		return nil
-	})
+	}
+
+	canonicalStart := path.Clean(start)
+	selectedRoot := canonicalStart == "."
+	if !selectedRoot && isExcludedDirectory(path.Base(canonicalStart)) {
+		return nil, nil, nil
+	}
+
+	err := walk(canonicalStart, selectedRoot)
 	if err != nil {
-		return nil, fmt.Errorf("discover source files: %w", err)
+		return nil, nil, fmt.Errorf("discover source files: %w", err)
 	}
 
 	sort.Slice(result, func(left, right int) bool {
 		return result[left].RelativePath < result[right].RelativePath
 	})
 
-	return result, nil
+	return result, directories, nil
+}
+
+// workspacePathMissing distinguishes a Windows delete-pending traversal error
+// from a retained permission failure by checking the entry in its rooted parent.
+func workspacePathMissing(fileSystem fs.FS, relativePath string, err error) bool {
+	if isOnlyNotExist(err) {
+		return true
+	}
+
+	if !errorOnlyMatches(err, fs.ErrPermission) {
+		return false
+	}
+
+	entries, readErr := fs.ReadDir(fileSystem, path.Dir(relativePath))
+	if readErr != nil {
+		return isOnlyNotExist(readErr)
+	}
+
+	name := path.Base(relativePath)
+	for _, entry := range entries {
+		if entry.Name() == name {
+			return false
+		}
+	}
+
+	return true
 }
 
 func isExcludedDirectory(name string) bool {
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		return true
+	}
+
 	switch name {
-	case ".git", ".hg", ".svn", "node_modules", "vendor":
+	case "node_modules", "testdata", "vendor":
 		return true
 	default:
 		return false
 	}
+}
+
+func containsGoModule(entries []fs.DirEntry) bool {
+	for _, entry := range entries {
+		if entry.Name() == "go.mod" && !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isWorkspaceSource(name string) bool {
+	return path.Ext(name) == ".fql"
 }

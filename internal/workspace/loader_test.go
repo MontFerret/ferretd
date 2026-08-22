@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,8 +26,14 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	writeWorkspaceFile(t, root, ".git/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, ".hg/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, ".svn/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, ".hidden/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, "_generated/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, "node_modules/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, "testdata/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, "vendor/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, "nested-module/go.mod", "module example.com/nested")
+	writeWorkspaceFile(t, root, "nested-module/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/root")
 	if err := os.Mkdir(filepath.Join(root, "directory.fql"), 0o700); err != nil {
 		t.Fatalf("Mkdir directory.fql: %v", err)
 	}
@@ -128,6 +135,27 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	}
 }
 
+func TestOpenKeepsSelectedRootValidRegardlessOfName(t *testing.T) {
+	parent := t.TempDir()
+	tests := []string{".hidden", "_generated", "testdata", "vendor"}
+	for _, name := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := filepath.Join(parent, name)
+			writeWorkspaceFile(t, root, "query.fql", "RETURN 1")
+
+			manager := newTestManager(t)
+			opened, err := manager.Open(context.Background(), root)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+
+			if _, ok := opened.Document("query.fql"); !ok {
+				t.Fatal("selected root source was excluded")
+			}
+		})
+	}
+}
+
 func TestOpenPreservesRootSymlinkAndSkipsNestedSymlinks(t *testing.T) {
 	target := t.TempDir()
 	writeWorkspaceFile(t, target, "inside.fql", "RETURN 1")
@@ -205,6 +233,166 @@ func TestLoadWorkspaceRespectsCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("loadWorkspaceFS error = %v, want context.Canceled", err)
 	}
+}
+
+func TestWorkspacePathMissing(t *testing.T) {
+	fileSystem := fstest.MapFS{
+		"present/query.fql": {Data: []byte("RETURN 1")},
+	}
+	tests := []struct {
+		name         string
+		relativePath string
+		err          error
+		want         bool
+	}{
+		{name: "not exist", relativePath: "missing", err: fs.ErrNotExist, want: true},
+		{name: "delete pending", relativePath: "missing", err: fs.ErrPermission, want: true},
+		{name: "retained permission", relativePath: "present", err: fs.ErrPermission, want: false},
+		{name: "mixed permission", relativePath: "missing", err: errors.Join(fs.ErrPermission, errors.New("inspect directory")), want: false},
+		{name: "unrelated", relativePath: "missing", err: errors.New("inspect directory"), want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := workspacePathMissing(fileSystem, test.relativePath, test.err); got != test.want {
+				t.Fatalf("workspacePathMissing = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadWorkspaceRootPrunesVanishedNestedDirectory(t *testing.T) {
+	root := t.TempDir()
+	fileSystem := fstest.MapFS{
+		"kept.fql":         {Data: []byte("RETURN 1")},
+		"nested/query.fql": {Data: []byte("RETURN 2")},
+	}
+	var observed []string
+
+	content, err := loadWorkspaceFS(
+		context.Background(),
+		root,
+		fileSystem,
+		func(relativePath string) error {
+			observed = append(observed, relativePath)
+			if relativePath == "nested" {
+				return os.NewSyscallError("GetFileAttributes", fs.ErrNotExist)
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("loadWorkspaceFS: %v", err)
+	}
+	if got, want := observed, []string{".", "nested"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("observed directories = %#v, want %#v", got, want)
+	}
+	if got, want := content.directories, []string{"."}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("retained directories = %#v, want %#v", got, want)
+	}
+	if got, want := relativePaths(content.files), []string{"kept.fql"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("relative paths = %#v, want %#v", got, want)
+	}
+	if got, want := content.order, []string{"kept.fql"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("document order = %#v, want %#v", got, want)
+	}
+	if kept, found := content.documents["kept.fql"]; !found || kept.Content() != "RETURN 1" {
+		t.Fatalf("kept document = %#v, %t", kept, found)
+	}
+	if _, found := content.documents["nested/query.fql"]; found {
+		t.Fatal("vanished nested document was retained")
+	}
+}
+
+func TestLoadWorkspaceSubtreeTreatsVanishedDirectoryAsEmpty(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "nested/query.fql", "RETURN 1")
+
+	content, err := loadWorkspaceSubtree(
+		context.Background(),
+		root,
+		"nested",
+		func(string) error {
+			return os.NewSyscallError("GetFileAttributes", fs.ErrNotExist)
+		},
+	)
+	if err != nil {
+		t.Fatalf("loadWorkspaceSubtree: %v", err)
+	}
+	if content.documents == nil {
+		t.Fatal("vanished subtree documents map is nil")
+	}
+	if len(content.files) != 0 || len(content.documents) != 0 || len(content.order) != 0 || len(content.directories) != 0 {
+		t.Fatalf("vanished subtree content = %+v, want initialized empty content", content)
+	}
+}
+
+func TestLoadWorkspaceSubtreePreservesRootAndObservationErrors(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "nested/query.fql", "RETURN 1")
+
+	t.Run("root disappearance", func(t *testing.T) {
+		_, err := loadWorkspaceSubtree(
+			context.Background(),
+			root,
+			".",
+			func(string) error {
+				return fs.ErrNotExist
+			},
+		)
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("loadWorkspaceSubtree error = %v, want fs.ErrNotExist", err)
+		}
+	})
+
+	t.Run("unrelated nested error", func(t *testing.T) {
+		observeErr := errors.New("observe directory")
+		_, err := loadWorkspaceSubtree(
+			context.Background(),
+			root,
+			"nested",
+			func(string) error {
+				return observeErr
+			},
+		)
+		if !errors.Is(err, observeErr) {
+			t.Fatalf("loadWorkspaceSubtree error = %v, want %v", err, observeErr)
+		}
+	})
+
+	t.Run("mixed nested error", func(t *testing.T) {
+		observeErr := errors.New("remove stale watch")
+		_, err := loadWorkspaceSubtree(
+			context.Background(),
+			root,
+			"nested",
+			func(string) error {
+				return errors.Join(fs.ErrNotExist, observeErr)
+			},
+		)
+		if !errors.Is(err, observeErr) {
+			t.Fatalf("loadWorkspaceSubtree error = %v, want %v", err, observeErr)
+		}
+	})
+
+	t.Run("cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, err := loadWorkspaceSubtree(
+			ctx,
+			root,
+			"nested",
+			func(string) error {
+				cancel()
+
+				return fs.ErrNotExist
+			},
+		)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("loadWorkspaceSubtree error = %v, want context.Canceled", err)
+		}
+	})
 }
 
 func writeWorkspaceFile(t *testing.T, root, relativePath, content string) {

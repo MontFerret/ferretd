@@ -23,13 +23,15 @@ type (
 		closeHooks    []CloseHook
 		loadWorkspace workspaceLoader
 		newEngine     newEngineFunc
+		newWatcher    workspaceWatcherFactory
+		startWatcher  func(*workspaceWatcher, *Workspace)
 		generation    uint64
 	}
 
 	// CloseHook releases resources parented by a workspace before its Engine closes.
 	CloseHook func(context.Context, ID) error
 
-	workspaceLoader func(context.Context, string) (workspaceContent, error)
+	workspaceLoader func(context.Context, string, directoryObserver) (workspaceContent, error)
 
 	newEngineFunc func(string) (*ferret.Engine, error)
 
@@ -63,6 +65,10 @@ func New() *Manager {
 		loadWorkspace: loadWorkspace,
 		newEngine: func(root string) (*ferret.Engine, error) {
 			return ferret.New(ferret.WithFSRoot(root))
+		},
+		newWatcher: newWorkspaceWatcher,
+		startWatcher: func(watcher *workspaceWatcher, workspace *Workspace) {
+			watcher.Start(workspace)
 		},
 	}
 }
@@ -126,9 +132,10 @@ func (m *Manager) LookupDocument(ctx context.Context, absolutePath string) (Docu
 		}
 
 		return DocumentLookup{
-			Document:  document,
-			Workspace: item.ID(),
-			Revision:  document.Revision(),
+			Document:   document,
+			Workspace:  item.ID(),
+			Revision:   document.Revision(),
+			Generation: document.generation,
 		}, true, nil
 	}
 
@@ -311,7 +318,7 @@ func (m *Manager) finishClose(id ID, entry *workspaceEntry) {
 	hooks := append([]CloseHook(nil), m.closeHooks...)
 	m.mu.RUnlock()
 
-	var result error
+	result := entry.workspace.stopWatcher()
 	for _, hook := range hooks {
 		if err := hook(context.Background(), id); err != nil {
 			result = errors.Join(result, err)
@@ -362,7 +369,15 @@ func (m *Manager) beginOpen(candidate *Workspace) (*openOperation, bool) {
 }
 
 func (m *Manager) loadAndCommit(ctx context.Context, operation *openOperation) (*Workspace, error) {
-	content, err := m.loadWorkspace(ctx, operation.workspace.Root())
+	watcher, err := m.newWatcher(operation.workspace.Root())
+	if err == nil {
+		err = watcher.AddDirectory(".")
+	}
+
+	var content workspaceContent
+	if err == nil {
+		content, err = m.loadWorkspace(ctx, operation.workspace.Root(), watcher.AddDirectory)
+	}
 	if err == nil {
 		err = ctx.Err()
 	}
@@ -379,40 +394,58 @@ func (m *Manager) loadAndCommit(ctx context.Context, operation *openOperation) (
 		err = ctx.Err()
 	}
 
-	m.mu.Lock()
-	if operation.generation != m.generation && err == nil {
-		err = fmt.Errorf("workspace manager was cleared during load")
-	}
-
 	if err != nil {
 		if engine != nil {
 			err = errors.Join(err, engine.Close())
 		}
+
+		if watcher != nil {
+			err = errors.Join(err, watcher.Close())
+		}
+
 		err = fmt.Errorf("%w: load %q: %w", ErrLoad, operation.workspace.Root(), err)
 		operation.workspace.setFailed(err)
-	} else {
-		operation.workspace.setReady(content, engine)
+
+		m.finishOpen(operation, err)
+
+		return nil, err
 	}
 
+	m.mu.Lock()
+	if operation.generation != m.generation {
+		m.mu.Unlock()
+
+		err = fmt.Errorf("workspace manager was cleared during load")
+		err = errors.Join(err, engine.Close(), watcher.Close())
+		err = fmt.Errorf("%w: load %q: %w", ErrLoad, operation.workspace.Root(), err)
+		operation.workspace.setFailed(err)
+		m.finishOpen(operation, err)
+
+		return nil, err
+	}
+
+	operation.workspace.setReady(content, engine, watcher)
+	m.startWatcher(watcher, operation.workspace)
+	m.byID[operation.workspace.ID()] = &workspaceEntry{
+		workspace: operation.workspace,
+		state:     workspaceEntryActive,
+	}
+	m.byRoot[operation.workspace.Root()] = operation.workspace.ID()
+	delete(m.opening, operation.workspace.Root())
+	close(operation.done)
+	m.mu.Unlock()
+
+	return operation.workspace, nil
+}
+
+func (m *Manager) finishOpen(operation *openOperation, err error) {
+	m.mu.Lock()
 	if m.opening[operation.workspace.Root()] == operation {
 		delete(m.opening, operation.workspace.Root())
 	}
 	operation.err = err
-	if err == nil {
-		m.byID[operation.workspace.ID()] = &workspaceEntry{
-			workspace: operation.workspace,
-			state:     workspaceEntryActive,
-		}
-		m.byRoot[operation.workspace.Root()] = operation.workspace.ID()
-	}
 	close(operation.done)
 	m.mu.Unlock()
-
-	if err != nil {
-		return nil, err
-	}
-
-	return operation.workspace, nil
 }
 
 func (m *Manager) waitForOpen(ctx context.Context, operation *openOperation) (*Workspace, error) {

@@ -63,6 +63,49 @@ func TestSupportedClientExecutionFlowAndReconnectPersistence(t *testing.T) {
 	}); !errors.Is(err, supportedclient.ErrExecutionSourceNotFound) {
 		t.Fatalf("missing source error = %v, want ErrExecutionSourceNotFound", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "created-after-open.fql"), []byte("RETURN 7"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dynamicSession, err := first.Executions().CreateSession(ctx, supportedclient.CreateSessionRequest{
+		WorkspaceID:  workspace.ID,
+		RelativePath: "created-after-open.fql",
+	})
+	if err != nil {
+		t.Fatalf("dynamic CreateSession: %v", err)
+	}
+	dynamicExecution, err := first.Executions().CreateExecution(ctx, supportedclient.CreateExecutionRequest{
+		SessionID: dynamicSession.ID,
+	})
+	if err != nil {
+		t.Fatalf("dynamic CreateExecution: %v", err)
+	}
+	dynamicWatch, err := first.Executions().WatchExecution(ctx, dynamicExecution.ID)
+	if err != nil {
+		t.Fatalf("dynamic WatchExecution: %v", err)
+	}
+	if _, err := dynamicWatch.Recv(); err != nil {
+		t.Fatalf("dynamic current Recv: %v", err)
+	}
+	if _, err := first.Executions().RunExecution(ctx, dynamicExecution.ID); err != nil {
+		t.Fatalf("dynamic RunExecution: %v", err)
+	}
+	if _, err := dynamicWatch.Recv(); err != nil {
+		t.Fatalf("dynamic started Recv: %v", err)
+	}
+	dynamicTerminal, err := dynamicWatch.Recv()
+	if err != nil {
+		t.Fatalf("dynamic terminal Recv: %v", err)
+	}
+	if dynamicTerminal.Kind != supportedclient.ExecutionEventCompleted || dynamicTerminal.Execution.Output == nil ||
+		string(dynamicTerminal.Execution.Output.Data) != "7" {
+		t.Fatalf("dynamic terminal event = %+v", dynamicTerminal)
+	}
+	if err := first.Executions().CloseExecution(ctx, dynamicExecution.ID); err != nil {
+		t.Fatalf("dynamic CloseExecution: %v", err)
+	}
+	if err := first.Executions().CloseSession(ctx, dynamicSession.ID); err != nil {
+		t.Fatalf("dynamic CloseSession: %v", err)
+	}
 	session, err := first.Executions().CreateSession(ctx, supportedclient.CreateSessionRequest{
 		WorkspaceID:  workspace.ID,
 		RelativePath: "query.fql",

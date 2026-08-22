@@ -153,8 +153,8 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
 	}
-	if first.Source.Revision != 1 || second.Source.Revision != 2 {
-		t.Fatalf("source revisions = %d and %d, want 1 and 2",
+	if second.Source.Revision <= first.Source.Revision {
+		t.Fatalf("source revisions = %d and %d, want increasing revisions",
 			first.Source.Revision, second.Source.Revision)
 	}
 
@@ -179,6 +179,80 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	}
 }
 
+func TestCreateSessionDiscoversSourceCreatedAfterWorkspaceOpen(t *testing.T) {
+	root := t.TempDir()
+	workspaces := workspace.New()
+	manager := mustNewManager(t, workspaces)
+	t.Cleanup(func() {
+		_ = manager.Close(context.Background())
+		_ = workspaces.Clear(context.Background())
+	})
+
+	opened, err := workspaces.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("workspace Open: %v", err)
+	}
+	writeSourceFile(t, root, "created.fql", "RETURN 42")
+
+	session, err := manager.CreateSession(context.Background(), opened.ID(), "created.fql")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if session.Source.RelativePath != "created.fql" || runSessionOutput(t, manager, session.ID) != "42" {
+		t.Fatalf("created source Session = %+v", session)
+	}
+}
+
+func TestCreateSessionDefensiveDiscoveryEnforcesWorkspaceBoundary(t *testing.T) {
+	root := t.TempDir()
+	workspaces := workspace.New()
+	manager := mustNewManager(t, workspaces)
+	t.Cleanup(func() {
+		_ = manager.Close(context.Background())
+		_ = workspaces.Clear(context.Background())
+	})
+
+	opened, err := workspaces.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("workspace Open: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "testdata"), 0o700); err != nil {
+		t.Fatalf("MkdirAll testdata: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "nested"), 0o700); err != nil {
+		t.Fatalf("MkdirAll nested: %v", err)
+	}
+	writeSourceFile(t, root, "testdata/ignored.fql", "RETURN 1")
+	writeSourceFile(t, root, "nested/query.fql", "RETURN 2")
+	writeSourceFile(t, root, "nested/go.mod", "module example.com/nested")
+	if err := os.Mkdir(filepath.Join(root, "directory.fql"), 0o700); err != nil {
+		t.Fatalf("Mkdir directory.fql: %v", err)
+	}
+
+	outside := t.TempDir()
+	writeSourceFile(t, outside, "outside.fql", "RETURN 3")
+	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
+		t.Skipf("create directory symlink: %v", err)
+	}
+
+	paths := []string{
+		"testdata/ignored.fql",
+		"nested/query.fql",
+		"linked/outside.fql",
+		"directory.fql",
+		"../outside.fql",
+		"missing.fql",
+		"notes.txt",
+	}
+	for _, relativePath := range paths {
+		t.Run(relativePath, func(t *testing.T) {
+			if _, err := manager.CreateSession(context.Background(), opened.ID(), relativePath); !errors.Is(err, workspace.ErrDocumentNotFound) {
+				t.Fatalf("CreateSession error = %v, want ErrDocumentNotFound", err)
+			}
+		})
+	}
+}
+
 func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T) {
 	t.Run("compilation failure", func(t *testing.T) {
 		fixture := newExecutionFixture(t, "RETURN 1")
@@ -193,8 +267,9 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		if !errors.As(err, &compilation) || !errors.Is(err, ErrCompilationFailed) {
 			t.Fatalf("CreateSession error = %v, want CompilationError", err)
 		}
-		if compilation.Source.Revision != 2 || len(compilation.Diagnostics) == 0 {
-			t.Fatalf("CompilationError = %+v, want revision 2 diagnostics", compilation)
+		failedRevision := compilation.Source.Revision
+		if failedRevision <= 1 || len(compilation.Diagnostics) == 0 {
+			t.Fatalf("CompilationError = %+v, want advanced revision and diagnostics", compilation)
 		}
 
 		writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 3")
@@ -206,7 +281,7 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		if err != nil {
 			t.Fatalf("recovered CreateSession: %v", err)
 		}
-		if recovered.Source.Revision != 3 || runSessionOutput(t, fixture.manager, recovered.ID) != "3" {
+		if recovered.Source.Revision <= failedRevision || runSessionOutput(t, fixture.manager, recovered.ID) != "3" {
 			t.Fatalf("recovered Session = %+v", recovered)
 		}
 	})
@@ -222,12 +297,8 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 			fixture.workspace.ID(),
 			"query.fql",
 		)
-		var compilation *CompilationError
-		if !errors.As(err, &compilation) || !errors.Is(err, workspace.ErrDocumentUnavailable) {
-			t.Fatalf("CreateSession error = %v, want unavailable CompilationError", err)
-		}
-		if compilation.Source.Revision != 2 || len(compilation.Diagnostics) == 0 {
-			t.Fatalf("CompilationError = %+v, want revision 2 diagnostics", compilation)
+		if !errors.Is(err, workspace.ErrDocumentNotFound) {
+			t.Fatalf("CreateSession error = %v, want ErrDocumentNotFound", err)
 		}
 	})
 }
@@ -244,8 +315,9 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
 	}
-	if second.Source.Revision != 2 {
-		t.Fatalf("second source revision = %d, want 2", second.Source.Revision)
+	if second.Source.Revision <= first.Source.Revision {
+		t.Fatalf("second source revision = %d, want greater than %d",
+			second.Source.Revision, first.Source.Revision)
 	}
 
 	runtime, err := fixture.manager.CreateDebugRuntime(
@@ -273,6 +345,39 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	}
 	if event.Reason != ferret.DebugReasonCompleted || event.Output == nil || string(event.Output.Content) != "1" {
 		t.Fatalf("debug completion = %+v, want first Session output 1", event)
+	}
+}
+
+func TestOldSessionLazilyCompilesDebugPlanAfterSourceRemoval(t *testing.T) {
+	fixture := newExecutionFixture(t, "LET value = 1\nRETURN value")
+	first := fixture.session
+	if err := os.Remove(filepath.Join(fixture.workspace.Root(), "query.fql")); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, err := fixture.workspace.RefreshDocument(context.Background(), "query.fql"); !errors.Is(err, workspace.ErrDocumentNotFound) {
+		t.Fatalf("RefreshDocument error = %v, want ErrDocumentNotFound", err)
+	}
+	if output := runSessionOutput(t, fixture.manager, first.ID); output != "1" {
+		t.Fatalf("retained Session output = %q, want 1", output)
+	}
+
+	runtime, err := fixture.manager.CreateDebugRuntime(
+		context.Background(),
+		first.ID,
+		nil,
+		RuntimeOptions{},
+	)
+	if err != nil {
+		t.Fatalf("CreateDebugRuntime: %v", err)
+	}
+	defer func() { _ = runtime.Close() }()
+
+	event, err := runtime.Debugger().Start(context.Background())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if event.Reason != ferret.DebugReasonEntry {
+		t.Fatalf("entry event = %+v", event)
 	}
 }
 

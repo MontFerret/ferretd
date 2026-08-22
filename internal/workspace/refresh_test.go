@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 func TestRefreshDocumentRetainsAndAdvancesSourceRevisions(t *testing.T) {
@@ -55,22 +57,14 @@ func TestRefreshDocumentRetainsAndAdvancesSourceRevisions(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "query.fql")); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	unavailable, err := opened.RefreshDocument(context.Background(), "query.fql")
-	if err != nil {
-		t.Fatalf("missing RefreshDocument: %v", err)
+	if _, err := opened.RefreshDocument(context.Background(), "query.fql"); !errors.Is(err, ErrDocumentNotFound) {
+		t.Fatalf("missing RefreshDocument error = %v, want ErrDocumentNotFound", err)
 	}
-	if unavailable.Revision() != 4 || unavailable.Loaded() || len(unavailable.Diagnostics()) == 0 {
-		t.Fatalf("unavailable document = revision %d loaded %t diagnostics %d",
-			unavailable.Revision(), unavailable.Loaded(), len(unavailable.Diagnostics()))
+	if _, ok := opened.Document("query.fql"); ok {
+		t.Fatal("missing document remains retained")
 	}
-
-	stillUnavailable, err := opened.RefreshDocument(context.Background(), "query.fql")
-	if err != nil {
-		t.Fatalf("repeated missing RefreshDocument: %v", err)
-	}
-	if stillUnavailable.Revision() != 4 || stillUnavailable.Loaded() {
-		t.Fatalf("repeated unavailable document = revision %d loaded %t",
-			stillUnavailable.Revision(), stillUnavailable.Loaded())
+	if _, err := opened.RefreshDocument(context.Background(), "query.fql"); !errors.Is(err, ErrDocumentNotFound) {
+		t.Fatalf("repeated missing RefreshDocument error = %v, want ErrDocumentNotFound", err)
 	}
 
 	writeWorkspaceSource(t, root, "query.fql", "RETURN 3")
@@ -78,7 +72,8 @@ func TestRefreshDocumentRetainsAndAdvancesSourceRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restored RefreshDocument: %v", err)
 	}
-	if restored.Revision() != 5 || !restored.Loaded() || restored.Content() != "RETURN 3" {
+	if restored.Revision() != 1 || restored.generation <= invalid.generation ||
+		!restored.Loaded() || restored.Content() != "RETURN 3" {
 		t.Fatalf("restored document = revision %d loaded %t content %q",
 			restored.Revision(), restored.Loaded(), restored.Content())
 	}
@@ -102,13 +97,11 @@ func TestRefreshDocumentRejectsInvalidReplacementsAndUndiscoveredPaths(t *testin
 			t.Skipf("create symlink: %v", err)
 		}
 
-		document, err := opened.RefreshDocument(context.Background(), "query.fql")
-		if err != nil {
-			t.Fatalf("RefreshDocument: %v", err)
+		if _, err := opened.RefreshDocument(context.Background(), "query.fql"); !errors.Is(err, ErrDocumentNotFound) {
+			t.Fatalf("RefreshDocument error = %v, want ErrDocumentNotFound", err)
 		}
-		if document.Loaded() || document.Revision() != 2 {
-			t.Fatalf("document = revision %d loaded %t, want unavailable revision 2",
-				document.Revision(), document.Loaded())
+		if _, ok := opened.Document("query.fql"); ok {
+			t.Fatal("symlink replacement remains retained")
 		}
 	})
 
@@ -128,13 +121,11 @@ func TestRefreshDocumentRejectsInvalidReplacementsAndUndiscoveredPaths(t *testin
 			t.Fatalf("Mkdir: %v", err)
 		}
 
-		document, err := opened.RefreshDocument(context.Background(), "query.fql")
-		if err != nil {
-			t.Fatalf("RefreshDocument: %v", err)
+		if _, err := opened.RefreshDocument(context.Background(), "query.fql"); !errors.Is(err, ErrDocumentNotFound) {
+			t.Fatalf("RefreshDocument error = %v, want ErrDocumentNotFound", err)
 		}
-		if document.Loaded() || document.Revision() != 2 {
-			t.Fatalf("document = revision %d loaded %t, want unavailable revision 2",
-				document.Revision(), document.Loaded())
+		if _, ok := opened.Document("query.fql"); ok {
+			t.Fatal("non-regular replacement remains retained")
 		}
 	})
 
@@ -148,10 +139,36 @@ func TestRefreshDocumentRejectsInvalidReplacementsAndUndiscoveredPaths(t *testin
 		}
 		writeWorkspaceSource(t, root, "new.fql", "RETURN 2")
 
-		if _, err := opened.RefreshDocument(context.Background(), "new.fql"); !errors.Is(err, ErrDocumentNotFound) {
-			t.Fatalf("RefreshDocument error = %v, want ErrDocumentNotFound", err)
+		document, err := opened.RefreshDocument(context.Background(), "new.fql")
+		if err != nil {
+			t.Fatalf("RefreshDocument: %v", err)
+		}
+		if document.Content() != "RETURN 2" || document.Revision() != 1 {
+			t.Fatalf("discovered document = revision %d content %q", document.Revision(), document.Content())
 		}
 	})
+}
+
+func TestRefreshDocumentPropagatesWatchRegistrationFailure(t *testing.T) {
+	root := t.TempDir()
+	manager := newTestManager(t)
+	opened, err := manager.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	watcher := workspaceWatcherForTest(t, opened)
+	if err := watcher.backend.Close(); err != nil {
+		t.Fatalf("close watcher backend: %v", err)
+	}
+
+	writeWorkspaceSource(t, root, "nested/query.fql", "RETURN 1")
+	if _, err := opened.RefreshDocument(context.Background(), "nested/query.fql"); !errors.Is(err, fsnotify.ErrClosed) {
+		t.Fatalf("RefreshDocument error = %v, want fsnotify.ErrClosed", err)
+	}
+	if _, found := opened.Document("nested/query.fql"); found {
+		t.Fatal("document was admitted after watch registration failed")
+	}
 }
 
 func TestRefreshDocumentSerializesConcurrentCommits(t *testing.T) {
@@ -250,7 +267,7 @@ func TestRefreshDocumentHonorsCancellationAndClosure(t *testing.T) {
 	if _, err := opened.RefreshDocument(canceled, "query.fql"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled RefreshDocument error = %v, want context.Canceled", err)
 	}
-	<-opened.refreshGate
+	<-opened.mutationGate
 	waiting, stopWaiting := context.WithCancel(context.Background())
 	waitResult := make(chan error, 1)
 	go func() {
@@ -266,12 +283,48 @@ func TestRefreshDocumentHonorsCancellationAndClosure(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("waiting RefreshDocument did not observe cancellation")
 	}
-	opened.refreshGate <- struct{}{}
+	opened.mutationGate <- struct{}{}
 	if err := manager.Close(context.Background(), opened.ID()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	if _, err := opened.RefreshDocument(context.Background(), "query.fql"); !errors.Is(err, ErrClosed) {
 		t.Fatalf("closed RefreshDocument error = %v, want ErrClosed", err)
+	}
+}
+
+func TestRefreshAdmissionLosesToWorkspaceCloseDeterministically(t *testing.T) {
+	root := t.TempDir()
+	manager := newTestManager(t)
+	opened, err := manager.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	writeWorkspaceSource(t, root, "created.fql", "RETURN 1")
+
+	<-opened.mutationGate
+	refreshContext := newObservedDoneContext(context.Background())
+	refreshed := make(chan error, 1)
+	go func() {
+		_, err := opened.RefreshDocument(refreshContext, "created.fql")
+		refreshed <- err
+	}()
+	<-refreshContext.observed
+
+	entry, owner := manager.beginClose(opened.ID())
+	if entry == nil || !owner {
+		t.Fatal("beginClose did not acquire workspace close ownership")
+	}
+	go manager.finishClose(opened.ID(), entry)
+	opened.mutationGate <- struct{}{}
+
+	if err := <-refreshed; !errors.Is(err, ErrClosed) {
+		t.Fatalf("RefreshDocument error = %v, want ErrClosed", err)
+	}
+	if err := entry.close.Wait(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, found := opened.Document("created.fql"); found {
+		t.Fatal("closing workspace admitted a new source")
 	}
 }
 

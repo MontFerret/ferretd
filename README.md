@@ -90,12 +90,11 @@ running, err := c.Executions().RunExecution(ctx, execution.ID)
 
 Opening a workspace recursively discovers lowercase `.fql` files, loads their
 contents, and retains daemon-owned documents with Ferret syntax state and
-diagnostics. No Ferret project manifest is required. The initial snapshot is
-used for static file discovery. Creating a Session rereads its already-discovered
-target from disk, retaining the revision when its saved contents are unchanged
-and advancing the revision when its retained source changes. Files created,
-deleted, or renamed after opening are not rediscovered; close and reopen the
-workspace to update that file set.
+diagnostics. No Ferret project manifest is required. While the workspace remains
+open, it tracks eligible files and directories created, changed, deleted, or
+renamed on disk. Initial discovery, dynamic tracking, and Session admission all
+apply the same root boundary, nested-module, directory-exclusion, and symlink
+rules.
 
 Workspace state is in memory for the daemon process. Reopening the same cleaned
 absolute root returns the same workspace ID, closing a client connection does
@@ -105,10 +104,11 @@ documents or parser internals.
 
 Each open workspace owns a Ferret engine with a read-write filesystem rooted at
 the workspace directory. `CreateSession` refreshes and compiles the latest saved
-contents of one already-discovered workspace-relative `.fql` document into an
-immutable reusable plan. Existing Sessions keep their original source revision
-and normal and lazy debug Plans. Each `Execution` owns isolated JSON-shaped
-parameter bindings and a fresh, one-shot Ferret runtime session.
+contents of one eligible workspace-relative `.fql` document into an immutable
+reusable plan. A missed creation notification is recovered during this refresh;
+excluded or escaping paths remain rejected. Existing Sessions keep their
+original source revision and normal and lazy debug Plans. Each `Execution` owns
+isolated JSON-shaped parameter bindings and a fresh, one-shot Ferret runtime session.
 `RunExecution` returns the `RUNNING` snapshot immediately; execution then
 continues independently of the triggering RPC context. Clients can observe the
 latest lifecycle event and subsequent events with `WatchExecution`, cancel an
@@ -118,7 +118,7 @@ and Executions. DAP debug Sessions are independent retained children whose
 lifetime is coordinated by the protocol-neutral debug manager.
 
 `lsp` starts the experimental language server over stdin and stdout. It opens
-the local roots supplied by LSP initialization, uses their static workspace
+the local roots supplied by LSP initialization, uses their tracked workspace
 documents as a baseline, and gives versioned editor overlays precedence while
 documents are open. Analysis snapshots are coalesced and cached per URI.
 
@@ -139,16 +139,17 @@ generated from `proto/` with pinned Buf and protobuf tools. The debug protobuf
 remains an ungenerated placeholder.
 
 Daemon workspaces retain deterministically discovered source files, source
-contents, Ferret parse trees, and syntax diagnostics. Session creation refreshes
-an existing target from disk, but file discovery remains static. The language
-server uses the shared workspace manager for static source baselines and supports
+contents, Ferret parse trees, and syntax diagnostics, and track eligible
+filesystem changes while open. Session creation defensively discovers or
+refreshes its selected target. The language server uses the shared workspace
+manager for saved-source baselines and supports
 opening, changing, and closing `.fql` editor overlays with full-document
 synchronization. Its navigation and references are document-local.
 
-Debug protobuf generation, debug gRPC/client APIs, filesystem watching,
-create/delete/rename discovery, incremental synchronization, cross-file indexing,
-module resolution, workspace persistence, remote daemon operation, and
-LSP-over-gRPC are not implemented. DAP remains single-session stdio only.
+Debug protobuf generation, debug gRPC/client APIs, incremental synchronization,
+cross-file indexing, module resolution, workspace persistence, remote daemon
+operation, and LSP-over-gRPC are not implemented. DAP remains single-session
+stdio only.
 Execution sessions do not add queues, durable replay, persistence, background
 automatic recompilation, or REPL state.
 

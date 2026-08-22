@@ -3,6 +3,8 @@ package language
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 
 	"github.com/MontFerret/ferretd/internal/source"
+	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 func TestAnalysisCacheCoalescesConcurrentRequests(t *testing.T) {
@@ -162,6 +165,74 @@ func TestOverlayGenerationRejectsStaleReportsWhenClientVersionIsReused(t *testin
 	}
 	if currentReport.Version == nil || *currentReport.Version != 1 || len(currentReport.Items) != 0 {
 		t.Fatalf("current diagnostics = %+v", currentReport)
+	}
+}
+
+func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	filePath := filepath.Join(root, "query.fql")
+	if err := os.WriteFile(filePath, []byte("RETURN missing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	workspaces := workspace.New()
+	t.Cleanup(func() { _ = workspaces.Clear(context.Background()) })
+	opened, err := workspaces.Open(ctx, root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	service := mustNewService(t, workspaces, newTestDefaultCatalog(t), Options{})
+	uri, err := source.URIFromPath(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldReport, err := service.Diagnostics(ctx, uri)
+	if err != nil || len(oldReport.Items) == 0 {
+		t.Fatalf("old diagnostics = %+v, %v", oldReport, err)
+	}
+	oldLookup, found, err := workspaces.LookupDocument(ctx, filePath)
+	if err != nil || !found {
+		t.Fatalf("old workspace lookup = %+v, %t, %v", oldLookup, found, err)
+	}
+
+	if err := os.Remove(filePath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := opened.RefreshDocument(ctx, "query.fql"); !errors.Is(err, workspace.ErrDocumentNotFound) {
+		t.Fatalf("delete RefreshDocument error = %v", err)
+	}
+	if _, err := service.Diagnostics(ctx, uri); !errors.Is(err, ErrDocumentNotOpen) {
+		t.Fatalf("deleted Diagnostics error = %v, want ErrDocumentNotOpen", err)
+	}
+
+	if err := os.WriteFile(filePath, []byte("RETURN 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newDocument, err := opened.RefreshDocument(ctx, "query.fql")
+	if err != nil {
+		t.Fatalf("recreate RefreshDocument: %v", err)
+	}
+	newLookup, found, err := workspaces.LookupDocument(ctx, filePath)
+	if err != nil || !found {
+		t.Fatalf("new workspace lookup = %+v, %t, %v", newLookup, found, err)
+	}
+	if newLookup.Revision != newDocument.Revision() {
+		t.Fatalf("lookup revision = %d, want document revision %d",
+			newLookup.Revision, newDocument.Revision())
+	}
+	if newLookup.Generation <= oldLookup.Generation {
+		t.Fatalf("recreated generation = %d, want greater than %d",
+			newLookup.Generation, oldLookup.Generation)
+	}
+
+	newReport, err := service.Diagnostics(ctx, uri)
+	if err != nil || len(newReport.Items) != 0 {
+		t.Fatalf("new diagnostics = %+v, %v", newReport, err)
+	}
+	if newReport.Snapshot == oldReport.Snapshot {
+		t.Fatal("recreated document reused stale workspace snapshot identity")
 	}
 }
 

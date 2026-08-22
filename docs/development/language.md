@@ -23,8 +23,8 @@ Library API Reference. It does not connect to `ferretd serve`.
 
 During LSP initialization, the adapter resolves and deduplicates local roots
 from `workspaceFolders`, then `rootUri`, then `rootPath`. Opening each root is a
-synchronous workspace operation. Dynamic workspace-folder changes and
-filesystem watching are not implemented.
+synchronous workspace operation. Open workspaces track eligible filesystem
+changes; dynamic workspace-folder changes are not implemented.
 
 ## Source snapshots
 
@@ -37,14 +37,16 @@ Opening a document stores client-supplied full text as a private overlay. A
 change must advance the stored version and supplies full-document text;
 incremental ranges are rejected by the adapter. Closing removes the overlay and
 is idempotent. If a workspace baseline exists, subsequent requests fall back to
-that unchanged snapshot.
+the latest tracked saved-source snapshot.
 
-Overlay generations and workspace document revisions form snapshot identities.
-The service stores private overlay values rather than exposing lookup APIs or
-mutable references. `DiagnosticReport` carries `diagnostic.Diagnostic` values
-directly rather than language-owned aliases.
-Editor lifecycle events do not mutate workspace discovery, reload disk, or
-change execution source.
+Overlay and workspace document generations form snapshot identities. Typed
+`workspace.Generation` values are internal and remain monotonic across deletion
+and same-path recreation; they are distinct from client-visible per-file
+revisions. The service stores private overlay values rather than exposing lookup
+APIs or mutable references. `DiagnosticReport` carries
+`diagnostic.Diagnostic` values directly rather than language-owned aliases.
+Editor lifecycle events do not mutate workspace discovery or execution source;
+the workspace watcher tracks saved filesystem state independently.
 
 ## Analysis coordination
 

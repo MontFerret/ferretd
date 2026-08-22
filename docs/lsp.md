@@ -22,11 +22,12 @@ full-document text synchronization. The server advertises open/close
 notifications and full-document changes.
 
 During initialization, the server opens deduplicated local roots from
-`workspaceFolders`, falling back to `rootUri` and then `rootPath`. Static
-workspace snapshots supply unopened document contents. Versioned editor text
-is retained as an overlay and takes precedence until `didClose`, when language
-requests fall back to the unchanged workspace snapshot. Disk changes are not
-watched; close and reopen the workspace to reload them.
+`workspaceFolders`, falling back to `rootUri` and then `rootPath`. Tracked
+workspace snapshots supply unopened document contents. Versioned editor text is
+retained as an overlay and takes precedence until `didClose`, when language
+requests fall back to the latest saved workspace snapshot. Dynamic discovery
+uses the same exclusions, nested-module boundaries, and symlink rules as the
+initial workspace load.
 
 Language-word completions use canonical lowercase labels and insertion text.
 Source-defined names, namespace aliases, bind parameters, and registered

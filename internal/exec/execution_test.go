@@ -317,8 +317,12 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if refreshed.Source.Revision != 2 || runSessionOutput(t, fixture.manager, refreshed.ID) != "2" {
-		t.Fatalf("refreshed Session = %+v", refreshed)
+	if refreshed.Source.Revision <= fixture.session.Source.Revision {
+		t.Fatalf("refreshed source revision = %d, want greater than %d",
+			refreshed.Source.Revision, fixture.session.Source.Revision)
+	}
+	if output := runSessionOutput(t, fixture.manager, refreshed.ID); output != "2" {
+		t.Fatalf("refreshed Session output = %q, want 2", output)
 	}
 	active, err := fixture.manager.GetExecution(context.Background(), created.ID)
 	if err != nil {

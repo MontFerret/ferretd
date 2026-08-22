@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"reflect"
+
 	antlr "github.com/antlr4-go/antlr/v4"
 
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
@@ -16,6 +18,7 @@ import (
 type Document struct {
 	file        File
 	revision    Revision
+	generation  Generation
 	loaded      bool
 	source      *ferretsource.Source
 	syntax      *parser.Parser
@@ -79,6 +82,18 @@ func (d Document) withRevision(revision Revision) Document {
 	d.revision = revision
 
 	return d
+}
+
+func (d Document) withGeneration(generation Generation) Document {
+	d.generation = generation
+
+	return d
+}
+
+func (d Document) sameState(other Document) bool {
+	return d.File() == other.File() && d.Loaded() == other.Loaded() &&
+		d.Content() == other.Content() &&
+		reflect.DeepEqual(d.Diagnostics(), other.Diagnostics())
 }
 
 // File returns the filesystem identity associated with this document.
