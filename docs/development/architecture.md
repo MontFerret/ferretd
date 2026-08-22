@@ -81,7 +81,7 @@ than access to protected state.
 * `client` is the supported public Go client. It hides generated clients and
   centralizes endpoint discovery, dialing, negotiation, conversion, streaming,
   and public error classification.
-* `internal/workspace` owns process-local workspace identity, static discovery,
+* `internal/workspace` owns process-local workspace identity, dynamic discovery,
   retained documents and Ferret syntax state, rooted engines, refresh, and close
   coordination.
 * `internal/exec` owns compiled Sessions, the common per-run execution runtime,
@@ -121,9 +121,9 @@ with distinct observable state machines. Closing a parent stops new runtime
 creation, settles both child kinds, releases leases, and only then closes its
 Plans.
 
-The language service consumes workspace documents as static baselines but owns
-editor overlays separately. Opening or changing an editor document does not
-mutate daemon workspace discovery or execution source.
+The language service consumes workspace documents as saved-source baselines but
+owns editor overlays separately. Opening or changing an editor document does
+not mutate daemon workspace discovery or execution source.
 
 ## Implemented and future boundaries
 
@@ -132,10 +132,11 @@ LSP over stdio, and single-session DAP over stdio. The debug protobuf source is
 a placeholder and is intentionally excluded from generation. There is no debug
 gRPC service or public debug client.
 
-Workspace discovery is synchronous and static until close and reopen. Session
-creation refreshes only an already-discovered target. Filesystem watching,
-background reload, create/delete/rename discovery, durable state, and eviction
-are not implemented.
+Workspace discovery loads the initial saved-source model synchronously, then a
+workspace-owned watcher tracks eligible create, change, delete, and rename
+operations until close. Session creation also reconciles its selected path so a
+missed creation notification cannot prevent execution. Durable state and
+eviction are not implemented.
 
 The language service supports full-document editor overlays and document-local
 language intelligence. Incremental synchronization, module resolution,

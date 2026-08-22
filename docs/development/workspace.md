@@ -1,9 +1,8 @@
 # Workspace Development
 
 `internal/workspace` owns concurrency-safe, process-local workspace identity,
-static file discovery, retained source and syntax state, one rooted Ferret
-engine per open workspace, refresh of existing targets, and parent-resource
-cleanup.
+dynamic file discovery, retained source and syntax state, one rooted Ferret
+engine per open workspace, targeted refresh, and parent-resource cleanup.
 
 Workspace state is shared by the daemon, execution manager, and language
 service. Editor overlays are not workspace state; see
@@ -31,9 +30,10 @@ workspace-specific because it also owns a candidate Workspace, load result, and
 manager generation.
 
 Close is explicit and idempotent. Concurrent close callers observe one close
-operation and retained result. The manager runs registered child close hooks
-before closing the workspace engine. `Clear` invalidates in-flight opens,
-removes published entries, and coordinates all outstanding closes.
+operation and retained result. The manager stops the workspace watcher, runs
+registered child close hooks, and then closes the workspace engine. `Clear`
+invalidates in-flight opens, removes published entries, and coordinates all
+outstanding closes.
 
 ## Discovery
 
@@ -41,15 +41,22 @@ Opening a workspace synchronously walks its root and retains lowercase `.fql`
 regular files. Discovery is deterministic and root-confined:
 
 * nested symlinks are skipped;
-* `.git`, `.hg`, `.svn`, `node_modules`, and `vendor` directories are pruned;
+* hidden and underscore-prefixed directories plus `node_modules`, `testdata`,
+  and `vendor` are pruned;
+* nested directories containing `go.mod` are module boundaries;
 * non-regular files and non-`.fql` paths are ignored;
 * relative paths use slash-separated, cleaned workspace paths;
 * lists and document iteration are sorted deterministically.
 
-There is no ignore-file or project-manifest contract. Discovery remains static
-for the lifetime of the workspace. Creating, deleting, or renaming a file after
-open requires closing and reopening the workspace before that file-set change is
-visible.
+The selected workspace root remains valid regardless of its own name or
+`go.mod`. There is no ignore-file or Ferret project-manifest contract.
+
+Each published workspace owns one filesystem watcher. It tracks the same
+eligible directories used by initial discovery, reconciles file events or the
+affected subtree, and performs a root reconciliation only after watcher
+overflow or an unclassifiable error. Nested module-boundary directories remain
+watched so removing their `go.mod` can admit the subtree. The watcher stops and
+joins before workspace child and engine cleanup.
 
 ## Retained files and documents
 
@@ -64,16 +71,19 @@ Fatal root, discovery, or engine failures prevent publication of the entire
 workspace.
 
 Retained parser state is daemon-owned and treated as read-only by visitors. The
-workspace owns syntax state, not semantic compilation Plans or runtime state.
+workspace also assigns an internal monotonic generation that does not reset
+when a path is deleted and recreated. The language analysis cache uses this
+identity instead of the client-visible per-file revision. The workspace owns
+syntax state, not semantic compilation Plans or runtime state.
 
 ## Refresh and compilation boundary
 
-Session creation asks the workspace to refresh only the selected
-already-discovered document. The refresh rereads that saved path and atomically
-publishes changed source, syntax state, diagnostics, availability, and revision.
-Unchanged contents retain their revision. Missing, unreadable, or invalid
-replacement contents remain retained as unavailable or diagnosed state rather
-than removing the document from the discovered set.
+Session creation asks the workspace to reconcile only the selected document.
+The operation rereads a retained path, defensively admits a missed eligible
+creation, and atomically publishes changed source, syntax state, diagnostics,
+availability, and revision. Unchanged contents retain their revision. Missing
+or newly ineligible paths are removed; an eligible but unreadable regular file
+remains represented with load diagnostics.
 
 After refresh, `CompileDocument` compiles the selected immutable document for a
 normal Session. `CompileDebugSnapshot` compiles the exact source snapshot and
@@ -89,8 +99,8 @@ lifetime.
 
 * `internal/exec` creates immutable Sessions from refreshed documents and
   registers the child-resource close hook.
-* `internal/language` looks up retained documents by absolute path as static
-  baselines for unopened editor documents.
+* `internal/language` looks up retained documents by absolute path as
+  saved-source baselines for unopened editor documents.
 * `internal/grpc` exposes workspace identity and lifecycle only; parser and
   document internals are not wire contracts.
 * `client` converts public absolute roots and workspace IDs to that gRPC API.
@@ -98,11 +108,11 @@ lifetime.
 ## Testing changes
 
 Tests should cover canonical roots, root confinement, deterministic ordering,
-directory pruning, symlink handling, recoverable document failures, fatal open
-rollback, concurrent duplicate opens, cancellation, refresh revisions,
-unavailable replacements, close-hook ordering, concurrent close, idempotency,
-and engine cleanup. Platform path behavior needs Windows-specific coverage when
-root or separator rules change.
+directory pruning and dynamic boundaries, symlink handling, recoverable
+document failures, fatal open and watcher rollback, concurrent duplicate opens,
+cancellation, refresh revisions, watcher event reconciliation, close ordering,
+concurrent close, idempotency, and engine cleanup. Platform path behavior needs
+Windows-specific coverage when root or separator rules change.
 
 Workspace lifecycle and discovery benchmarks live with the manager. Changes to
 walking, parsing, copying, lookup, refresh, synchronization, or engine lifetime

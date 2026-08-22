@@ -9,6 +9,7 @@ func newTestManager(t *testing.T) *Manager {
 	t.Helper()
 
 	manager := New()
+	manager.startWatcher = func(*workspaceWatcher, *Workspace) {}
 	t.Cleanup(func() {
 		if err := manager.Clear(context.Background()); err != nil {
 			t.Errorf("Clear: %v", err)

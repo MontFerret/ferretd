@@ -2,7 +2,8 @@ package workspace
 
 // DocumentLookup identifies a retained document and the workspace snapshot that owns it.
 type DocumentLookup struct {
-	Document  Document
-	Workspace ID
-	Revision  Revision
+	Document   Document
+	Workspace  ID
+	Revision   Revision
+	Generation uint64
 }

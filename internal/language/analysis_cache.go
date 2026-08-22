@@ -12,12 +12,12 @@ import (
 )
 
 type (
-	// SnapshotID identifies one editor-overlay or static-workspace source snapshot.
+	// SnapshotID identifies one editor-overlay or workspace source snapshot.
 	SnapshotID struct {
-		origin      snapshotOrigin
-		generation  uint64
-		workspaceID workspace.ID
-		revision    workspace.Revision
+		origin             snapshotOrigin
+		overlayGeneration  uint64
+		workspaceID        workspace.ID
+		documentGeneration uint64
 	}
 
 	documentSnapshot struct {
@@ -130,7 +130,7 @@ func (s *Service) resolveSnapshot(ctx context.Context, uri source.URI) (document
 		version := overlay.Version
 
 		return documentSnapshot{
-			id:      SnapshotID{origin: snapshotOverlay, generation: overlay.generation},
+			id:      SnapshotID{origin: snapshotOverlay, overlayGeneration: overlay.generation},
 			uri:     uri,
 			path:    overlay.Path,
 			text:    overlay.Text,
@@ -149,9 +149,9 @@ func (s *Service) resolveSnapshot(ctx context.Context, uri source.URI) (document
 
 	return documentSnapshot{
 		id: SnapshotID{
-			origin:      snapshotWorkspace,
-			workspaceID: lookup.Workspace,
-			revision:    lookup.Revision,
+			origin:             snapshotWorkspace,
+			workspaceID:        lookup.Workspace,
+			documentGeneration: lookup.Generation,
 		},
 		uri:  uri,
 		path: path,
@@ -162,7 +162,7 @@ func (s *Service) resolveSnapshot(ctx context.Context, uri source.URI) (document
 func (s *Service) snapshotCurrentLocked(snapshot documentSnapshot) bool {
 	overlay, ok := s.overlays[snapshot.uri]
 	if snapshot.id.origin == snapshotOverlay {
-		return ok && overlay.generation == snapshot.id.generation
+		return ok && overlay.generation == snapshot.id.overlayGeneration
 	}
 
 	if ok {
@@ -177,7 +177,8 @@ func (s *Service) snapshotCurrentLocked(snapshot documentSnapshot) bool {
 		return false
 	}
 
-	return lookup.Workspace == snapshot.id.workspaceID && lookup.Revision == snapshot.id.revision
+	return lookup.Workspace == snapshot.id.workspaceID &&
+		lookup.Generation == snapshot.id.documentGeneration
 }
 
 // IsCurrent reports whether id still identifies the source currently resolved for uri.

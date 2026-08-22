@@ -56,7 +56,7 @@ func New(
 	return result, nil
 }
 
-// OpenWorkspace synchronously opens a static workspace root.
+// OpenWorkspace synchronously opens a dynamically tracked workspace root.
 func (s *Service) OpenWorkspace(ctx context.Context, root string) error {
 	_, err := s.workspaces.Open(ctx, root)
 

@@ -22,7 +22,7 @@ type (
 		Parameters []string
 	}
 
-	// CreateSessionRequest selects one already-discovered workspace document to
+	// CreateSessionRequest selects one eligible workspace document to discover or
 	// refresh from disk and compile.
 	CreateSessionRequest struct {
 		WorkspaceID  string

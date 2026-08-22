@@ -21,11 +21,11 @@ See [workspace.md](workspace.md) for source refresh and engine ownership and
 
 ## Compiled Sessions
 
-Creating a Session selects one already-discovered workspace-relative `.fql`
-document. The workspace refreshes its latest saved contents, then compiles it
-with the workspace's rooted Ferret engine. Load, syntax, or compiler failures
-are returned as structured compilation diagnostics without publishing a
-Session.
+Creating a Session selects one eligible workspace-relative `.fql` document.
+The workspace refreshes retained contents or defensively admits a missed
+creation using the normal discovery boundaries, then compiles it with the
+workspace's rooted Ferret engine. Load, syntax, or compiler failures are
+returned as structured compilation diagnostics without publishing a Session.
 
 A published Session owns one immutable normal Plan, its workspace and source
 identity, source revision, and declared parameter names. Later disk refreshes do

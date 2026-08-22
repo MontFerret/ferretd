@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
@@ -22,17 +23,19 @@ type (
 
 	// Workspace is the daemon-owned source state for a canonical root.
 	Workspace struct {
-		mu          sync.RWMutex
-		refreshGate chan struct{}
+		mu           sync.RWMutex
+		mutationGate chan struct{}
 
-		id        ID
-		root      string
-		state     State
-		failure   error
-		files     []File
-		documents map[string]Document
-		order     []string
-		engine    *ferret.Engine
+		id                     ID
+		root                   string
+		state                  State
+		failure                error
+		files                  []File
+		documents              map[string]Document
+		order                  []string
+		nextDocumentGeneration uint64
+		engine                 *ferret.Engine
+		watcher                *workspaceWatcher
 		// closing is the lock-free admission barrier set before child cleanup;
 		// state records resource teardown once the workspace lock is available.
 		closing atomic.Bool
@@ -43,8 +46,8 @@ type (
 		Workspace    ID
 		RelativePath string
 		URI          localsource.URI
-		// Revision advances monotonically when the workspace retains changed
-		// source state for this already-discovered document.
+		// Revision advances monotonically while one retained document identity
+		// receives changed source state.
 		Revision Revision
 	}
 )
@@ -64,12 +67,12 @@ const (
 
 func newWorkspace(id ID, root string) *Workspace {
 	result := &Workspace{
-		id:          id,
-		root:        root,
-		state:       StateOpening,
-		refreshGate: make(chan struct{}, 1),
+		id:           id,
+		root:         root,
+		state:        StateOpening,
+		mutationGate: make(chan struct{}, 1),
 	}
-	result.refreshGate <- struct{}{}
+	result.mutationGate <- struct{}{}
 
 	return result
 }
@@ -214,12 +217,13 @@ func (w *Workspace) CompileDebugSnapshot(
 		return Compilation{}, ErrClosed
 	}
 
-	document, ok := w.documents[key]
-	if !ok || document.File().URI != snapshot.URI {
+	absolute := filepath.Join(w.root, filepath.FromSlash(key))
+	uri, err := localsource.URIFromPath(absolute)
+	if err != nil || uri != snapshot.URI {
 		return Compilation{}, ErrDocumentNotFound
 	}
 
-	plan, err := w.engine.CompileDebug(ctx, ferretsource.New(document.File().Path, content))
+	plan, err := w.engine.CompileDebug(ctx, ferretsource.New(absolute, content))
 	if err != nil {
 		return Compilation{Source: snapshot}, err
 	}
@@ -262,14 +266,29 @@ func (w *Workspace) compileDocumentLocked(
 	return Compilation{Source: snapshot, Plan: plan}, nil
 }
 
-func (w *Workspace) setReady(content workspaceContent, engine *ferret.Engine) {
+func (w *Workspace) setReady(
+	content workspaceContent,
+	engine *ferret.Engine,
+	watcher *workspaceWatcher,
+) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	if content.documents == nil {
+		content.documents = make(map[string]Document)
+	}
+
+	for _, relativePath := range content.order {
+		document := content.documents[relativePath]
+		w.nextDocumentGeneration++
+		content.documents[relativePath] = document.withGeneration(w.nextDocumentGeneration)
+	}
 
 	w.files = content.files
 	w.documents = content.documents
 	w.order = content.order
 	w.engine = engine
+	w.watcher = watcher
 	w.failure = nil
 	w.state = StateReady
 }
@@ -282,12 +301,24 @@ func (w *Workspace) setFailed(err error) {
 	w.documents = nil
 	w.order = nil
 	w.engine = nil
+	w.watcher = nil
 	w.failure = err
 	w.state = StateFailed
 }
 
 func (w *Workspace) markClosing() {
 	w.closing.Store(true)
+}
+
+func (w *Workspace) stopWatcher() error {
+	w.mu.RLock()
+	watcher := w.watcher
+	w.mu.RUnlock()
+	if watcher == nil {
+		return nil
+	}
+
+	return watcher.Close()
 }
 
 func (w *Workspace) close() error {
@@ -301,6 +332,7 @@ func (w *Workspace) close() error {
 
 	engine := w.engine
 	w.engine = nil
+	w.watcher = nil
 	w.state = StateClosing
 	w.mu.Unlock()
 
@@ -315,6 +347,7 @@ func (w *Workspace) close() error {
 	w.files = nil
 	w.documents = nil
 	w.order = nil
+	w.nextDocumentGeneration = 0
 	w.failure = nil
 	w.state = StateClosed
 	w.mu.Unlock()

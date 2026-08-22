@@ -25,8 +25,14 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	writeWorkspaceFile(t, root, ".git/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, ".hg/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, ".svn/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, ".hidden/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, "_generated/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, "node_modules/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, "testdata/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, "vendor/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, "nested-module/go.mod", "module example.com/nested")
+	writeWorkspaceFile(t, root, "nested-module/ignored.fql", "RETURN 1")
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/root")
 	if err := os.Mkdir(filepath.Join(root, "directory.fql"), 0o700); err != nil {
 		t.Fatalf("Mkdir directory.fql: %v", err)
 	}
@@ -125,6 +131,27 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	}
 	if workspace.State() != StateClosed || len(workspace.Files()) != 0 || len(workspace.Documents()) != 0 || len(workspace.Diagnostics()) != 0 {
 		t.Fatalf("closed workspace retained source state")
+	}
+}
+
+func TestOpenKeepsSelectedRootValidRegardlessOfName(t *testing.T) {
+	parent := t.TempDir()
+	tests := []string{".hidden", "_generated", "testdata", "vendor"}
+	for _, name := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := filepath.Join(parent, name)
+			writeWorkspaceFile(t, root, "query.fql", "RETURN 1")
+
+			manager := newTestManager(t)
+			opened, err := manager.Open(context.Background(), root)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+
+			if _, ok := opened.Document("query.fql"); !ok {
+				t.Fatal("selected root source was excluded")
+			}
+		})
 	}
 }
 

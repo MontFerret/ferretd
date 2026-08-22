@@ -7,6 +7,7 @@ require (
 	github.com/MontFerret/ferret/v2 v2.0.0-alpha.50
 	github.com/MontFerret/specs v1.12.0
 	github.com/antlr4-go/antlr/v4 v4.13.1
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/go-dap v0.12.0
 	github.com/google/uuid v1.6.0
 	github.com/sourcegraph/jsonrpc2 v0.2.2
