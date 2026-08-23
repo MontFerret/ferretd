@@ -2,8 +2,8 @@ package daemon
 
 import (
 	"fmt"
-	"io"
-	"log/slog"
+
+	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/transport"
 )
@@ -12,7 +12,9 @@ import (
 type Options struct {
 	Version  string
 	Endpoint transport.Endpoint
-	Logger   *slog.Logger
+	// Logger receives daemon diagnostics. Its writer must be safe for concurrent
+	// use. A nil logger discards diagnostics.
+	Logger *zerolog.Logger
 }
 
 func (o Options) normalized() (Options, error) {
@@ -30,7 +32,8 @@ func (o Options) normalized() (Options, error) {
 	}
 
 	if o.Logger == nil {
-		o.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+		logger := zerolog.Nop()
+		o.Logger = &logger
 	}
 
 	return o, nil

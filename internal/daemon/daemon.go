@@ -5,11 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/exec"
 	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
@@ -25,7 +25,7 @@ type Daemon struct {
 
 	endpoint transport.Endpoint
 	version  string
-	logger   *slog.Logger
+	logger   zerolog.Logger
 	shutdown chan struct{}
 	stopDone chan struct{}
 
@@ -61,7 +61,7 @@ func New(options Options) (*Daemon, error) {
 		executions: executionManager,
 		endpoint:   options.Endpoint,
 		version:    options.Version,
-		logger:     options.Logger,
+		logger:     *options.Logger,
 		shutdown:   make(chan struct{}),
 		stopDone:   make(chan struct{}),
 		state:      stateNew,
@@ -125,7 +125,10 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.grpc.SetServing()
 	d.mu.Unlock()
 
-	d.logger.Info("ferretd started", "endpoint", d.endpoint.String(), "version", d.version)
+	d.logger.Info().
+		Str("endpoint", d.endpoint.String()).
+		Str("version", d.version).
+		Msg("ferretd started")
 
 	serveDone := make(chan error, 1)
 	go func() {
@@ -223,7 +226,7 @@ func (d *Daemon) finishStop(err error) {
 	d.mu.Unlock()
 
 	if err != nil {
-		d.logger.Error("ferretd shutdown failed", "error", err)
+		d.logger.Error().Err(err).Msg("ferretd shutdown failed")
 	}
 }
 

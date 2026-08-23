@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	protocol "github.com/google/go-dap"
+	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
@@ -23,7 +24,8 @@ type (
 		readerClose io.Closer
 		writer      io.Writer
 
-		// writeMu protects the framed writer and outbound sequence.
+		// writeMu protects the framed writer and outbound sequence. Successful-send
+		// trace records remain inside the same ordering boundary.
 		writeMu sync.Mutex
 		// eventMu preserves ordering between debugger commands and lifecycle events.
 		eventMu sync.Mutex
@@ -36,6 +38,7 @@ type (
 		workspaces            *workspace.Manager
 		executions            *exec.Manager
 		debugs                *debug.Manager
+		logger                zerolog.Logger
 		handles               *handleTable
 		owned                 ownedSession
 		client                clientOptions
@@ -70,10 +73,10 @@ type (
 	}
 )
 
-// New creates a single-session DAP server over non-nil input and output.
-// It returns an error when either stream is nil or its owned service graph
-// cannot be constructed.
-func New(input io.Reader, output io.Writer) (*Server, error) {
+// New creates a single-session DAP server over non-nil input and output using
+// the supplied options. It returns an error when either stream is nil or its
+// owned service graph cannot be constructed.
+func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 	if input == nil {
 		return nil, errNilInput
 	}
@@ -81,6 +84,8 @@ func New(input io.Reader, output io.Writer) (*Server, error) {
 	if output == nil {
 		return nil, errNilOutput
 	}
+
+	options = options.normalized()
 
 	workspaces := workspace.New()
 	executions, err := exec.New(workspaces)
@@ -107,6 +112,7 @@ func New(input io.Reader, output io.Writer) (*Server, error) {
 		workspaces:            workspaces,
 		executions:            executions,
 		debugs:                debugs,
+		logger:                options.Logger.With().Str("component", "dap").Logger(),
 		handles:               newHandleTable(),
 		nextBreakpointID:      1,
 		stableBreakpoints:     make(map[breakpointKey]int),
@@ -122,6 +128,8 @@ func New(input io.Reader, output io.Writer) (*Server, error) {
 
 // Run reads and serves DAP requests until disconnect or stream EOF.
 func (s *Server) Run(ctx context.Context) (result error) {
+	s.logger.Info().Msg("DAP session started")
+
 	stopCancellation := make(chan struct{})
 	if s.readerClose != nil {
 		go func() {
@@ -136,6 +144,15 @@ func (s *Server) Run(ctx context.Context) (result error) {
 	defer func() {
 		close(stopCancellation)
 		result = errors.Join(result, s.cleanup())
+
+		status := "completed"
+		if errors.Is(result, context.Canceled) {
+			status = "canceled"
+		} else if result != nil {
+			status = "failed"
+		}
+
+		s.logger.Info().Str("status", status).Msg("DAP session ended")
 	}()
 
 	for {
@@ -213,11 +230,16 @@ func (s *Server) dispatch(
 	case *protocol.DisconnectRequest:
 		return s.handleDisconnect(ctx, typed)
 	default:
-		return s.sendFailure(request.GetRequest(), "request is not supported")
+		s.traceRequest(request.GetRequest())
+
+		return s.sendFailure(request.GetRequest(), errors.New("request is not supported"))
 	}
 }
 
-func (s *Server) send(build func(protocol.ProtocolMessage) protocol.Message) error {
+func (s *Server) send(
+	build func(protocol.ProtocolMessage) protocol.Message,
+	sent func(int),
+) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -237,10 +259,26 @@ func (s *Server) send(build func(protocol.ProtocolMessage) protocol.Message) err
 		return fmt.Errorf("write DAP message: %w", err)
 	}
 
+	if sent != nil {
+		sent(s.sequence)
+	}
+
 	return nil
 }
 
-func (s *Server) sendFailure(request *protocol.Request, message string) error {
+func (s *Server) sendFailure(request *protocol.Request, requestErr error, enrichers ...logEnricher) error {
+	return s.sendFailureWithDiagnostic(request, requestErr, requestErr, enrichers...)
+}
+
+func (s *Server) sendFailureWithDiagnostic(
+	request *protocol.Request,
+	requestErr error,
+	diagnosticErr error,
+	enrichers ...logEnricher,
+) error {
+	s.logRequestFailure(request, diagnosticErr, enrichers...)
+	message := requestErr.Error()
+
 	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
 		return &protocol.ErrorResponse{
 			Response: protocol.Response{
@@ -256,7 +294,7 @@ func (s *Server) sendFailure(request *protocol.Request, message string) error {
 				ShowUser: true,
 			}},
 		}
-	})
+	}, nil)
 }
 
 func (s *Server) response(request *protocol.Request) protocol.Response {
@@ -279,7 +317,10 @@ func (s *Server) cleanup() error {
 		ctx := context.Background()
 
 		if s.owned.debug != "" {
-			_, _ = s.debugs.TerminateSession(ctx, s.owned.debug)
+			if _, err := s.debugs.TerminateSession(ctx, s.owned.debug); err != nil {
+				s.logger.Error().Err(err).Msg("DAP debug session cleanup termination failed")
+			}
+
 			result = errors.Join(result, s.debugs.CloseSession(ctx, s.owned.debug))
 		}
 

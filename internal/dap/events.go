@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	protocol "github.com/google/go-dap"
+	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 )
@@ -12,6 +13,21 @@ import (
 const (
 	threadID   = 1
 	threadName = "Ferret"
+
+	eventInitialized = "initialized"
+	eventStopped     = "stopped"
+	eventOutput      = "output"
+	eventExited      = "exited"
+	eventTerminated  = "terminated"
+
+	stopReasonEntry      = "entry"
+	stopReasonBreakpoint = "breakpoint"
+	stopReasonStep       = "step"
+	stopReasonPause      = "pause"
+	stopReasonException  = "exception"
+
+	outputCategoryStdout = "stdout"
+	outputCategoryStderr = "stderr"
 )
 
 func (s *Server) watchDebugSession(subscription debug.Subscription) {
@@ -26,9 +42,16 @@ func (s *Server) watchDebugSession(subscription debug.Subscription) {
 			continue
 		}
 
+		s.logger.Error().Err(err).Msg("DAP debug session watch failed")
+
 		s.eventMu.Lock()
-		_ = s.sendOutput("stderr", fmt.Sprintf("debug session watch failed: %v\n", err))
-		_ = s.sendTerminated()
+		if sendErr := s.sendOutput(outputCategoryStderr, fmt.Sprintf("debug session watch failed: %v\n", err)); sendErr != nil {
+			s.logger.Error().Err(sendErr).Msg("send DAP output event failed")
+		}
+
+		if sendErr := s.sendTerminated(); sendErr != nil {
+			s.logger.Error().Err(sendErr).Msg("send DAP terminated event failed")
+		}
 		s.eventMu.Unlock()
 	}
 }
@@ -38,6 +61,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 	switch snapshot.State {
 	case debug.StateRunning:
 		s.handles.Reset()
+		s.logger.Info().Msg("DAP execution running")
 	case debug.StateStopped:
 		s.stateMu.Lock()
 		suppress := s.suppressEntry && snapshot.Reason == debug.StopEntry
@@ -46,52 +70,93 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 		}
 		s.stateMu.Unlock()
 		if suppress {
+			s.logger.Info().
+				Str("reason", stopReasonEntry).
+				Int("thread_id", threadID).
+				Bool("suppressed", true).
+				Msg("DAP execution stopped")
 			s.handles.Reset()
+
 			if _, err := s.debugs.ContinueSession(context.Background(), snapshot.ID); err != nil {
-				_ = s.sendOutput("stderr", fmt.Sprintf("continue after entry failed: %v\n", err))
-				_ = s.sendTerminated()
+				s.logger.Error().Err(err).Msg("DAP continue after entry failed")
+				if sendErr := s.sendOutput(outputCategoryStderr, fmt.Sprintf("continue after entry failed: %v\n", err)); sendErr != nil {
+					s.logger.Error().Err(sendErr).Msg("send DAP output event failed")
+				}
+
+				if sendErr := s.sendTerminated(); sendErr != nil {
+					s.logger.Error().Err(sendErr).Msg("send DAP terminated event failed")
+				}
 			}
 
 			return
 		}
 
-		_ = s.sendStopped(snapshot)
+		if err := s.sendStopped(snapshot); err != nil {
+			s.logger.Error().Err(err).Msg("send DAP stopped event failed")
+		}
 	case debug.StateCompleted:
 		s.handles.Reset()
+		s.logger.Info().Msg("DAP execution completed")
+
 		if snapshot.Output != nil && len(snapshot.Output.Content) > 0 {
-			_ = s.sendOutput("stdout", ensureTrailingNewline(string(snapshot.Output.Content)))
+			if err := s.sendOutput(outputCategoryStdout, ensureTrailingNewline(string(snapshot.Output.Content))); err != nil {
+				s.logger.Error().Err(err).Msg("send DAP output event failed")
+			}
 		}
-		_ = s.sendExited(0)
-		_ = s.sendTerminated()
+
+		if err := s.sendExited(0); err != nil {
+			s.logger.Error().Err(err).Msg("send DAP exited event failed")
+		}
+
+		if err := s.sendTerminated(); err != nil {
+			s.logger.Error().Err(err).Msg("send DAP terminated event failed")
+		}
 	case debug.StateFailed:
 		s.handles.Reset()
 		message := "debug execution failed"
+
 		if snapshot.Failure != nil && snapshot.Failure.Message != "" {
 			message = snapshot.Failure.Message
 		}
-		_ = s.sendOutput("stderr", ensureTrailingNewline(message))
-		_ = s.sendExited(1)
-		_ = s.sendTerminated()
+
+		s.logger.Error().Str("error", message).Msg("DAP execution failed")
+
+		if err := s.sendOutput(outputCategoryStderr, ensureTrailingNewline(message)); err != nil {
+			s.logger.Error().Err(err).Msg("send DAP output event failed")
+		}
+
+		if err := s.sendExited(1); err != nil {
+			s.logger.Error().Err(err).Msg("send DAP exited event failed")
+		}
+
+		if err := s.sendTerminated(); err != nil {
+			s.logger.Error().Err(err).Msg("send DAP terminated event failed")
+		}
 	case debug.StateTerminated:
 		s.handles.Reset()
-		_ = s.sendTerminated()
+
+		s.logger.Info().Msg("DAP execution terminated")
+
+		if err := s.sendTerminated(); err != nil {
+			s.logger.Error().Err(err).Msg("send DAP terminated event failed")
+		}
 	}
 }
 
 func (s *Server) sendStopped(snapshot debug.SessionSnapshot) error {
-	reason := "pause"
+	reason := stopReasonPause
 	description := ""
 	switch snapshot.Reason {
 	case debug.StopEntry:
-		reason = "entry"
+		reason = stopReasonEntry
 	case debug.StopBreakpoint:
-		reason = "breakpoint"
+		reason = stopReasonBreakpoint
 	case debug.StopStep:
-		reason = "step"
+		reason = stopReasonStep
 	case debug.StopPause:
-		reason = "pause"
+		reason = stopReasonPause
 	case debug.StopRuntimeError:
-		reason = "exception"
+		reason = stopReasonException
 		if snapshot.Failure != nil {
 			description = snapshot.Failure.Message
 		}
@@ -102,9 +167,15 @@ func (s *Server) sendStopped(snapshot debug.SessionSnapshot) error {
 		hitIDs[index] = s.dapBreakpointID(id)
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	s.logger.Info().
+		Str("reason", reason).
+		Int("thread_id", threadID).
+		Int("hit_breakpoints", len(hitIDs)).
+		Msg("DAP execution stopped")
+
+	return s.sendEvent(eventStopped, func(base protocol.ProtocolMessage) protocol.Message {
 		return &protocol.StoppedEvent{
-			Event: protocol.Event{ProtocolMessage: base, Event: "stopped"},
+			Event: protocol.Event{ProtocolMessage: base, Event: eventStopped},
 			Body: protocol.StoppedEventBody{
 				Reason:            reason,
 				Description:       description,
@@ -113,31 +184,40 @@ func (s *Server) sendStopped(snapshot debug.SessionSnapshot) error {
 				HitBreakpointIds:  hitIDs,
 			},
 		}
+	}, func(event *zerolog.Event) {
+		event.
+			Str("reason", reason).
+			Int("thread_id", threadID).
+			Int("hit_breakpoints", len(hitIDs))
 	})
 }
 
 func (s *Server) sendOutput(category, output string) error {
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendEvent(eventOutput, func(base protocol.ProtocolMessage) protocol.Message {
 		return &protocol.OutputEvent{
-			Event: protocol.Event{ProtocolMessage: base, Event: "output"},
+			Event: protocol.Event{ProtocolMessage: base, Event: eventOutput},
 			Body:  protocol.OutputEventBody{Category: category, Output: output},
 		}
+	}, func(event *zerolog.Event) {
+		event.Str("category", category).Int("bytes", len(output))
 	})
 }
 
 func (s *Server) sendExited(code int) error {
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendEvent(eventExited, func(base protocol.ProtocolMessage) protocol.Message {
 		return &protocol.ExitedEvent{
-			Event: protocol.Event{ProtocolMessage: base, Event: "exited"},
+			Event: protocol.Event{ProtocolMessage: base, Event: eventExited},
 			Body:  protocol.ExitedEventBody{ExitCode: code},
 		}
+	}, func(event *zerolog.Event) {
+		event.Int("exit_code", code)
 	})
 }
 
 func (s *Server) sendTerminated() error {
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendEvent(eventTerminated, func(base protocol.ProtocolMessage) protocol.Message {
 		return &protocol.TerminatedEvent{
-			Event: protocol.Event{ProtocolMessage: base, Event: "terminated"},
+			Event: protocol.Event{ProtocolMessage: base, Event: eventTerminated},
 		}
 	})
 }

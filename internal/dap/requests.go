@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	protocol "github.com/google/go-dap"
+	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
@@ -18,23 +19,29 @@ func (s *Server) handleInitialize(
 	request *protocol.InitializeRequest,
 	arguments initializeClientOptions,
 ) error {
+	s.traceRequest(request.GetRequest(), func(event *zerolog.Event) {
+		event.Str("path_format", request.Arguments.PathFormat)
+	})
+
 	options, err := arguments.normalized()
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("path_format", request.Arguments.PathFormat)
+		})
 	}
 
 	s.stateMu.Lock()
 	if s.initialized {
 		s.stateMu.Unlock()
 
-		return s.sendFailure(request.GetRequest(), "initialize may only be sent once")
+		return s.sendFailure(request.GetRequest(), errors.New("initialize may only be sent once"))
 	}
 
 	s.client = options
 	s.initialized = true
 	s.stateMu.Unlock()
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -50,11 +57,15 @@ func (s *Server) handleInitialize(
 }
 
 func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchRequest) error {
+	s.traceRequest(request.GetRequest(), func(event *zerolog.Event) {
+		event.Int("arguments_bytes", len(request.Arguments))
+	})
+
 	s.stateMu.Lock()
 	if !s.initialized || s.launched {
 		s.stateMu.Unlock()
 
-		return s.sendFailure(request.GetRequest(), "launch requires one successful initialize")
+		return s.sendFailure(request.GetRequest(), errors.New("launch requires one successful initialize"))
 	}
 	s.stateMu.Unlock()
 
@@ -62,37 +73,64 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 	decoder := json.NewDecoder(strings.NewReader(string(request.Arguments)))
 
 	if err := decoder.Decode(&arguments); err != nil {
-		return s.sendFailure(request.GetRequest(), fmt.Sprintf("invalid launch arguments: %v", err))
+		return s.sendFailure(request.GetRequest(), fmt.Errorf("invalid launch arguments: %w", err))
 	}
 
 	paths, err := arguments.resolvePaths()
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(
+			request.GetRequest(),
+			err,
+			func(event *zerolog.Event) {
+				event.Str("program", arguments.Program).Str("cwd", arguments.CWD)
+			},
+		)
 	}
 
 	opened, err := s.workspaces.Open(ctx, paths.root)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("program", paths.program).Str("root", paths.root)
+		})
 	}
 
 	session, err := s.executions.CreateSession(ctx, opened.ID(), paths.relativePath)
 	if err != nil {
 		_ = s.workspaces.Close(context.Background(), opened.ID())
 
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(
+			request.GetRequest(),
+			err,
+			func(event *zerolog.Event) {
+				event.
+					Str("program", paths.program).
+					Str("root", paths.root).
+					Str("workspace_id", opened.ID().String())
+			},
+		)
 	}
 
 	debugSession, err := s.debugs.CreateSession(
 		ctx,
 		session.ID,
-		exec.Parameters(arguments.Parameters),
+		arguments.Parameters,
 		exec.RuntimeOptions{},
 	)
 	if err != nil {
 		_ = s.executions.CloseSession(context.Background(), session.ID)
 		_ = s.workspaces.Close(context.Background(), opened.ID())
 
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(
+			request.GetRequest(),
+			err,
+			func(event *zerolog.Event) {
+				event.
+					Str("program", paths.program).
+					Str("root", paths.root).
+					Str("workspace_id", opened.ID().String()).
+					Str("execution_session_id", session.ID.String())
+			},
+		)
 	}
 
 	watch, err := s.debugs.WatchSession(ctx, debugSession.ID)
@@ -101,7 +139,18 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		_ = s.executions.CloseSession(context.Background(), session.ID)
 		_ = s.workspaces.Close(context.Background(), opened.ID())
 
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(
+			request.GetRequest(),
+			err,
+			func(event *zerolog.Event) {
+				event.
+					Str("program", paths.program).
+					Str("root", paths.root).
+					Str("workspace_id", opened.ID().String()).
+					Str("execution_session_id", session.ID.String()).
+					Str("debug_session_id", debugSession.ID.String())
+			},
+		)
 	}
 
 	s.stateMu.Lock()
@@ -112,14 +161,21 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		program:     paths.program,
 		stopOnEntry: arguments.StopOnEntry,
 	}
+	s.attachSessionLogger(s.owned)
 	s.watch = watch
 	s.launched = true
 	s.pendingLaunch = request.GetRequest()
 	s.suppressEntry = !arguments.StopOnEntry
 	s.stateMu.Unlock()
 
-	if err := s.send(func(base protocol.ProtocolMessage) protocol.Message {
-		return &protocol.InitializedEvent{Event: protocol.Event{ProtocolMessage: base, Event: "initialized"}}
+	s.logger.Info().
+		Str("program", paths.program).
+		Str("root", paths.root).
+		Bool("stop_on_entry", arguments.StopOnEntry).
+		Msg("DAP debug session created")
+
+	if err := s.sendEvent(eventInitialized, func(base protocol.ProtocolMessage) protocol.Message {
+		return &protocol.InitializedEvent{Event: protocol.Event{ProtocolMessage: base, Event: eventInitialized}}
 	}); err != nil {
 		return err
 	}
@@ -135,7 +191,7 @@ func (s *Server) resolvePendingLaunch() error {
 		return nil
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request, func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request)
 		response.ProtocolMessage = base
 
@@ -143,13 +199,13 @@ func (s *Server) resolvePendingLaunch() error {
 	})
 }
 
-func (s *Server) failPendingLaunch(message string) error {
+func (s *Server) failPendingLaunch(requestErr error) error {
 	request := s.takePendingLaunch()
 	if request == nil {
 		return nil
 	}
 
-	return s.sendFailure(request, message)
+	return s.sendFailure(request, requestErr)
 }
 
 func (s *Server) takePendingLaunch() *protocol.Request {
@@ -163,11 +219,16 @@ func (s *Server) takePendingLaunch() *protocol.Request {
 }
 
 func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.ConfigurationDoneRequest) error {
+	s.traceRequest(request.GetRequest())
+
 	s.stateMu.Lock()
 	if !s.launched || s.configured {
 		s.stateMu.Unlock()
 
-		return s.sendFailure(request.GetRequest(), "configurationDone requires one successful launch")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("configurationDone requires one successful launch"),
+		)
 	}
 	debugID := s.owned.debug
 	s.stateMu.Unlock()
@@ -175,7 +236,7 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
 
-	if err := s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	if err := s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -185,7 +246,7 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 	}
 
 	if _, err := s.debugs.StartSession(ctx, debugID); err != nil {
-		result := s.failPendingLaunch(err.Error())
+		result := s.failPendingLaunch(err)
 
 		s.stateMu.Lock()
 		s.disconnected = true
@@ -198,40 +259,87 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 	s.stateMu.Lock()
 	s.configured = true
 	s.stateMu.Unlock()
+	s.logger.Info().Msg("DAP configuration completed")
 
 	return s.resolvePendingLaunch()
 }
 
 func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.SetBreakpointsRequest) error {
+	breakpointFields := func(event *zerolog.Event) {
+		event.
+			Str("source", request.Arguments.Source.Path).
+			Int("count", len(request.Arguments.Breakpoints))
+	}
+	s.traceRequest(request.GetRequest(), breakpointFields)
+
 	debugID, ok := s.configuredDebug(false)
 	if !ok {
-		return s.sendFailure(request.GetRequest(), "setBreakpoints requires launch before configurationDone")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("setBreakpoints requires launch before configurationDone"),
+			breakpointFields,
+		)
 	}
 
 	if request.Arguments.Source.SourceReference != 0 {
-		return s.sendFailure(request.GetRequest(), "source references are not supported")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("source references are not supported"),
+			func(event *zerolog.Event) {
+				breakpointFields(event)
+				event.Int("source_reference", request.Arguments.Source.SourceReference)
+			},
+		)
 	}
 
 	path, err := s.sourcePath(request.Arguments.Source.Path)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(
+			request.GetRequest(),
+			err,
+			breakpointFields,
+		)
 	}
 
 	if filepath.Clean(path) != filepath.Clean(s.owned.program) {
-		return s.sendFailure(request.GetRequest(), "breakpoint source must match the launched program")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("breakpoint source must match the launched program"),
+			func(event *zerolog.Event) {
+				event.
+					Str("source", path).
+					Str("launch_program", s.owned.program).
+					Int("count", len(request.Arguments.Breakpoints))
+			},
+		)
 	}
 
 	locations := make([]debug.BreakpointLocation, 0, len(request.Arguments.Breakpoints))
 	for _, breakpoint := range request.Arguments.Breakpoints {
 		if breakpoint.Condition != "" || breakpoint.HitCondition != "" || breakpoint.LogMessage != "" {
-			return s.sendFailure(request.GetRequest(), "conditional, hit-count, and log breakpoints are not supported")
+			return s.sendFailure(
+				request.GetRequest(),
+				errors.New("conditional, hit-count, and log breakpoints are not supported"),
+				func(event *zerolog.Event) {
+					event.Str("source", path).Int("count", len(request.Arguments.Breakpoints))
+				},
+			)
 		}
 
 		line := s.fromClientLine(breakpoint.Line)
 		column := s.fromClientColumn(breakpoint.Column)
 
 		if line < 1 || column < 0 {
-			return s.sendFailure(request.GetRequest(), "breakpoint line or column is invalid")
+			return s.sendFailure(
+				request.GetRequest(),
+				errors.New("breakpoint line or column is invalid"),
+				func(event *zerolog.Event) {
+					event.
+						Str("source", path).
+						Int("line", breakpoint.Line).
+						Int("column", breakpoint.Column)
+				},
+			)
 		}
 
 		locations = append(locations, debug.BreakpointLocation{Line: line, Column: column})
@@ -239,12 +347,16 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 
 	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, path, locations)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("source", path).Int("count", len(locations))
+		})
 	}
 
 	clientPath, err := s.clientPath(path)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("source", path).Int("count", len(locations))
+		})
 	}
 
 	result := make([]protocol.Breakpoint, len(breakpoints))
@@ -261,7 +373,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		}
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -269,6 +381,8 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 			Response: response,
 			Body:     protocol.SetBreakpointsResponseBody{Breakpoints: result},
 		}
+	}, func(event *zerolog.Event) {
+		event.Int("count", len(result))
 	})
 }
 
@@ -327,19 +441,28 @@ func (s *Server) handleContinue(ctx context.Context, request *protocol.ContinueR
 }
 
 func (s *Server) handlePause(ctx context.Context, request *protocol.PauseRequest) error {
+	threadFields := func(event *zerolog.Event) {
+		event.Int("thread_id", request.Arguments.ThreadId)
+	}
+	s.traceRequest(request.GetRequest(), threadFields)
+
 	debugID, ok := s.configuredDebug(true)
 	if !ok || request.Arguments.ThreadId != threadID {
-		return s.sendFailure(request.GetRequest(), "pause requires the Ferret thread in a configured session")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("pause requires the Ferret thread in a configured session"),
+			threadFields,
+		)
 	}
 
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
 
 	if _, err := s.debugs.PauseSession(ctx, debugID); err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(request.GetRequest(), err, threadFields)
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -383,32 +506,43 @@ func (s *Server) handleResume(
 	resume func(debug.SessionID) error,
 	message func(protocol.Response) protocol.Message,
 ) error {
+	threadFields := func(event *zerolog.Event) {
+		event.Int("thread_id", requestedThread)
+	}
+	s.traceRequest(request, threadFields)
+
 	debugID, ok := s.configuredDebug(true)
 	if !ok || requestedThread != threadID {
-		return s.sendFailure(request, "request requires the Ferret thread in a configured session")
+		return s.sendFailure(
+			request,
+			errors.New("request requires the Ferret thread in a configured session"),
+			threadFields,
+		)
 	}
 
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
 	if err := resume(debugID); err != nil {
-		return s.sendFailure(request, err.Error())
+		return s.sendFailure(request, err, threadFields)
 	}
 	s.handles.Reset()
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request, func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request)
 		response.ProtocolMessage = base
 
 		return message(response)
-	})
+	}, threadFields)
 }
 
 func (s *Server) handleThreads(request *protocol.ThreadsRequest) error {
+	s.traceRequest(request.GetRequest())
+
 	if _, ok := s.configuredDebug(false); !ok {
-		return s.sendFailure(request.GetRequest(), "threads requires a launched session")
+		return s.sendFailure(request.GetRequest(), errors.New("threads requires a launched session"))
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -418,23 +552,50 @@ func (s *Server) handleThreads(request *protocol.ThreadsRequest) error {
 				Id: threadID, Name: threadName,
 			}}},
 		}
+	}, func(event *zerolog.Event) {
+		event.Int("count", 1)
 	})
 }
 
 func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTraceRequest) error {
+	stackFields := func(event *zerolog.Event) {
+		event.
+			Int("thread_id", request.Arguments.ThreadId).
+			Int("start_frame", request.Arguments.StartFrame).
+			Int("levels", request.Arguments.Levels)
+	}
+	s.traceRequest(request.GetRequest(), stackFields)
+
 	debugID, ok := s.configuredDebug(true)
 	if !ok || request.Arguments.ThreadId != threadID {
-		return s.sendFailure(request.GetRequest(), "stackTrace requires the Ferret thread in a configured session")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("stackTrace requires the Ferret thread in a configured session"),
+			stackFields,
+		)
 	}
 
 	frames, err := s.debugs.Frames(ctx, debugID)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(
+			request.GetRequest(),
+			err,
+			stackFields,
+		)
 	}
 
 	start := request.Arguments.StartFrame
 	if start < 0 || start > len(frames) {
-		return s.sendFailure(request.GetRequest(), "startFrame is invalid")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("startFrame is invalid"),
+			func(event *zerolog.Event) {
+				event.
+					Int("thread_id", request.Arguments.ThreadId).
+					Int("start_frame", start).
+					Int("levels", request.Arguments.Levels)
+			},
+		)
 	}
 
 	end := len(frames)
@@ -446,7 +607,15 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 	for _, frame := range frames[start:end] {
 		path, pathErr := s.clientPath(frame.Location.File)
 		if pathErr != nil {
-			return s.sendFailure(request.GetRequest(), pathErr.Error())
+			return s.sendFailure(
+				request.GetRequest(),
+				pathErr,
+				func(event *zerolog.Event) {
+					event.
+						Int("thread_id", request.Arguments.ThreadId).
+						Str("source", frame.Location.File)
+				},
+			)
 		}
 
 		result = append(result, protocol.StackFrame{
@@ -458,7 +627,7 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 		})
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -469,23 +638,45 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 				TotalFrames: len(frames),
 			},
 		}
+	}, func(event *zerolog.Event) {
+		event.Int("frames", len(result)).Int("total_frames", len(frames))
 	})
 }
 
 func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesRequest) error {
+	frameFields := func(event *zerolog.Event) {
+		event.Int("frame_id", request.Arguments.FrameId)
+	}
+	s.traceRequest(request.GetRequest(), frameFields)
+
 	debugID, ok := s.configuredDebug(true)
 	if !ok {
-		return s.sendFailure(request.GetRequest(), "scopes requires a configured session")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("scopes requires a configured session"),
+			frameFields,
+		)
 	}
 
 	frame, ok := s.handles.FrameIndex(request.Arguments.FrameId)
 	if !ok {
-		return s.sendFailure(request.GetRequest(), "stack frame handle is stale or invalid")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("stack frame handle is stale or invalid"),
+			frameFields,
+		)
 	}
 
 	scopes, err := s.debugs.Scopes(ctx, debugID, frame)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(
+			request.GetRequest(),
+			err,
+			func(event *zerolog.Event) {
+				frameFields(event)
+				event.Int("frame_index", frame)
+			},
+		)
 	}
 
 	result := make([]protocol.Scope, len(scopes))
@@ -499,7 +690,7 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 		}
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -507,30 +698,57 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 			Response: response,
 			Body:     protocol.ScopesResponseBody{Scopes: result},
 		}
+	}, func(event *zerolog.Event) {
+		frameFields(event)
+		event.Int("scopes", len(result))
 	})
 }
 
 func (s *Server) handleVariables(ctx context.Context, request *protocol.VariablesRequest) error {
+	variableFields := func(event *zerolog.Event) {
+		event.Int("variables_reference", request.Arguments.VariablesReference)
+	}
+	s.traceRequest(request.GetRequest(), variableFields)
+
 	debugID, ok := s.configuredDebug(true)
 	if !ok {
-		return s.sendFailure(request.GetRequest(), "variables requires a configured session")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("variables requires a configured session"),
+			variableFields,
+		)
 	}
 
 	if request.Arguments.Filter != "" || request.Arguments.Start != 0 || request.Arguments.Count != 0 {
-		return s.sendFailure(request.GetRequest(), "variable filtering and paging are not supported")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("variable filtering and paging are not supported"),
+			func(event *zerolog.Event) {
+				variableFields(event)
+				event.Int("start", request.Arguments.Start).Int("count", request.Arguments.Count)
+			},
+		)
 	}
 
 	variables, scope := s.handles.ScopeVariables(request.Arguments.VariablesReference)
 	if !scope {
 		reference, found := s.handles.VariableReference(request.Arguments.VariablesReference)
 		if !found {
-			return s.sendFailure(request.GetRequest(), "variable handle is stale or invalid")
+			return s.sendFailure(
+				request.GetRequest(),
+				errors.New("variable handle is stale or invalid"),
+				variableFields,
+			)
 		}
 
 		var err error
 		variables, err = s.debugs.Variables(ctx, debugID, reference)
 		if err != nil {
-			return s.sendFailure(request.GetRequest(), err.Error())
+			return s.sendFailure(
+				request.GetRequest(),
+				err,
+				variableFields,
+			)
 		}
 	}
 
@@ -539,7 +757,7 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 		result[index] = s.protocolVariable(variable)
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -547,13 +765,28 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 			Response: response,
 			Body:     protocol.VariablesResponseBody{Variables: result},
 		}
+	}, func(event *zerolog.Event) {
+		variableFields(event)
+		event.Int("variables", len(result))
 	})
 }
 
 func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateRequest) error {
+	evaluateFields := func(event *zerolog.Event) {
+		event.
+			Str("context", request.Arguments.Context).
+			Int("frame_id", request.Arguments.FrameId).
+			Int("expression_length", len(request.Arguments.Expression))
+	}
+	s.traceRequest(request.GetRequest(), evaluateFields)
+
 	debugID, ok := s.configuredDebug(true)
 	if !ok {
-		return s.sendFailure(request.GetRequest(), "evaluate requires a configured session")
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("evaluate requires a configured session"),
+			evaluateFields,
+		)
 	}
 
 	frame := 0
@@ -562,16 +795,30 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 		frame, found = s.handles.FrameIndex(request.Arguments.FrameId)
 
 		if !found {
-			return s.sendFailure(request.GetRequest(), "stack frame handle is stale or invalid")
+			return s.sendFailure(
+				request.GetRequest(),
+				errors.New("stack frame handle is stale or invalid"),
+				evaluateFields,
+			)
 		}
 	}
 
 	value, err := s.debugs.Evaluate(ctx, debugID, frame, request.Arguments.Expression)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		diagnosticErr := err
+		diagnosticFields := logEnricher(evaluateFields)
+		if strings.TrimSpace(request.Arguments.Expression) != "" {
+			diagnosticErr = errors.New("debug evaluation failed")
+			diagnosticFields = func(event *zerolog.Event) {
+				evaluateFields(event)
+				event.Str("error_type", fmt.Sprintf("%T", err))
+			}
+		}
+
+		return s.sendFailureWithDiagnostic(request.GetRequest(), err, diagnosticErr, diagnosticFields)
 	}
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -587,23 +834,33 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 }
 
 func (s *Server) handleTerminate(ctx context.Context, request *protocol.TerminateRequest) error {
+	restart := request.Arguments != nil && request.Arguments.Restart
+	restartFields := func(event *zerolog.Event) {
+		event.Bool("restart", restart)
+	}
+	s.traceRequest(request.GetRequest(), restartFields)
+
 	debugID, ok := s.configuredDebug(false)
-	if !ok || (request.Arguments != nil && request.Arguments.Restart) {
-		return s.sendFailure(request.GetRequest(), "terminate requires a launched session and does not support restart")
+	if !ok || restart {
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("terminate requires a launched session and does not support restart"),
+			restartFields,
+		)
 	}
 
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
-	if err := s.failPendingLaunch("launch terminated before configurationDone"); err != nil {
+	if err := s.failPendingLaunch(errors.New("launch terminated before configurationDone")); err != nil {
 		return err
 	}
 
 	if _, err := s.debugs.TerminateSession(ctx, debugID); err != nil {
-		return s.sendFailure(request.GetRequest(), err.Error())
+		return s.sendFailure(request.GetRequest(), err, restartFields)
 	}
 	s.handles.Reset()
 
-	return s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
@@ -612,18 +869,29 @@ func (s *Server) handleTerminate(ctx context.Context, request *protocol.Terminat
 }
 
 func (s *Server) handleDisconnect(_ context.Context, request *protocol.DisconnectRequest) error {
-	if request.Arguments != nil && (request.Arguments.Restart || request.Arguments.SuspendDebuggee) {
-		return s.sendFailure(request.GetRequest(), "disconnect restart and suspend are not supported")
+	restart := request.Arguments != nil && request.Arguments.Restart
+	suspend := request.Arguments != nil && request.Arguments.SuspendDebuggee
+	disconnectFields := func(event *zerolog.Event) {
+		event.Bool("restart", restart).Bool("suspend_debuggee", suspend)
+	}
+	s.traceRequest(request.GetRequest(), disconnectFields)
+
+	if restart || suspend {
+		return s.sendFailure(
+			request.GetRequest(),
+			errors.New("disconnect restart and suspend are not supported"),
+			disconnectFields,
+		)
 	}
 
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
 
-	if err := s.failPendingLaunch("launch disconnected before configurationDone"); err != nil {
+	if err := s.failPendingLaunch(errors.New("launch disconnected before configurationDone")); err != nil {
 		return err
 	}
 
-	if err := s.send(func(base protocol.ProtocolMessage) protocol.Message {
+	if err := s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 

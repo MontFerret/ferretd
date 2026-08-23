@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,21 +14,28 @@ import (
 
 func newServeCommand(version string) *cobra.Command {
 	var endpointValue string
+	var logLevelValue string
 
 	command := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the local daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context(), version, endpointValue, cmd.ErrOrStderr())
+			return serve(cmd.Context(), version, endpointValue, logLevel(logLevelValue), cmd.ErrOrStderr())
 		},
 	}
 	command.Flags().StringVar(&endpointValue, "endpoint", "", "local endpoint URL")
+	command.Flags().StringVar(
+		&logLevelValue,
+		"log-level",
+		defaultLogLevel.String(),
+		"log level (debug, info, warn, error)",
+	)
 
 	return command
 }
 
-func serve(ctx context.Context, version, endpointValue string, stderr io.Writer) error {
+func serve(ctx context.Context, version, endpointValue string, logLevelValue logLevel, stderr io.Writer) error {
 	var endpoint transport.Endpoint
 	if endpointValue != "" {
 		var err error
@@ -39,7 +45,11 @@ func serve(ctx context.Context, version, endpointValue string, stderr io.Writer)
 		}
 	}
 
-	logger := slog.New(slog.NewTextHandler(stderr, nil))
+	logger, err := newLogger(stderr, logLevelValue)
+	if err != nil {
+		return err
+	}
+
 	d, err := daemon.New(daemon.Options{
 		Version:  version,
 		Endpoint: endpoint,
