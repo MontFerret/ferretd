@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -234,8 +235,13 @@ RETURN @`+parameterKey)
 		"request:disconnect:7",
 		"response:disconnect:7:12",
 	}
-	if got := traceSignatures(records); !reflect.DeepEqual(got, wantTrace) {
-		t.Fatalf("trace signatures = %#v, want %#v", got, wantTrace)
+	gotTrace := traceSignatures(records)
+	// A client can send its next request after reading an event but before the
+	// event's post-write trace runs. Sequence fields retain the logical order.
+	slices.Sort(gotTrace)
+	slices.Sort(wantTrace)
+	if !reflect.DeepEqual(gotTrace, wantTrace) {
+		t.Fatalf("trace signatures = %#v, want %#v", gotTrace, wantTrace)
 	}
 
 	requireDiagnostic(t, records, diagnosticRecord{
