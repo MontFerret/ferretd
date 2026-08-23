@@ -20,6 +20,9 @@ Debug records identify message direction and ordering and include compact fields
 such as source paths, breakpoint counts, thread IDs, frame handles, variable
 references, and evaluation-expression length. Existing workspace, execution
 Session, and DebugSession IDs correlate records after a successful launch.
+Successful responses that intentionally short-circuit empty evaluations include
+`empty=true` together with the request's context, frame handle, and expression
+length.
 Breakpoint-source warnings include the requested and launched display paths plus
 their canonical paths when both sources are available. An unavailable local
 source instead records the underlying path-resolution error.
@@ -94,6 +97,12 @@ subsequent frames are callers. Each frame exposes `Locals` and `Parameters`.
 Expandable value references and all DAP handles are valid only for the current
 paused state; running, stepping, completion, failure, or termination makes them
 stale.
+
+After a debug Session is configured, an empty or whitespace-only evaluation
+returns a successful empty result with no variable reference. This applies to
+all evaluation contexts, including REPL input. The adapter does not resolve a
+supplied frame handle or call the debugger for that response. Non-empty
+expressions retain normal frame validation and debugger evaluation.
 
 The adapter honors client line and column bases and accepts either native local
 paths or local `file` URIs according to the initialized `pathFormat`. Remote

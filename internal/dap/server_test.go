@@ -925,6 +925,93 @@ RETURN outer(@input) + box.value`)
 	client.disconnect()
 }
 
+func TestDAPEvaluateEmptyExpressionsReturnEmptyResult(t *testing.T) {
+	root := t.TempDir()
+	program := writeDAPProgram(t, root, "LET value = 1\nRETURN value")
+	client := newTestClient(t)
+	initializeDAP(t, client)
+	launchDAP(t, client, program, root, true)
+	completePendingDAPLaunch(t, client)
+
+	stackTrace := client.request("stackTrace")
+	client.send(&protocol.StackTraceRequest{
+		Request:   stackTrace,
+		Arguments: protocol.StackTraceArguments{ThreadId: threadID},
+	})
+	stackResponse, ok := client.read().(*protocol.StackTraceResponse)
+	if !ok || len(stackResponse.Body.StackFrames) == 0 {
+		t.Fatalf("stackTrace response = %#v", stackResponse)
+	}
+	frameID := stackResponse.Body.StackFrames[0].Id
+
+	tests := []struct {
+		name       string
+		expression string
+		context    string
+		frameID    int
+	}{
+		{name: "hover", context: "hover", frameID: frameID},
+		{name: "watch", context: "watch", frameID: frameID},
+		{name: "repl", context: "repl", frameID: frameID},
+		{name: "whitespace", expression: " \t\n", context: "watch", frameID: frameID},
+		{name: "no frame", context: "hover"},
+		{name: "stale frame", context: "watch", frameID: frameID + 1000},
+		{name: "omitted context", frameID: frameID},
+		{name: "unfamiliar context", context: "future-client", frameID: frameID},
+	}
+
+	for _, test := range tests {
+		evaluate := client.request("evaluate")
+		client.send(&protocol.EvaluateRequest{
+			Request: evaluate,
+			Arguments: protocol.EvaluateArguments{
+				Expression: test.expression,
+				FrameId:    test.frameID,
+				Context:    test.context,
+			},
+		})
+		response, ok := client.read().(*protocol.EvaluateResponse)
+		if !ok || !response.Success || response.Command != "evaluate" ||
+			response.Body.Result != "" || response.Body.Type != "" ||
+			response.Body.VariablesReference != 0 || response.Body.PresentationHint != nil ||
+			response.Body.NamedVariables != 0 || response.Body.IndexedVariables != 0 ||
+			response.Body.MemoryReference != "" {
+			t.Fatalf("%s evaluate response = %#v", test.name, response)
+		}
+	}
+
+	evaluate := client.request("evaluate")
+	client.send(&protocol.EvaluateRequest{
+		Request: evaluate,
+		Arguments: protocol.EvaluateArguments{
+			Expression: "1 + 1",
+			FrameId:    frameID,
+			Context:    "repl",
+		},
+	})
+	response, ok := client.read().(*protocol.EvaluateResponse)
+	if !ok || !response.Success || response.Body.Result != "2" {
+		t.Fatalf("non-empty evaluate response = %#v", response)
+	}
+
+	failedEvaluate := client.request("evaluate")
+	client.send(&protocol.EvaluateRequest{
+		Request: failedEvaluate,
+		Arguments: protocol.EvaluateArguments{
+			Expression: "missing_value",
+			FrameId:    frameID,
+			Context:    "watch",
+		},
+	})
+	failure, ok := client.read().(*protocol.ErrorResponse)
+	if !ok || failure.Success || failure.Command != "evaluate" || failure.Message == "" ||
+		failure.Body.Error == nil || !failure.Body.Error.ShowUser {
+		t.Fatalf("failed non-empty evaluate response = %#v", failure)
+	}
+
+	client.disconnect()
+}
+
 func TestDAPSuppressesEntryRuntimeErrorsAndUnsupportedRequests(t *testing.T) {
 	root := t.TempDir()
 	program := writeDAPProgram(t, root, "LET x = 7\nRETURN x / 0")
