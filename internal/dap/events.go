@@ -60,7 +60,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 	snapshot := event.Snapshot
 	switch snapshot.State {
 	case debug.StateRunning:
-		s.handles.Reset()
+		s.invalidateHandles("running")
 		s.logger.Info().Msg("DAP execution running")
 	case debug.StateStopped:
 		s.stateMu.Lock()
@@ -75,7 +75,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 				Int("thread_id", threadID).
 				Bool("suppressed", true).
 				Msg("DAP execution stopped")
-			s.handles.Reset()
+			s.invalidateHandles("suppressed entry")
 
 			if _, err := s.debugs.ContinueSession(context.Background(), snapshot.ID); err != nil {
 				s.logger.Error().Err(err).Msg("DAP continue after entry failed")
@@ -95,7 +95,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 			s.logger.Error().Err(err).Msg("send DAP stopped event failed")
 		}
 	case debug.StateCompleted:
-		s.handles.Reset()
+		s.invalidateHandles("completed")
 		s.logger.Info().Msg("DAP execution completed")
 
 		if snapshot.Output != nil && len(snapshot.Output.Content) > 0 {
@@ -112,7 +112,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 			s.logger.Error().Err(err).Msg("send DAP terminated event failed")
 		}
 	case debug.StateFailed:
-		s.handles.Reset()
+		s.invalidateHandles("failed")
 		message := "debug execution failed"
 
 		if snapshot.Failure != nil && snapshot.Failure.Message != "" {
@@ -133,7 +133,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 			s.logger.Error().Err(err).Msg("send DAP terminated event failed")
 		}
 	case debug.StateTerminated:
-		s.handles.Reset()
+		s.invalidateHandles("terminated")
 
 		s.logger.Info().Msg("DAP execution terminated")
 

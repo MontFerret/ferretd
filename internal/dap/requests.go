@@ -257,7 +257,7 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 		return errors.Join(result, s.cleanup())
 	}
 
-	s.handles.Reset()
+	s.invalidateHandles("configurationDone")
 	s.stateMu.Lock()
 	s.configured = true
 	s.stateMu.Unlock()
@@ -585,7 +585,7 @@ func (s *Server) handleResume(
 	if err := resume(debugID); err != nil {
 		return s.sendFailure(request, err, threadFields)
 	}
-	s.handles.Reset()
+	s.invalidateHandles(request.Command)
 
 	return s.sendResponse(request, func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request)
@@ -678,8 +678,13 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 			)
 		}
 
+		frameID := s.handles.Frame(frame.Index)
+		s.logger.Debug().
+			Int("frame_id", frameID).
+			Int("frame_index", frame.Index).
+			Msg("DAP stack frame handle allocated")
 		result = append(result, protocol.StackFrame{
-			Id:     s.handles.Frame(frame.Index),
+			Id:     frameID,
 			Name:   frame.Name,
 			Source: &protocol.Source{Name: filepath.Base(frame.Location.File), Path: path},
 			Line:   s.toClientLine(frame.Location.Line),
@@ -718,8 +723,8 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 		)
 	}
 
-	frame, ok := s.handles.FrameIndex(request.Arguments.FrameId)
-	if !ok {
+	frame, status := s.handles.FrameIndex(request.Arguments.FrameId)
+	if status == handleInvalid {
 		return s.sendFailure(
 			request.GetRequest(),
 			errors.New("stack frame handle is stale or invalid"),
@@ -727,26 +732,30 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 		)
 	}
 
-	scopes, err := s.debugs.Scopes(ctx, debugID, frame)
-	if err != nil {
-		return s.sendFailure(
-			request.GetRequest(),
-			err,
-			func(event *zerolog.Event) {
-				frameFields(event)
-				event.Int("frame_index", frame)
-			},
-		)
-	}
+	stale := status == handleStale
+	result := make([]protocol.Scope, 0)
+	if !stale {
+		scopes, err := s.debugs.Scopes(ctx, debugID, frame)
+		if err != nil {
+			return s.sendFailure(
+				request.GetRequest(),
+				err,
+				func(event *zerolog.Event) {
+					frameFields(event)
+					event.Int("frame_index", frame)
+				},
+			)
+		}
 
-	result := make([]protocol.Scope, len(scopes))
-	for index, scope := range scopes {
-		result[index] = protocol.Scope{
-			Name:               scope.Name,
-			PresentationHint:   strings.ToLower(scope.Name),
-			VariablesReference: s.handles.Scope(scope.Variables),
-			NamedVariables:     len(scope.Variables),
-			Expensive:          false,
+		result = make([]protocol.Scope, len(scopes))
+		for index, scope := range scopes {
+			result[index] = protocol.Scope{
+				Name:               scope.Name,
+				PresentationHint:   strings.ToLower(scope.Name),
+				VariablesReference: s.handles.Scope(scope.Variables),
+				NamedVariables:     len(scope.Variables),
+				Expensive:          false,
+			}
 		}
 	}
 
@@ -761,6 +770,9 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 	}, func(event *zerolog.Event) {
 		frameFields(event)
 		event.Int("scopes", len(result))
+		if stale {
+			event.Bool("stale", true)
+		}
 	})
 }
 
@@ -790,23 +802,27 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 		)
 	}
 
-	variables, scope := s.handles.ScopeVariables(request.Arguments.VariablesReference)
-	if !scope {
-		reference, found := s.handles.VariableReference(request.Arguments.VariablesReference)
-		if !found {
+	variables, status := s.handles.ScopeVariables(request.Arguments.VariablesReference)
+	stale := status == handleStale
+	if status == handleInvalid {
+		reference, referenceStatus := s.handles.VariableReference(request.Arguments.VariablesReference)
+		switch referenceStatus {
+		case handleCurrent:
+			var err error
+			variables, err = s.debugs.Variables(ctx, debugID, reference)
+			if err != nil {
+				return s.sendFailure(
+					request.GetRequest(),
+					err,
+					variableFields,
+				)
+			}
+		case handleStale:
+			stale = true
+		default:
 			return s.sendFailure(
 				request.GetRequest(),
 				errors.New("variable handle is stale or invalid"),
-				variableFields,
-			)
-		}
-
-		var err error
-		variables, err = s.debugs.Variables(ctx, debugID, reference)
-		if err != nil {
-			return s.sendFailure(
-				request.GetRequest(),
-				err,
 				variableFields,
 			)
 		}
@@ -828,6 +844,9 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 	}, func(event *zerolog.Event) {
 		variableFields(event)
 		event.Int("variables", len(result))
+		if stale {
+			event.Bool("stale", true)
+		}
 	})
 }
 
@@ -850,29 +869,18 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 	}
 
 	if strings.TrimSpace(request.Arguments.Expression) == "" {
-		return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
-			response := s.response(request.GetRequest())
-			response.ProtocolMessage = base
-
-			return &protocol.EvaluateResponse{
-				Response: response,
-				Body: protocol.EvaluateResponseBody{
-					Result:             "",
-					VariablesReference: 0,
-				},
-			}
-		}, func(event *zerolog.Event) {
-			evaluateFields(event)
-			event.Bool("empty", true)
-		})
+		return s.sendEmptyEvaluateResponse(request.GetRequest(), evaluateFields, true, false)
 	}
 
 	frame := 0
 	if request.Arguments.FrameId != 0 {
-		var found bool
-		frame, found = s.handles.FrameIndex(request.Arguments.FrameId)
-
-		if !found {
+		var status handleStatus
+		frame, status = s.handles.FrameIndex(request.Arguments.FrameId)
+		if status == handleStale &&
+			(request.Arguments.Context == "hover" || request.Arguments.Context == "watch") {
+			return s.sendEmptyEvaluateResponse(request.GetRequest(), evaluateFields, false, true)
+		}
+		if status != handleCurrent {
 			return s.sendFailure(
 				request.GetRequest(),
 				errors.New("stack frame handle is stale or invalid"),
@@ -911,6 +919,34 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 	})
 }
 
+func (s *Server) sendEmptyEvaluateResponse(
+	request *protocol.Request,
+	evaluateFields logEnricher,
+	empty bool,
+	stale bool,
+) error {
+	return s.sendResponse(request, func(base protocol.ProtocolMessage) protocol.Message {
+		response := s.response(request)
+		response.ProtocolMessage = base
+
+		return &protocol.EvaluateResponse{
+			Response: response,
+			Body: protocol.EvaluateResponseBody{
+				Result:             "",
+				VariablesReference: 0,
+			},
+		}
+	}, func(event *zerolog.Event) {
+		evaluateFields(event)
+		if empty {
+			event.Bool("empty", true)
+		}
+		if stale {
+			event.Bool("stale", true)
+		}
+	})
+}
+
 func (s *Server) handleTerminate(ctx context.Context, request *protocol.TerminateRequest) error {
 	restart := request.Arguments != nil && request.Arguments.Restart
 	restartFields := func(event *zerolog.Event) {
@@ -936,7 +972,7 @@ func (s *Server) handleTerminate(ctx context.Context, request *protocol.Terminat
 	if _, err := s.debugs.TerminateSession(ctx, debugID); err != nil {
 		return s.sendFailure(request.GetRequest(), err, restartFields)
 	}
-	s.handles.Reset()
+	s.invalidateHandles("terminate")
 
 	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())

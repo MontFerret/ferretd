@@ -2,6 +2,7 @@ package dap
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	protocol "github.com/google/go-dap"
+	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/source"
@@ -899,7 +901,8 @@ RETURN outer(@input) + box.value`)
 		Request:   staleScopes,
 		Arguments: protocol.ScopesArguments{FrameId: stackResponse.Body.StackFrames[1].Id},
 	})
-	if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success {
+	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
+		len(response.Body.Scopes) != 0 {
 		t.Fatalf("stale scopes response = %#v", response)
 	}
 
@@ -923,6 +926,243 @@ RETURN outer(@input) + box.value`)
 	}
 
 	client.disconnect()
+}
+
+func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
+	root := t.TempDir()
+	program := writeDAPProgram(t, root, "FUNC fib(n) {\n"+
+		"  RETURN MATCH n {\n"+
+		"    0 => 0,\n"+
+		"    1 => 1,\n"+
+		"    _ => fib(n - 1) + fib(n - 2),\n"+
+		"  }\n"+
+		"}\n"+
+		"RETURN fib(6)")
+	var diagnostics bytes.Buffer
+	logger := newCaptureLogger(&diagnostics, zerolog.DebugLevel)
+	client := newTestClientWithOptions(t, Options{Logger: logger})
+	initializeDAP(t, client)
+	launchDAP(t, client, program, root, true)
+	completePendingDAPLaunch(t, client)
+
+	stackTrace := client.request("stackTrace")
+	client.send(&protocol.StackTraceRequest{
+		Request:   stackTrace,
+		Arguments: protocol.StackTraceArguments{ThreadId: threadID},
+	})
+	stackResponse, ok := client.read().(*protocol.StackTraceResponse)
+	if !ok || len(stackResponse.Body.StackFrames) != 1 {
+		t.Fatalf("entry stackTrace response = %#v", stackResponse)
+	}
+	oldFrameID := stackResponse.Body.StackFrames[0].Id
+
+	scopes := client.request("scopes")
+	client.send(&protocol.ScopesRequest{
+		Request:   scopes,
+		Arguments: protocol.ScopesArguments{FrameId: oldFrameID},
+	})
+	scopesResponse, ok := client.read().(*protocol.ScopesResponse)
+	if !ok || len(scopesResponse.Body.Scopes) != 2 {
+		t.Fatalf("entry scopes response = %#v", scopesResponse)
+	}
+	oldScopeID := scopesResponse.Body.Scopes[0].VariablesReference
+
+	stepIn := client.request("stepIn")
+	client.send(&protocol.StepInRequest{
+		Request:   stepIn,
+		Arguments: protocol.StepInArguments{ThreadId: threadID},
+	})
+	if response, ok := client.read().(*protocol.StepInResponse); !ok || !response.Success {
+		t.Fatalf("stepIn response = %#v", response)
+	}
+	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "step" {
+		t.Fatalf("stepIn stopped event = %#v", stopped)
+	}
+
+	lateScopes := client.request("scopes")
+	client.send(&protocol.ScopesRequest{
+		Request:   lateScopes,
+		Arguments: protocol.ScopesArguments{FrameId: oldFrameID},
+	})
+	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
+		len(response.Body.Scopes) != 0 {
+		t.Fatalf("late scopes response = %#v", response)
+	}
+
+	lateVariables := client.request("variables")
+	client.send(&protocol.VariablesRequest{
+		Request: lateVariables,
+		Arguments: protocol.VariablesArguments{
+			VariablesReference: oldScopeID,
+		},
+	})
+	if response, ok := client.read().(*protocol.VariablesResponse); !ok || !response.Success ||
+		len(response.Body.Variables) != 0 {
+		t.Fatalf("late variables response = %#v", response)
+	}
+
+	for _, contextName := range []string{"hover", "watch"} {
+		evaluate := client.request("evaluate")
+		client.send(&protocol.EvaluateRequest{
+			Request: evaluate,
+			Arguments: protocol.EvaluateArguments{
+				Expression: "n",
+				FrameId:    oldFrameID,
+				Context:    contextName,
+			},
+		})
+		response, ok := client.read().(*protocol.EvaluateResponse)
+		if !ok || !response.Success || response.Body.Result != "" ||
+			response.Body.VariablesReference != 0 {
+			t.Fatalf("stale %s evaluate response = %#v", contextName, response)
+		}
+	}
+
+	for _, test := range []struct {
+		name    string
+		context string
+		frameID int
+	}{
+		{name: "repl", context: "repl", frameID: oldFrameID},
+		{name: "omitted context", frameID: oldFrameID},
+		{name: "unfamiliar context", context: "future-client", frameID: oldFrameID},
+		{name: "unknown hover frame", context: "hover", frameID: oldFrameID + 1_000_000},
+	} {
+		evaluate := client.request("evaluate")
+		client.send(&protocol.EvaluateRequest{
+			Request: evaluate,
+			Arguments: protocol.EvaluateArguments{
+				Expression: "n",
+				FrameId:    test.frameID,
+				Context:    test.context,
+			},
+		})
+		assertDAPFailure(t, client.read(), "evaluate", "stack frame handle is stale or invalid")
+	}
+
+	newStackTrace := client.request("stackTrace")
+	client.send(&protocol.StackTraceRequest{
+		Request:   newStackTrace,
+		Arguments: protocol.StackTraceArguments{ThreadId: threadID},
+	})
+	newStackResponse, ok := client.read().(*protocol.StackTraceResponse)
+	if !ok || len(newStackResponse.Body.StackFrames) < 2 {
+		t.Fatalf("new stackTrace response = %#v", newStackResponse)
+	}
+	newFrameIDs := make(map[int]struct{}, len(newStackResponse.Body.StackFrames))
+	for _, frame := range newStackResponse.Body.StackFrames {
+		if frame.Id == oldFrameID {
+			t.Fatalf("old frame handle %d reused by new stack: %#v", oldFrameID, newStackResponse.Body.StackFrames)
+		}
+		if _, exists := newFrameIDs[frame.Id]; exists {
+			t.Fatalf("recursive stack frame handle %d is duplicated: %#v", frame.Id, newStackResponse.Body.StackFrames)
+		}
+		newFrameIDs[frame.Id] = struct{}{}
+	}
+
+	lateScopesAfterStack := client.request("scopes")
+	client.send(&protocol.ScopesRequest{
+		Request:   lateScopesAfterStack,
+		Arguments: protocol.ScopesArguments{FrameId: oldFrameID},
+	})
+	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
+		len(response.Body.Scopes) != 0 {
+		t.Fatalf("late scopes response after new stack = %#v", response)
+	}
+
+	newScopes := client.request("scopes")
+	client.send(&protocol.ScopesRequest{
+		Request:   newScopes,
+		Arguments: protocol.ScopesArguments{FrameId: newStackResponse.Body.StackFrames[0].Id},
+	})
+	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
+		len(response.Body.Scopes) != 2 {
+		t.Fatalf("new scopes response = %#v", response)
+	}
+
+	randomScopes := client.request("scopes")
+	client.send(&protocol.ScopesRequest{
+		Request:   randomScopes,
+		Arguments: protocol.ScopesArguments{FrameId: oldFrameID + 1_000_000},
+	})
+	assertDAPFailure(t, client.read(), "scopes", "stack frame handle is stale or invalid")
+
+	randomVariables := client.request("variables")
+	client.send(&protocol.VariablesRequest{
+		Request: randomVariables,
+		Arguments: protocol.VariablesArguments{
+			VariablesReference: oldScopeID + 1_000_000,
+		},
+	})
+	assertDAPFailure(t, client.read(), "variables", "variable handle is stale or invalid")
+
+	malformedScopes := client.request("scopes")
+	client.send(&protocol.ScopesRequest{
+		Request:   malformedScopes,
+		Arguments: protocol.ScopesArguments{FrameId: -1},
+	})
+	assertDAPFailure(t, client.read(), "scopes", "stack frame handle is stale or invalid")
+
+	client.disconnect()
+
+	records := decodeDiagnostics(t, diagnostics.Bytes())
+	requireDiagnostic(t, records, diagnosticRecord{
+		"level":       "debug",
+		"message":     "DAP stack frame handle allocated",
+		"frame_id":    oldFrameID,
+		"frame_index": 0,
+	})
+	requireDiagnostic(t, records, diagnosticRecord{
+		"level":         "debug",
+		"message":       "DAP handles invalidated",
+		"cause":         "stepIn",
+		"frames":        1,
+		"scopes":        2,
+		"variables":     0,
+		"stale_handles": 3,
+	})
+	requireDiagnostic(t, records, diagnosticRecord{
+		"level":     "debug",
+		"message":   "DAP response",
+		"command":   "scopes",
+		"frame_id":  oldFrameID,
+		"scopes":    0,
+		"stale":     true,
+		"success":   true,
+		"direction": "->",
+	})
+	requireDiagnostic(t, records, diagnosticRecord{
+		"level":               "debug",
+		"message":             "DAP response",
+		"command":             "variables",
+		"variables_reference": oldScopeID,
+		"variables":           0,
+		"stale":               true,
+		"success":             true,
+	})
+	requireDiagnostic(t, records, diagnosticRecord{
+		"level":             "debug",
+		"message":           "DAP response",
+		"command":           "evaluate",
+		"context":           "hover",
+		"frame_id":          oldFrameID,
+		"expression_length": 1,
+		"stale":             true,
+		"success":           true,
+	})
+	requireDiagnostic(t, records, diagnosticRecord{
+		"level":       "warn",
+		"message":     "DAP request failed",
+		"command":     "scopes",
+		"request_seq": randomScopes.Seq,
+		"frame_id":    oldFrameID + 1_000_000,
+	})
+	for _, record := range records {
+		if record["message"] == "DAP request failed" &&
+			record["request_seq"] == float64(lateScopes.Seq) {
+			t.Fatalf("recognized stale scopes request logged as a failure: %#v", record)
+		}
+	}
 }
 
 func TestDAPEvaluateEmptyExpressionsReturnEmptyResult(t *testing.T) {

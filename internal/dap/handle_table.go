@@ -6,14 +6,39 @@ import (
 	"github.com/MontFerret/ferretd/internal/debug"
 )
 
-type handleTable struct {
-	mu sync.Mutex
+type (
+	handleStatus uint8
+	handleKind   uint8
 
-	next      int
-	frames    map[int]int
-	scopes    map[int][]debug.Variable
-	variables map[int]debug.ValueReference
-}
+	handleInvalidation struct {
+		frames    int
+		scopes    int
+		variables int
+		stale     int
+	}
+
+	handleTable struct {
+		mu sync.Mutex
+
+		next      int
+		frames    map[int]int
+		scopes    map[int][]debug.Variable
+		variables map[int]debug.ValueReference
+		stale     map[int]handleKind
+	}
+)
+
+const (
+	handleInvalid handleStatus = iota
+	handleCurrent
+	handleStale
+)
+
+const (
+	frameHandle handleKind = iota + 1
+	scopeHandle
+	variableHandle
+)
 
 func newHandleTable() *handleTable {
 	return &handleTable{
@@ -21,17 +46,38 @@ func newHandleTable() *handleTable {
 		frames:    make(map[int]int),
 		scopes:    make(map[int][]debug.Variable),
 		variables: make(map[int]debug.ValueReference),
+		stale:     make(map[int]handleKind),
 	}
 }
 
-func (t *handleTable) Reset() {
+func (t *handleTable) Invalidate() handleInvalidation {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.next = 1
+	result := handleInvalidation{
+		frames:    len(t.frames),
+		scopes:    len(t.scopes),
+		variables: len(t.variables),
+	}
+	if result.frames+result.scopes+result.variables > 0 {
+		clear(t.stale)
+		for handle := range t.frames {
+			t.stale[handle] = frameHandle
+		}
+		for handle := range t.scopes {
+			t.stale[handle] = scopeHandle
+		}
+		for handle := range t.variables {
+			t.stale[handle] = variableHandle
+		}
+	}
+
 	clear(t.frames)
 	clear(t.scopes)
 	clear(t.variables)
+	result.stale = len(t.stale)
+
+	return result
 }
 
 func (t *handleTable) Frame(index int) int {
@@ -44,13 +90,19 @@ func (t *handleTable) Frame(index int) int {
 	return handle
 }
 
-func (t *handleTable) FrameIndex(handle int) (int, bool) {
+func (t *handleTable) FrameIndex(handle int) (int, handleStatus) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	index, ok := t.frames[handle]
+	if ok {
+		return index, handleCurrent
+	}
+	if t.stale[handle] == frameHandle {
+		return 0, handleStale
+	}
 
-	return index, ok
+	return 0, handleInvalid
 }
 
 func (t *handleTable) Scope(variables []debug.Variable) int {
@@ -63,13 +115,19 @@ func (t *handleTable) Scope(variables []debug.Variable) int {
 	return handle
 }
 
-func (t *handleTable) ScopeVariables(handle int) ([]debug.Variable, bool) {
+func (t *handleTable) ScopeVariables(handle int) ([]debug.Variable, handleStatus) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	variables, ok := t.scopes[handle]
+	if ok {
+		return append([]debug.Variable(nil), variables...), handleCurrent
+	}
+	if t.stale[handle] == scopeHandle {
+		return nil, handleStale
+	}
 
-	return append([]debug.Variable(nil), variables...), ok
+	return nil, handleInvalid
 }
 
 func (t *handleTable) Variable(reference debug.ValueReference) int {
@@ -86,13 +144,19 @@ func (t *handleTable) Variable(reference debug.ValueReference) int {
 	return handle
 }
 
-func (t *handleTable) VariableReference(handle int) (debug.ValueReference, bool) {
+func (t *handleTable) VariableReference(handle int) (debug.ValueReference, handleStatus) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	reference, ok := t.variables[handle]
+	if ok {
+		return reference, handleCurrent
+	}
+	if t.stale[handle] == variableHandle {
+		return 0, handleStale
+	}
 
-	return reference, ok
+	return 0, handleInvalid
 }
 
 func (t *handleTable) allocateLocked() int {
@@ -100,4 +164,15 @@ func (t *handleTable) allocateLocked() int {
 	t.next++
 
 	return handle
+}
+
+func (s *Server) invalidateHandles(cause string) {
+	invalidated := s.handles.Invalidate()
+	s.logger.Debug().
+		Str("cause", cause).
+		Int("frames", invalidated.frames).
+		Int("scopes", invalidated.scopes).
+		Int("variables", invalidated.variables).
+		Int("stale_handles", invalidated.stale).
+		Msg("DAP handles invalidated")
 }
