@@ -77,8 +77,15 @@ required order.
 `internal/dap` owns client path format, line and column base conversion, message
 sequence numbers, and all integer frame, scope, and variable handles. The
 protocol-neutral debug model keeps Ferret source locations and value references.
-Handles are cleared whenever execution runs, steps, completes, fails, or
-terminates, so stale paused-state references cannot be reused.
+Current handle payloads are invalidated whenever execution runs, steps,
+completes, fails, terminates, or the adapter cleans up. The allocator remains
+monotonic for the adapter session and never recycles an integer, so a stale
+paused-state reference cannot alias a later frame or value. Typed tombstones for
+the most recently invalidated non-empty handle set let the adapter distinguish
+recognized late IDE inspection from malformed, wrong-kind, or random handles.
+Late scopes and variables receive empty successful responses; passive hover and
+watch evaluation does the same, while active or unfamiliar evaluation contexts
+remain errors.
 
 The adapter retains one canonical filesystem identity for the launched source
 alongside its user-facing path. Breakpoint paths are resolved against the launch

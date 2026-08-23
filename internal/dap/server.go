@@ -311,6 +311,7 @@ func (s *Server) cleanup() error {
 	s.cleanupOnce.Do(func() {
 		var result error
 		s.takePendingLaunch()
+		s.invalidateHandles("cleanup")
 
 		if s.watch.Cancel != nil {
 			s.watch.Cancel()

@@ -22,7 +22,10 @@ references, and evaluation-expression length. Existing workspace, execution
 Session, and DebugSession IDs correlate records after a successful launch.
 Successful responses that intentionally short-circuit empty evaluations include
 `empty=true` together with the request's context, frame handle, and expression
-length.
+length. Frame allocations and handle invalidations are also recorded at debug
+level, including the invalidation cause and per-kind counts. Benign responses
+to recognized late requests include `stale=true`; malformed or unknown handles
+remain warning-level request failures.
 Breakpoint-source warnings include the requested and launched display paths plus
 their canonical paths when both sources are available. An unavailable local
 source instead records the underlying path-resolution error.
@@ -96,7 +99,17 @@ There is one thread named `Ferret`. Frame index zero is the current frame and
 subsequent frames are callers. Each frame exposes `Locals` and `Parameters`.
 Expandable value references and all DAP handles are valid only for the current
 paused state; running, stepping, completion, failure, or termination makes them
-stale.
+stale. Handle numbers are opaque and never reused within an adapter session, so
+a handle from an earlier stop cannot resolve to a frame or value from a later
+stop.
+
+Some clients issue inspection requests after a resume or step has already
+invalidated the handles they reference. When the adapter recognizes a handle
+from the most recently invalidated paused state, late `scopes` and `variables`
+requests succeed with empty arrays. A non-empty `evaluate` request against such
+a frame succeeds with an empty result only for passive `hover` and `watch`
+contexts. REPL, omitted or unfamiliar evaluation contexts, wrong handle kinds,
+and unknown handle numbers remain request errors.
 
 After a debug Session is configured, an empty or whitespace-only evaluation
 returns a successful empty result with no variable reference. This applies to
