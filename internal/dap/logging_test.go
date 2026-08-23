@@ -25,6 +25,14 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 	if err := os.WriteFile(other, []byte("RETURN 2"), 0o600); err != nil {
 		t.Fatalf("write other program: %v", err)
 	}
+	programCanonical, err := filepath.EvalSymlinks(program)
+	if err != nil {
+		t.Fatalf("canonicalize program: %v", err)
+	}
+	otherCanonical, err := filepath.EvalSymlinks(other)
+	if err != nil {
+		t.Fatalf("canonicalize other program: %v", err)
+	}
 
 	var diagnostics bytes.Buffer
 	logger := newCaptureLogger(&diagnostics, zerolog.InfoLevel)
@@ -40,7 +48,24 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 			Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
 		},
 	})
-	assertDAPFailure(t, client.read(), "setBreakpoints", "breakpoint source must match the launched program")
+	response, ok := client.read().(*protocol.SetBreakpointsResponse)
+	if !ok || !response.Success || len(response.Body.Breakpoints) != 1 || response.Body.Breakpoints[0].Verified {
+		t.Fatalf("unowned setBreakpoints response = %#v", response)
+	}
+
+	missing := filepath.Join(root, "missing.fql")
+	setMissingBreakpoints := client.request("setBreakpoints")
+	client.send(&protocol.SetBreakpointsRequest{
+		Request: setMissingBreakpoints,
+		Arguments: protocol.SetBreakpointsArguments{
+			Source:      protocol.Source{Path: missing},
+			Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
+		},
+	})
+	response, ok = client.read().(*protocol.SetBreakpointsResponse)
+	if !ok || !response.Success || len(response.Body.Breakpoints) != 1 || response.Body.Breakpoints[0].Verified {
+		t.Fatalf("unavailable setBreakpoints response = %#v", response)
+	}
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
@@ -94,12 +119,25 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 		"level": "info", "message": "DAP execution stopped", "reason": "entry", "thread_id": 1,
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level":          "warn",
-		"message":        "DAP request failed",
-		"command":        "setBreakpoints",
-		"launch_program": program,
-		"error":          "breakpoint source must match the launched program",
+		"level":                    "warn",
+		"message":                  "DAP breakpoint source does not match launched program",
+		"source":                   other,
+		"source_canonical":         otherCanonical,
+		"launch_program":           program,
+		"launch_program_canonical": programCanonical,
+		"count":                    1,
 	})
+	unavailable := requireDiagnostic(t, records, diagnosticRecord{
+		"level":                    "warn",
+		"message":                  "DAP breakpoint source is unavailable",
+		"source":                   missing,
+		"launch_program":           program,
+		"launch_program_canonical": programCanonical,
+		"count":                    1,
+	})
+	if value, ok := unavailable["error"].(string); !ok || value == "" {
+		t.Fatalf("unavailable diagnostic error = %#v", unavailable["error"])
+	}
 	requireDiagnostic(t, records, diagnosticRecord{
 		"level": "warn", "message": "DAP request failed", "command": "scopes", "frame_id": 37,
 	})

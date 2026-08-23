@@ -155,11 +155,13 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 
 	s.stateMu.Lock()
 	s.owned = ownedSession{
-		workspace:   opened.ID(),
-		session:     session.ID,
-		debug:       debugSession.ID,
-		program:     paths.program,
-		stopOnEntry: arguments.StopOnEntry,
+		workspace:       opened.ID(),
+		session:         session.ID,
+		debug:           debugSession.ID,
+		root:            paths.root,
+		program:         paths.program,
+		programIdentity: paths.identity,
+		stopOnEntry:     arguments.StopOnEntry,
 	}
 	s.attachSessionLogger(s.owned)
 	s.watch = watch
@@ -301,16 +303,37 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		)
 	}
 
-	if filepath.Clean(path) != filepath.Clean(s.owned.program) {
-		return s.sendFailure(
-			request.GetRequest(),
-			errors.New("breakpoint source must match the launched program"),
-			func(event *zerolog.Event) {
-				event.
-					Str("source", path).
-					Str("launch_program", s.owned.program).
-					Int("count", len(request.Arguments.Breakpoints))
-			},
+	identity, err := newSourceIdentity(path, s.owned.root)
+	if err != nil {
+		sourcePath := identity.path
+		if sourcePath == "" {
+			sourcePath = path
+		}
+
+		s.logger.Warn().
+			Err(err).
+			Str("source", sourcePath).
+			Str("launch_program", s.owned.program).
+			Str("launch_program_canonical", s.owned.programIdentity.canonical).
+			Int("count", len(request.Arguments.Breakpoints)).
+			Msg("DAP breakpoint source is unavailable")
+
+		return s.sendUnverifiedBreakpoints(request, sourcePath, "breakpoint source is unavailable")
+	}
+
+	if !identity.same(s.owned.programIdentity) {
+		s.logger.Warn().
+			Str("source", identity.path).
+			Str("source_canonical", identity.canonical).
+			Str("launch_program", s.owned.program).
+			Str("launch_program_canonical", s.owned.programIdentity.canonical).
+			Int("count", len(request.Arguments.Breakpoints)).
+			Msg("DAP breakpoint source does not match launched program")
+
+		return s.sendUnverifiedBreakpoints(
+			request,
+			identity.path,
+			"breakpoints are only supported for the launched program",
 		)
 	}
 
@@ -345,14 +368,14 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		locations = append(locations, debug.BreakpointLocation{Line: line, Column: column})
 	}
 
-	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, path, locations)
+	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, s.owned.program, locations)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
 			event.Str("source", path).Int("count", len(locations))
 		})
 	}
 
-	clientPath, err := s.clientPath(path)
+	clientPath, err := s.clientPath(identity.path)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
 			event.Str("source", path).Int("count", len(locations))
@@ -360,16 +383,53 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 	}
 
 	result := make([]protocol.Breakpoint, len(breakpoints))
-	s.clearNativeBreakpoints(path)
+	s.clearNativeBreakpoints(s.owned.program)
 
 	for index, breakpoint := range breakpoints {
-		stableID := s.bindBreakpointID(path, locations[index], breakpoint.ID)
+		stableID := s.bindBreakpointID(s.owned.program, locations[index], breakpoint.ID)
 		result[index] = protocol.Breakpoint{
 			Id:       stableID,
 			Verified: breakpoint.Verified,
-			Source:   &protocol.Source{Name: filepath.Base(path), Path: clientPath},
+			Source:   &protocol.Source{Name: filepath.Base(identity.path), Path: clientPath},
 			Line:     s.toClientLine(breakpoint.Line),
 			Column:   s.toClientColumn(breakpoint.Column),
+		}
+	}
+
+	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
+		response := s.response(request.GetRequest())
+		response.ProtocolMessage = base
+
+		return &protocol.SetBreakpointsResponse{
+			Response: response,
+			Body:     protocol.SetBreakpointsResponseBody{Breakpoints: result},
+		}
+	}, func(event *zerolog.Event) {
+		event.Int("count", len(result))
+	})
+}
+
+func (s *Server) sendUnverifiedBreakpoints(
+	request *protocol.SetBreakpointsRequest,
+	path string,
+	message string,
+) error {
+	sourceValue := request.Arguments.Source
+	if clientPath, err := s.clientPath(path); err == nil {
+		sourceValue.Path = clientPath
+	}
+	if sourceValue.Name == "" {
+		sourceValue.Name = filepath.Base(path)
+	}
+
+	result := make([]protocol.Breakpoint, len(request.Arguments.Breakpoints))
+	for index, breakpoint := range request.Arguments.Breakpoints {
+		result[index] = protocol.Breakpoint{
+			Verified: false,
+			Message:  message,
+			Source:   &sourceValue,
+			Line:     breakpoint.Line,
+			Column:   breakpoint.Column,
 		}
 	}
 
