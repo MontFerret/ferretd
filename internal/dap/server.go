@@ -10,10 +10,10 @@ import (
 	"sync"
 
 	protocol "github.com/google/go-dap"
-	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/logging"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -38,7 +38,7 @@ type (
 		workspaces            *workspace.Manager
 		executions            *exec.Manager
 		debugs                *debug.Manager
-		logger                zerolog.Logger
+		logger                logging.Logger
 		handles               *handleTable
 		owned                 ownedSession
 		client                clientOptions
@@ -106,13 +106,16 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 	readerClose, _ := input.(io.Closer)
 
 	return &Server{
-		reader:                bufio.NewReader(input),
-		readerClose:           readerClose,
-		writer:                output,
-		workspaces:            workspaces,
-		executions:            executions,
-		debugs:                debugs,
-		logger:                options.Logger.With().Str("component", "dap").Logger(),
+		reader:      bufio.NewReader(input),
+		readerClose: readerClose,
+		writer:      output,
+		workspaces:  workspaces,
+		executions:  executions,
+		debugs:      debugs,
+		logger: logging.New(*options.Logger).
+			With().
+			Enum(logFieldComponent, logComponentDAP).
+			Logger(),
 		handles:               newHandleTable(),
 		nextBreakpointID:      1,
 		stableBreakpoints:     make(map[breakpointKey]int),
@@ -128,7 +131,7 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 
 // Run reads and serves DAP requests until disconnect or stream EOF.
 func (s *Server) Run(ctx context.Context) (result error) {
-	s.logger.Info().Msg("DAP session started")
+	s.logger.Info().Msg(logMessageSessionStarted)
 
 	stopCancellation := make(chan struct{})
 	if s.readerClose != nil {
@@ -145,14 +148,16 @@ func (s *Server) Run(ctx context.Context) (result error) {
 		close(stopCancellation)
 		result = errors.Join(result, s.cleanup())
 
-		status := "completed"
+		status := sessionEndCompleted
 		if errors.Is(result, context.Canceled) {
-			status = "canceled"
+			status = sessionEndCanceled
 		} else if result != nil {
-			status = "failed"
+			status = sessionEndFailed
 		}
 
-		s.logger.Info().Str("status", status).Msg("DAP session ended")
+		s.logger.Info().
+			Enum(logFieldStatus, status).
+			Msg(logMessageSessionEnded)
 	}()
 
 	for {
@@ -318,7 +323,7 @@ func (s *Server) cleanup() error {
 
 		if s.owned.debug != "" {
 			if _, err := s.debugs.TerminateSession(ctx, s.owned.debug); err != nil {
-				s.logger.Error().Err(err).Msg("DAP debug session cleanup termination failed")
+				s.logger.Error().Err(err).Msg(logMessageDebugSessionCleanupFailed)
 			}
 
 			result = errors.Join(result, s.debugs.CloseSession(ctx, s.owned.debug))

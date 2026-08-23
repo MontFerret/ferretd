@@ -9,10 +9,10 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/exec"
 	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
+	"github.com/MontFerret/ferretd/internal/logging"
 	"github.com/MontFerret/ferretd/internal/transport"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -25,7 +25,7 @@ type Daemon struct {
 
 	endpoint transport.Endpoint
 	version  string
-	logger   zerolog.Logger
+	logger   logging.Logger
 	shutdown chan struct{}
 	stopDone chan struct{}
 
@@ -61,7 +61,7 @@ func New(options Options) (*Daemon, error) {
 		executions: executionManager,
 		endpoint:   options.Endpoint,
 		version:    options.Version,
-		logger:     *options.Logger,
+		logger:     logging.New(*options.Logger),
 		shutdown:   make(chan struct{}),
 		stopDone:   make(chan struct{}),
 		state:      stateNew,
@@ -126,9 +126,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.mu.Unlock()
 
 	d.logger.Info().
-		Str("endpoint", d.endpoint.String()).
-		Str("version", d.version).
-		Msg("ferretd started")
+		String(logFieldEndpoint, d.endpoint.String()).
+		String(logFieldVersion, d.version).
+		Msg(logMessageStarted)
 
 	serveDone := make(chan error, 1)
 	go func() {
@@ -226,7 +226,7 @@ func (d *Daemon) finishStop(err error) {
 	d.mu.Unlock()
 
 	if err != nil {
-		d.logger.Error().Err(err).Msg("ferretd shutdown failed")
+		d.logger.Error().Err(err).Msg(logMessageShutdownFailed)
 	}
 }
 

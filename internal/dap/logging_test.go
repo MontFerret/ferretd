@@ -49,7 +49,7 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
-	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
+	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != stopReasonEntry.String() {
 		t.Fatalf("stopped event = %#v", stopped)
 	}
 
@@ -72,50 +72,56 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 
 	records := decodeDiagnostics(t, diagnostics.Bytes())
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level": "info", "component": "dap", "message": "DAP session started",
+		zerolog.LevelFieldName: "info", logFieldComponent.FieldName(): logComponentDAP.String(),
+		zerolog.MessageFieldName: logMessageSessionStarted,
 	})
 	created := requireDiagnostic(t, records, diagnosticRecord{
-		"level":         "info",
-		"message":       "DAP debug session created",
-		"program":       program,
-		"root":          root,
-		"stop_on_entry": true,
+		zerolog.LevelFieldName:          "info",
+		zerolog.MessageFieldName:        logMessageDebugSessionCreated,
+		logFieldProgram.FieldName():     program,
+		logFieldRoot.FieldName():        root,
+		logFieldStopOnEntry.FieldName(): true,
 	})
-	for _, key := range []string{"workspace_id", "execution_session_id", "debug_session_id"} {
-		if value, ok := created[key].(string); !ok || value == "" {
-			t.Fatalf("created diagnostic %s = %#v", key, created[key])
+	for _, field := range []logField{logFieldWorkspaceID, logFieldExecutionSessionID, logFieldDebugSessionID} {
+		value := created.field(field)
+		if stringValue, ok := value.(string); !ok || stringValue == "" {
+			t.Fatalf("created diagnostic %s = %#v", field, value)
 		}
 	}
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level": "info", "message": "DAP configuration completed",
+		zerolog.LevelFieldName: "info", zerolog.MessageFieldName: logMessageConfigurationCompleted,
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level": "info", "message": "DAP execution stopped", "reason": "entry", "thread_id": 1,
+		zerolog.LevelFieldName: "info", zerolog.MessageFieldName: logMessageExecutionStopped,
+		logFieldReason.FieldName(): stopReasonEntry.String(), logFieldThreadID.FieldName(): 1,
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level":          "warn",
-		"message":        "DAP request failed",
-		"command":        "setBreakpoints",
-		"launch_program": program,
-		"error":          "breakpoint source must match the launched program",
+		zerolog.LevelFieldName:            "warn",
+		zerolog.MessageFieldName:          logMessageRequestFailed,
+		logFieldCommand.FieldName():       "setBreakpoints",
+		logFieldLaunchProgram.FieldName(): program,
+		zerolog.ErrorFieldName:            "breakpoint source must match the launched program",
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level": "warn", "message": "DAP request failed", "command": "scopes", "frame_id": 37,
+		zerolog.LevelFieldName: "warn", zerolog.MessageFieldName: logMessageRequestFailed,
+		logFieldCommand.FieldName(): "scopes", logFieldFrameID.FieldName(): 37,
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level":             "warn",
-		"message":           "DAP request failed",
-		"command":           "evaluate",
-		"context":           "watch",
-		"expression_length": 0,
-		"error":             "invalid argument: debug expression is empty",
+		zerolog.LevelFieldName:               "warn",
+		zerolog.MessageFieldName:             logMessageRequestFailed,
+		logFieldCommand.FieldName():          "evaluate",
+		logFieldContext.FieldName():          "watch",
+		logFieldExpressionLength.FieldName(): 0,
+		zerolog.ErrorFieldName:               "invalid argument: debug expression is empty",
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level": "info", "message": "DAP session ended", "status": "completed",
+		zerolog.LevelFieldName: "info", zerolog.MessageFieldName: logMessageSessionEnded,
+		logFieldStatus.FieldName(): sessionEndCompleted.String(),
 	})
 
 	for _, record := range records {
-		if record["message"] == "DAP request" || record["message"] == "DAP response" || record["message"] == "DAP event" {
+		message := record[zerolog.MessageFieldName]
+		if message == logMessageRequest || message == logMessageResponse || message == logMessageEvent {
 			t.Fatalf("info diagnostics contain debug traffic: %#v", record)
 		}
 	}
@@ -161,7 +167,7 @@ RETURN @`+parameterKey)
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
-	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
+	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != stopReasonEntry.String() {
 		t.Fatalf("stopped event = %#v", stopped)
 	}
 
@@ -201,7 +207,7 @@ RETURN @`+parameterKey)
 		t.Fatalf("continue response = %#v", response)
 	}
 	if output, ok := client.read().(*protocol.OutputEvent); !ok ||
-		output.Body.Category != "stdout" || !strings.Contains(output.Body.Output, parameterSecret) {
+		output.Body.Category != outputCategoryStdout.String() || !strings.Contains(output.Body.Output, parameterSecret) {
 		t.Fatalf("output event = %#v", output)
 	}
 	if exited, ok := client.read().(*protocol.ExitedEvent); !ok || exited.Body.ExitCode != 0 {
@@ -239,26 +245,34 @@ RETURN @`+parameterKey)
 	}
 
 	requireDiagnostic(t, records, diagnosticRecord{
-		"message": "DAP request", "command": "initialize", "direction": "<-", "kind": "request", "request_seq": 1,
+		zerolog.MessageFieldName: logMessageRequest, logFieldCommand.FieldName(): "initialize",
+		logFieldDirection.FieldName(): logDirectionInbound.String(), logFieldKind.FieldName(): logKindRequest.String(),
+		logFieldRequestSequence.FieldName(): 1,
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"message": "DAP response", "command": "initialize", "direction": "->", "kind": "response", "success": true,
+		zerolog.MessageFieldName: logMessageResponse, logFieldCommand.FieldName(): "initialize",
+		logFieldDirection.FieldName(): logDirectionOutbound.String(), logFieldKind.FieldName(): logKindResponse.String(),
+		logFieldSuccess.FieldName(): true,
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"message": "DAP event", "event": "initialized", "direction": "->", "kind": "event",
+		zerolog.MessageFieldName: logMessageEvent, logFieldEvent.FieldName(): eventInitialized,
+		logFieldDirection.FieldName(): logDirectionOutbound.String(), logFieldKind.FieldName(): logKindEvent.String(),
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"message": "DAP request", "command": "evaluate", "context": "watch", "frame_id": 0,
-		"expression_length": len(expression),
+		zerolog.MessageFieldName: logMessageRequest, logFieldCommand.FieldName(): "evaluate",
+		logFieldContext.FieldName(): "watch", logFieldFrameID.FieldName(): 0,
+		logFieldExpressionLength.FieldName(): len(expression),
 	})
 	failureRecord := requireDiagnostic(t, records, diagnosticRecord{
-		"message": "DAP request failed", "command": "evaluate", "error": "debug evaluation failed",
+		zerolog.MessageFieldName: logMessageRequestFailed, logFieldCommand.FieldName(): "evaluate",
+		zerolog.ErrorFieldName: "debug evaluation failed",
 	})
-	if errorType, ok := failureRecord["error_type"].(string); !ok || errorType == "" {
-		t.Fatalf("evaluation failure error_type = %#v", failureRecord["error_type"])
+	if errorType, ok := failureRecord.field(logFieldErrorType).(string); !ok || errorType == "" {
+		t.Fatalf("evaluation failure error_type = %#v", failureRecord.field(logFieldErrorType))
 	}
 	requireDiagnostic(t, records, diagnosticRecord{
-		"message": "DAP event", "event": "output", "category": "stdout",
+		zerolog.MessageFieldName: logMessageEvent, logFieldEvent.FieldName(): eventOutput,
+		logFieldCategory.FieldName(): outputCategoryStdout.String(),
 	})
 
 	for _, secret := range []string{
@@ -327,7 +341,8 @@ func TestDAPDebugLoggingPreservesProtocolOutput(t *testing.T) {
 	if !bytes.Equal(got, want) {
 		t.Fatalf("debug protocol output differs:\n got %q\nwant %q", got, want)
 	}
-	if bytes.Contains(got, []byte("DAP request")) || bytes.Contains(got, []byte("component=dap")) {
+	componentDiagnostic := logFieldComponent.FieldName() + "=" + logComponentDAP.String()
+	if bytes.Contains(got, []byte(logMessageRequest)) || bytes.Contains(got, []byte(componentDiagnostic)) {
 		t.Fatalf("protocol output contains diagnostics: %q", got)
 	}
 
@@ -348,6 +363,10 @@ func TestDAPDebugLoggingPreservesProtocolOutput(t *testing.T) {
 }
 
 type diagnosticRecord map[string]any
+
+func (r diagnosticRecord) field(field logField) any {
+	return r[field.FieldName()]
+}
 
 func newCaptureLogger(output io.Writer, level zerolog.Level) *zerolog.Logger {
 	logger := zerolog.New(zerolog.SyncWriter(output)).Level(level)
@@ -416,31 +435,31 @@ func diagnosticMatches(record, fields diagnosticRecord) bool {
 func traceSignatures(records []diagnosticRecord) []string {
 	result := make([]string, 0)
 	for _, record := range records {
-		switch record["message"] {
-		case "DAP request":
+		switch record[zerolog.MessageFieldName] {
+		case logMessageRequest:
 			result = append(result, fmt.Sprintf(
 				"request:%v:%v",
-				record["command"],
-				record["request_seq"],
+				record.field(logFieldCommand),
+				record.field(logFieldRequestSequence),
 			))
-		case "DAP response":
+		case logMessageResponse:
 			result = append(result, fmt.Sprintf(
 				"response:%v:%v:%v",
-				record["command"],
-				record["request_seq"],
-				record["response_seq"],
+				record.field(logFieldCommand),
+				record.field(logFieldRequestSequence),
+				record.field(logFieldResponseSequence),
 			))
-		case "DAP event":
+		case logMessageEvent:
 			result = append(result, fmt.Sprintf(
 				"event:%v:%v",
-				record["event"],
-				record["event_seq"],
+				record.field(logFieldEvent),
+				record.field(logFieldEventSequence),
 			))
-		case "DAP request failed":
+		case logMessageRequestFailed:
 			result = append(result, fmt.Sprintf(
 				"failure:%v:%v",
-				record["command"],
-				record["request_seq"],
+				record.field(logFieldCommand),
+				record.field(logFieldRequestSequence),
 			))
 		}
 	}
