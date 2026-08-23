@@ -90,10 +90,14 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 	client.send(&protocol.EvaluateRequest{
 		Request: evaluate,
 		Arguments: protocol.EvaluateArguments{
-			Context: "watch",
+			Context: "repl",
+			FrameId: 37,
 		},
 	})
-	assertDAPFailure(t, client.read(), "evaluate", "invalid argument: debug expression is empty")
+	if response, ok := client.read().(*protocol.EvaluateResponse); !ok || !response.Success ||
+		response.Body.Result != "" || response.Body.VariablesReference != 0 {
+		t.Fatalf("empty evaluate response = %#v", response)
+	}
 	client.disconnect()
 
 	records := decodeDiagnostics(t, diagnostics.Bytes())
@@ -142,18 +146,14 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 		"level": "warn", "message": "DAP request failed", "command": "scopes", "frame_id": 37,
 	})
 	requireDiagnostic(t, records, diagnosticRecord{
-		"level":             "warn",
-		"message":           "DAP request failed",
-		"command":           "evaluate",
-		"context":           "watch",
-		"expression_length": 0,
-		"error":             "invalid argument: debug expression is empty",
-	})
-	requireDiagnostic(t, records, diagnosticRecord{
 		"level": "info", "message": "DAP session ended", "status": "completed",
 	})
 
 	for _, record := range records {
+		if record["command"] == "evaluate" {
+			t.Fatalf("info diagnostics contain empty evaluate traffic: %#v", record)
+		}
+
 		if record["message"] == "DAP request" || record["message"] == "DAP response" || record["message"] == "DAP event" {
 			t.Fatalf("info diagnostics contain debug traffic: %#v", record)
 		}
@@ -231,6 +231,20 @@ RETURN @`+parameterKey)
 		t.Fatalf("failed evaluate response = %#v", failure)
 	}
 
+	emptyEvaluate := client.request("evaluate")
+	client.send(&protocol.EvaluateRequest{
+		Request: emptyEvaluate,
+		Arguments: protocol.EvaluateArguments{
+			Context: "repl",
+			FrameId: 37,
+		},
+	})
+	emptyResponse, ok := client.read().(*protocol.EvaluateResponse)
+	if !ok || !emptyResponse.Success || emptyResponse.Body.Result != "" ||
+		emptyResponse.Body.VariablesReference != 0 {
+		t.Fatalf("empty evaluate response = %#v", emptyResponse)
+	}
+
 	continueRequest := client.request("continue")
 	client.send(&protocol.ContinueRequest{
 		Request:   continueRequest,
@@ -265,13 +279,15 @@ RETURN @`+parameterKey)
 		"response:evaluate:4:6",
 		"request:evaluate:5",
 		"failure:evaluate:5",
-		"request:continue:6",
-		"response:continue:6:8",
-		"event:output:9",
-		"event:exited:10",
-		"event:terminated:11",
-		"request:disconnect:7",
-		"response:disconnect:7:12",
+		"request:evaluate:6",
+		"response:evaluate:6:8",
+		"request:continue:7",
+		"response:continue:7:9",
+		"event:output:10",
+		"event:exited:11",
+		"event:terminated:12",
+		"request:disconnect:8",
+		"response:disconnect:8:13",
 	}
 	gotTrace := traceSignatures(records)
 	// A client can send its next request after reading an event but before the
@@ -301,6 +317,24 @@ RETURN @`+parameterKey)
 	if errorType, ok := failureRecord["error_type"].(string); !ok || errorType == "" {
 		t.Fatalf("evaluation failure error_type = %#v", failureRecord["error_type"])
 	}
+	requireDiagnostic(t, records, diagnosticRecord{
+		"message":           "DAP request",
+		"command":           "evaluate",
+		"request_seq":       6,
+		"context":           "repl",
+		"frame_id":          37,
+		"expression_length": 0,
+	})
+	requireDiagnostic(t, records, diagnosticRecord{
+		"message":           "DAP response",
+		"command":           "evaluate",
+		"request_seq":       6,
+		"success":           true,
+		"context":           "repl",
+		"frame_id":          37,
+		"expression_length": 0,
+		"empty":             true,
+	})
 	requireDiagnostic(t, records, diagnosticRecord{
 		"message": "DAP event", "event": "output", "category": "stdout",
 	})

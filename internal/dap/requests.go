@@ -849,6 +849,24 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 		)
 	}
 
+	if strings.TrimSpace(request.Arguments.Expression) == "" {
+		return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
+			response := s.response(request.GetRequest())
+			response.ProtocolMessage = base
+
+			return &protocol.EvaluateResponse{
+				Response: response,
+				Body: protocol.EvaluateResponseBody{
+					Result:             "",
+					VariablesReference: 0,
+				},
+			}
+		}, func(event *zerolog.Event) {
+			evaluateFields(event)
+			event.Bool("empty", true)
+		})
+	}
+
 	frame := 0
 	if request.Arguments.FrameId != 0 {
 		var found bool

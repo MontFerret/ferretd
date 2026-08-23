@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	ferretruntime "github.com/MontFerret/ferret/v2/pkg/runtime"
 
 	"github.com/MontFerret/ferretd/internal/exec"
 )
@@ -241,6 +244,10 @@ RETURN {result, box}`)
 	value, err := fixture.manager.Evaluate(context.Background(), created.ID, 1, "@input + 3")
 	if err != nil || value.Display != "5" {
 		t.Fatalf("caller evaluation = %+v, %v", value, err)
+	}
+	if _, err := fixture.manager.Evaluate(context.Background(), created.ID, 1, ""); !errors.Is(err, ferretruntime.ErrInvalidArgument) ||
+		!strings.Contains(err.Error(), "debug expression is empty") {
+		t.Fatalf("empty caller evaluation error = %v, want debug expression invalid argument", err)
 	}
 
 	if _, err := fixture.manager.StepOverSession(context.Background(), created.ID); err != nil {
