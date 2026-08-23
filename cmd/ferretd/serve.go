@@ -21,21 +21,16 @@ func newServeCommand(version string) *cobra.Command {
 		Short: "Start the local daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context(), version, endpointValue, logLevel(logLevelValue), cmd.ErrOrStderr())
+			return serve(cmd.Context(), version, endpointValue, logLevelValue, cmd.ErrOrStderr())
 		},
 	}
 	command.Flags().StringVar(&endpointValue, "endpoint", "", "local endpoint URL")
-	command.Flags().StringVar(
-		&logLevelValue,
-		"log-level",
-		defaultLogLevel.String(),
-		"log level (debug, info, warn, error)",
-	)
+	command.Flags().StringVar(&logLevelValue, "log-level", defaultLogLevel, "log level (debug, info, warn, error)")
 
 	return command
 }
 
-func serve(ctx context.Context, version, endpointValue string, logLevelValue logLevel, stderr io.Writer) error {
+func serve(ctx context.Context, version, endpointValue, logLevelValue string, stderr io.Writer) error {
 	var endpoint transport.Endpoint
 	if endpointValue != "" {
 		var err error

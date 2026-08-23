@@ -9,24 +9,24 @@ import (
 	"strings"
 
 	protocol "github.com/google/go-dap"
+	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
-	"github.com/MontFerret/ferretd/internal/logging"
 )
 
 func (s *Server) handleInitialize(
 	request *protocol.InitializeRequest,
 	arguments initializeClientOptions,
 ) error {
-	s.traceRequest(request.GetRequest(), func(record logging.Record) {
-		record.String(logFieldPathFormat, request.Arguments.PathFormat)
+	s.traceRequest(request.GetRequest(), func(event *zerolog.Event) {
+		event.Str("path_format", request.Arguments.PathFormat)
 	})
 
 	options, err := arguments.normalized()
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err, func(record logging.Record) {
-			record.String(logFieldPathFormat, request.Arguments.PathFormat)
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("path_format", request.Arguments.PathFormat)
 		})
 	}
 
@@ -57,8 +57,8 @@ func (s *Server) handleInitialize(
 }
 
 func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchRequest) error {
-	s.traceRequest(request.GetRequest(), func(record logging.Record) {
-		record.Int(logFieldArgumentsBytes, len(request.Arguments))
+	s.traceRequest(request.GetRequest(), func(event *zerolog.Event) {
+		event.Int("arguments_bytes", len(request.Arguments))
 	})
 
 	s.stateMu.Lock()
@@ -81,20 +81,16 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		return s.sendFailure(
 			request.GetRequest(),
 			err,
-			func(record logging.Record) {
-				record.
-					String(logFieldProgram, arguments.Program).
-					String(logFieldCWD, arguments.CWD)
+			func(event *zerolog.Event) {
+				event.Str("program", arguments.Program).Str("cwd", arguments.CWD)
 			},
 		)
 	}
 
 	opened, err := s.workspaces.Open(ctx, paths.root)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err, func(record logging.Record) {
-			record.
-				String(logFieldProgram, paths.program).
-				String(logFieldRoot, paths.root)
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("program", paths.program).Str("root", paths.root)
 		})
 	}
 
@@ -105,11 +101,11 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		return s.sendFailure(
 			request.GetRequest(),
 			err,
-			func(record logging.Record) {
-				record.
-					String(logFieldProgram, paths.program).
-					String(logFieldRoot, paths.root).
-					String(logFieldWorkspaceID, opened.ID().String())
+			func(event *zerolog.Event) {
+				event.
+					Str("program", paths.program).
+					Str("root", paths.root).
+					Str("workspace_id", opened.ID().String())
 			},
 		)
 	}
@@ -127,12 +123,12 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		return s.sendFailure(
 			request.GetRequest(),
 			err,
-			func(record logging.Record) {
-				record.
-					String(logFieldProgram, paths.program).
-					String(logFieldRoot, paths.root).
-					String(logFieldWorkspaceID, opened.ID().String()).
-					String(logFieldExecutionSessionID, session.ID.String())
+			func(event *zerolog.Event) {
+				event.
+					Str("program", paths.program).
+					Str("root", paths.root).
+					Str("workspace_id", opened.ID().String()).
+					Str("execution_session_id", session.ID.String())
 			},
 		)
 	}
@@ -146,13 +142,13 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		return s.sendFailure(
 			request.GetRequest(),
 			err,
-			func(record logging.Record) {
-				record.
-					String(logFieldProgram, paths.program).
-					String(logFieldRoot, paths.root).
-					String(logFieldWorkspaceID, opened.ID().String()).
-					String(logFieldExecutionSessionID, session.ID.String()).
-					String(logFieldDebugSessionID, debugSession.ID.String())
+			func(event *zerolog.Event) {
+				event.
+					Str("program", paths.program).
+					Str("root", paths.root).
+					Str("workspace_id", opened.ID().String()).
+					Str("execution_session_id", session.ID.String()).
+					Str("debug_session_id", debugSession.ID.String())
 			},
 		)
 	}
@@ -173,15 +169,13 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 	s.stateMu.Unlock()
 
 	s.logger.Info().
-		String(logFieldProgram, paths.program).
-		String(logFieldRoot, paths.root).
-		Bool(logFieldStopOnEntry, arguments.StopOnEntry).
-		Msg(logMessageDebugSessionCreated)
+		Str("program", paths.program).
+		Str("root", paths.root).
+		Bool("stop_on_entry", arguments.StopOnEntry).
+		Msg("DAP debug session created")
 
 	if err := s.sendEvent(eventInitialized, func(base protocol.ProtocolMessage) protocol.Message {
-		return &protocol.InitializedEvent{
-			Event: protocol.Event{ProtocolMessage: base, Event: eventInitialized},
-		}
+		return &protocol.InitializedEvent{Event: protocol.Event{ProtocolMessage: base, Event: eventInitialized}}
 	}); err != nil {
 		return err
 	}
@@ -265,16 +259,16 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 	s.stateMu.Lock()
 	s.configured = true
 	s.stateMu.Unlock()
-	s.logger.Info().Msg(logMessageConfigurationCompleted)
+	s.logger.Info().Msg("DAP configuration completed")
 
 	return s.resolvePendingLaunch()
 }
 
 func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.SetBreakpointsRequest) error {
-	breakpointFields := func(record logging.Record) {
-		record.
-			String(logFieldSource, request.Arguments.Source.Path).
-			Int(logFieldCount, len(request.Arguments.Breakpoints))
+	breakpointFields := func(event *zerolog.Event) {
+		event.
+			Str("source", request.Arguments.Source.Path).
+			Int("count", len(request.Arguments.Breakpoints))
 	}
 	s.traceRequest(request.GetRequest(), breakpointFields)
 
@@ -291,9 +285,9 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		return s.sendFailure(
 			request.GetRequest(),
 			errors.New("source references are not supported"),
-			func(record logging.Record) {
-				breakpointFields(record)
-				record.Int(logFieldSourceReference, request.Arguments.Source.SourceReference)
+			func(event *zerolog.Event) {
+				breakpointFields(event)
+				event.Int("source_reference", request.Arguments.Source.SourceReference)
 			},
 		)
 	}
@@ -311,11 +305,11 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		return s.sendFailure(
 			request.GetRequest(),
 			errors.New("breakpoint source must match the launched program"),
-			func(record logging.Record) {
-				record.
-					String(logFieldSource, path).
-					String(logFieldLaunchProgram, s.owned.program).
-					Int(logFieldCount, len(request.Arguments.Breakpoints))
+			func(event *zerolog.Event) {
+				event.
+					Str("source", path).
+					Str("launch_program", s.owned.program).
+					Int("count", len(request.Arguments.Breakpoints))
 			},
 		)
 	}
@@ -326,10 +320,8 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 			return s.sendFailure(
 				request.GetRequest(),
 				errors.New("conditional, hit-count, and log breakpoints are not supported"),
-				func(record logging.Record) {
-					record.
-						String(logFieldSource, path).
-						Int(logFieldCount, len(request.Arguments.Breakpoints))
+				func(event *zerolog.Event) {
+					event.Str("source", path).Int("count", len(request.Arguments.Breakpoints))
 				},
 			)
 		}
@@ -341,11 +333,11 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 			return s.sendFailure(
 				request.GetRequest(),
 				errors.New("breakpoint line or column is invalid"),
-				func(record logging.Record) {
-					record.
-						String(logFieldSource, path).
-						Int(logFieldLine, breakpoint.Line).
-						Int(logFieldColumn, breakpoint.Column)
+				func(event *zerolog.Event) {
+					event.
+						Str("source", path).
+						Int("line", breakpoint.Line).
+						Int("column", breakpoint.Column)
 				},
 			)
 		}
@@ -355,15 +347,15 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 
 	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, path, locations)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err, func(record logging.Record) {
-			record.String(logFieldSource, path).Int(logFieldCount, len(locations))
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("source", path).Int("count", len(locations))
 		})
 	}
 
 	clientPath, err := s.clientPath(path)
 	if err != nil {
-		return s.sendFailure(request.GetRequest(), err, func(record logging.Record) {
-			record.String(logFieldSource, path).Int(logFieldCount, len(locations))
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("source", path).Int("count", len(locations))
 		})
 	}
 
@@ -389,8 +381,8 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 			Response: response,
 			Body:     protocol.SetBreakpointsResponseBody{Breakpoints: result},
 		}
-	}, func(record logging.Record) {
-		record.Int(logFieldCount, len(result))
+	}, func(event *zerolog.Event) {
+		event.Int("count", len(result))
 	})
 }
 
@@ -449,8 +441,8 @@ func (s *Server) handleContinue(ctx context.Context, request *protocol.ContinueR
 }
 
 func (s *Server) handlePause(ctx context.Context, request *protocol.PauseRequest) error {
-	threadFields := func(record logging.Record) {
-		record.Int(logFieldThreadID, request.Arguments.ThreadId)
+	threadFields := func(event *zerolog.Event) {
+		event.Int("thread_id", request.Arguments.ThreadId)
 	}
 	s.traceRequest(request.GetRequest(), threadFields)
 
@@ -514,8 +506,8 @@ func (s *Server) handleResume(
 	resume func(debug.SessionID) error,
 	message func(protocol.Response) protocol.Message,
 ) error {
-	threadFields := func(record logging.Record) {
-		record.Int(logFieldThreadID, requestedThread)
+	threadFields := func(event *zerolog.Event) {
+		event.Int("thread_id", requestedThread)
 	}
 	s.traceRequest(request, threadFields)
 
@@ -560,17 +552,17 @@ func (s *Server) handleThreads(request *protocol.ThreadsRequest) error {
 				Id: threadID, Name: threadName,
 			}}},
 		}
-	}, func(record logging.Record) {
-		record.Int(logFieldCount, 1)
+	}, func(event *zerolog.Event) {
+		event.Int("count", 1)
 	})
 }
 
 func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTraceRequest) error {
-	stackFields := func(record logging.Record) {
-		record.
-			Int(logFieldThreadID, request.Arguments.ThreadId).
-			Int(logFieldStartFrame, request.Arguments.StartFrame).
-			Int(logFieldLevels, request.Arguments.Levels)
+	stackFields := func(event *zerolog.Event) {
+		event.
+			Int("thread_id", request.Arguments.ThreadId).
+			Int("start_frame", request.Arguments.StartFrame).
+			Int("levels", request.Arguments.Levels)
 	}
 	s.traceRequest(request.GetRequest(), stackFields)
 
@@ -597,11 +589,11 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 		return s.sendFailure(
 			request.GetRequest(),
 			errors.New("startFrame is invalid"),
-			func(record logging.Record) {
-				record.
-					Int(logFieldThreadID, request.Arguments.ThreadId).
-					Int(logFieldStartFrame, start).
-					Int(logFieldLevels, request.Arguments.Levels)
+			func(event *zerolog.Event) {
+				event.
+					Int("thread_id", request.Arguments.ThreadId).
+					Int("start_frame", start).
+					Int("levels", request.Arguments.Levels)
 			},
 		)
 	}
@@ -618,10 +610,10 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 			return s.sendFailure(
 				request.GetRequest(),
 				pathErr,
-				func(record logging.Record) {
-					record.
-						Int(logFieldThreadID, request.Arguments.ThreadId).
-						String(logFieldSource, frame.Location.File)
+				func(event *zerolog.Event) {
+					event.
+						Int("thread_id", request.Arguments.ThreadId).
+						Str("source", frame.Location.File)
 				},
 			)
 		}
@@ -646,14 +638,14 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 				TotalFrames: len(frames),
 			},
 		}
-	}, func(record logging.Record) {
-		record.Int(logFieldFrames, len(result)).Int(logFieldTotalFrames, len(frames))
+	}, func(event *zerolog.Event) {
+		event.Int("frames", len(result)).Int("total_frames", len(frames))
 	})
 }
 
 func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesRequest) error {
-	frameFields := func(record logging.Record) {
-		record.Int(logFieldFrameID, request.Arguments.FrameId)
+	frameFields := func(event *zerolog.Event) {
+		event.Int("frame_id", request.Arguments.FrameId)
 	}
 	s.traceRequest(request.GetRequest(), frameFields)
 
@@ -680,9 +672,9 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 		return s.sendFailure(
 			request.GetRequest(),
 			err,
-			func(record logging.Record) {
-				frameFields(record)
-				record.Int(logFieldFrameIndex, frame)
+			func(event *zerolog.Event) {
+				frameFields(event)
+				event.Int("frame_index", frame)
 			},
 		)
 	}
@@ -706,15 +698,15 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 			Response: response,
 			Body:     protocol.ScopesResponseBody{Scopes: result},
 		}
-	}, func(record logging.Record) {
-		frameFields(record)
-		record.Int(logFieldScopes, len(result))
+	}, func(event *zerolog.Event) {
+		frameFields(event)
+		event.Int("scopes", len(result))
 	})
 }
 
 func (s *Server) handleVariables(ctx context.Context, request *protocol.VariablesRequest) error {
-	variableFields := func(record logging.Record) {
-		record.Int(logFieldVariablesReference, request.Arguments.VariablesReference)
+	variableFields := func(event *zerolog.Event) {
+		event.Int("variables_reference", request.Arguments.VariablesReference)
 	}
 	s.traceRequest(request.GetRequest(), variableFields)
 
@@ -731,9 +723,9 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 		return s.sendFailure(
 			request.GetRequest(),
 			errors.New("variable filtering and paging are not supported"),
-			func(record logging.Record) {
-				variableFields(record)
-				record.Int(logFieldStart, request.Arguments.Start).Int(logFieldCount, request.Arguments.Count)
+			func(event *zerolog.Event) {
+				variableFields(event)
+				event.Int("start", request.Arguments.Start).Int("count", request.Arguments.Count)
 			},
 		)
 	}
@@ -773,18 +765,18 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 			Response: response,
 			Body:     protocol.VariablesResponseBody{Variables: result},
 		}
-	}, func(record logging.Record) {
-		variableFields(record)
-		record.Int(logFieldVariables, len(result))
+	}, func(event *zerolog.Event) {
+		variableFields(event)
+		event.Int("variables", len(result))
 	})
 }
 
 func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateRequest) error {
-	evaluateFields := func(record logging.Record) {
-		record.
-			String(logFieldContext, request.Arguments.Context).
-			Int(logFieldFrameID, request.Arguments.FrameId).
-			Int(logFieldExpressionLength, len(request.Arguments.Expression))
+	evaluateFields := func(event *zerolog.Event) {
+		event.
+			Str("context", request.Arguments.Context).
+			Int("frame_id", request.Arguments.FrameId).
+			Int("expression_length", len(request.Arguments.Expression))
 	}
 	s.traceRequest(request.GetRequest(), evaluateFields)
 
@@ -817,9 +809,9 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 		diagnosticFields := logEnricher(evaluateFields)
 		if strings.TrimSpace(request.Arguments.Expression) != "" {
 			diagnosticErr = errors.New("debug evaluation failed")
-			diagnosticFields = func(record logging.Record) {
-				evaluateFields(record)
-				record.String(logFieldErrorType, fmt.Sprintf("%T", err))
+			diagnosticFields = func(event *zerolog.Event) {
+				evaluateFields(event)
+				event.Str("error_type", fmt.Sprintf("%T", err))
 			}
 		}
 
@@ -843,8 +835,8 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 
 func (s *Server) handleTerminate(ctx context.Context, request *protocol.TerminateRequest) error {
 	restart := request.Arguments != nil && request.Arguments.Restart
-	restartFields := func(record logging.Record) {
-		record.Bool(logFieldRestart, restart)
+	restartFields := func(event *zerolog.Event) {
+		event.Bool("restart", restart)
 	}
 	s.traceRequest(request.GetRequest(), restartFields)
 
@@ -879,8 +871,8 @@ func (s *Server) handleTerminate(ctx context.Context, request *protocol.Terminat
 func (s *Server) handleDisconnect(_ context.Context, request *protocol.DisconnectRequest) error {
 	restart := request.Arguments != nil && request.Arguments.Restart
 	suspend := request.Arguments != nil && request.Arguments.SuspendDebuggee
-	disconnectFields := func(record logging.Record) {
-		record.Bool(logFieldRestart, restart).Bool(logFieldSuspendDebuggee, suspend)
+	disconnectFields := func(event *zerolog.Event) {
+		event.Bool("restart", restart).Bool("suspend_debuggee", suspend)
 	}
 	s.traceRequest(request.GetRequest(), disconnectFields)
 

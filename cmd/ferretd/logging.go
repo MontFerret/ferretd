@@ -7,31 +7,18 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type logLevel string
+const defaultLogLevel = "info"
 
-const (
-	logLevelDebug logLevel = "debug"
-	logLevelInfo  logLevel = "info"
-	logLevelWarn  logLevel = "warn"
-	logLevelError logLevel = "error"
-
-	defaultLogLevel = logLevelInfo
-)
-
-func (l logLevel) String() string {
-	return string(l)
-}
-
-func newLogger(output io.Writer, value logLevel) (*zerolog.Logger, error) {
+func newLogger(output io.Writer, value string) (*zerolog.Logger, error) {
 	var level zerolog.Level
 	switch value {
-	case logLevelDebug:
+	case "debug":
 		level = zerolog.DebugLevel
-	case logLevelInfo:
+	case "info":
 		level = zerolog.InfoLevel
-	case logLevelWarn:
+	case "warn":
 		level = zerolog.WarnLevel
-	case logLevelError:
+	case "error":
 		level = zerolog.ErrorLevel
 	default:
 		return nil, fmt.Errorf("log level must be debug, info, warn, or error")

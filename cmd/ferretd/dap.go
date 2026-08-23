@@ -21,7 +21,7 @@ func newDAPCommand() *cobra.Command {
 		Short: "Start the debug adapter over stdio",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			logger, err := newLogger(cmd.ErrOrStderr(), logLevel(logLevelValue))
+			logger, err := newLogger(cmd.ErrOrStderr(), logLevelValue)
 			if err != nil {
 				return err
 			}
@@ -29,12 +29,7 @@ func newDAPCommand() *cobra.Command {
 			return runDAP(cmd.Context(), logger)
 		},
 	}
-	command.Flags().StringVar(
-		&logLevelValue,
-		"log-level",
-		defaultLogLevel.String(),
-		"log level (debug, info, warn, error)",
-	)
+	command.Flags().StringVar(&logLevelValue, "log-level", defaultLogLevel, "log level (debug, info, warn, error)")
 
 	return command
 }

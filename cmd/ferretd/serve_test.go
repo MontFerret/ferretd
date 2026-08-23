@@ -37,17 +37,12 @@ func TestServeStopsOnCancellation(t *testing.T) {
 			t.Fatalf("execute serve: %v", result.err)
 		}
 
-		var diagnostic struct {
-			Level    string `json:"level"`
-			Message  string `json:"message"`
-			Endpoint string `json:"endpoint"`
-			Version  string `json:"version"`
-		}
+		var diagnostic map[string]any
 		if err := json.Unmarshal([]byte(strings.TrimSpace(result.diagnostics)), &diagnostic); err != nil {
 			t.Fatalf("decode serve diagnostics %q: %v", result.diagnostics, err)
 		}
-		if diagnostic.Level != logLevelInfo.String() || diagnostic.Message != "ferretd started" ||
-			diagnostic.Endpoint != endpoint.String() || diagnostic.Version != "test-version" {
+		if diagnostic["level"] != "info" || diagnostic["message"] != "ferretd started" ||
+			diagnostic["endpoint"] != endpoint.String() || diagnostic["version"] != "test-version" {
 			t.Fatalf("serve diagnostic = %#v", diagnostic)
 		}
 	case <-time.After(time.Second):
