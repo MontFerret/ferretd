@@ -80,6 +80,14 @@ protocol-neutral debug model keeps Ferret source locations and value references.
 Handles are cleared whenever execution runs, steps, completes, fails, or
 terminates, so stale paused-state references cannot be reused.
 
+The adapter retains one canonical filesystem identity for the launched source
+alongside its user-facing path. Breakpoint paths are resolved against the launch
+root and compared by canonical path or operating-system file identity, while
+debugger calls continue using the launched spelling. VS Code configures stored
+breakpoints from other workspace files during startup; the adapter reports those
+and unavailable local sources as unverified without transferring ownership or
+mutating debugger state.
+
 Serialized writes preserve DAP message framing and sequence order. Stdout
 contains DAP messages only. The command injects the same stderr-backed JSON
 logger and `--log-level` contract used by `serve`; ordinary lifecycle and

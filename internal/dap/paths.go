@@ -21,7 +21,14 @@ type (
 	launchPaths struct {
 		root         string
 		program      string
+		identity     sourceIdentity
 		relativePath string
+	}
+
+	sourceIdentity struct {
+		path      string
+		canonical string
+		info      os.FileInfo
 	}
 )
 
@@ -66,12 +73,12 @@ func (a launchArguments) resolvePaths() (launchPaths, error) {
 		return launchPaths{}, errors.New("launch cwd is not a directory")
 	}
 
-	programInfo, err := os.Stat(program)
+	identity, err := newSourceIdentity(program, root)
 	if err != nil {
-		return launchPaths{}, fmt.Errorf("stat program: %w", err)
+		return launchPaths{}, fmt.Errorf("canonicalize program source: %w", err)
 	}
 
-	if !programInfo.Mode().IsRegular() {
+	if !identity.info.Mode().IsRegular() {
 		return launchPaths{}, errors.New("launch program is not a regular file")
 	}
 
@@ -88,7 +95,12 @@ func (a launchArguments) resolvePaths() (launchPaths, error) {
 		return launchPaths{}, errors.New("launch program must be contained within cwd")
 	}
 
-	return launchPaths{root: root, program: program, relativePath: filepath.ToSlash(relative)}, nil
+	return launchPaths{
+		root:         root,
+		program:      program,
+		identity:     identity,
+		relativePath: filepath.ToSlash(relative),
+	}, nil
 }
 
 func (s *Server) sourcePath(value string) (string, error) {
@@ -107,11 +119,44 @@ func (s *Server) sourcePath(value string) (string, error) {
 		path = value
 	}
 
-	if !filepath.IsAbs(path) {
-		return "", errors.New("source path must be absolute")
+	return filepath.Clean(path), nil
+}
+
+func newSourceIdentity(path, base string) (sourceIdentity, error) {
+	if !filepath.IsAbs(path) && base != "" {
+		path = filepath.Join(base, path)
 	}
 
-	return filepath.Clean(path), nil
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return sourceIdentity{}, fmt.Errorf("make source path absolute: %w", err)
+	}
+
+	identity := sourceIdentity{path: filepath.Clean(absolute)}
+	canonical, err := filepath.EvalSymlinks(identity.path)
+	if err != nil {
+		return identity, fmt.Errorf("resolve source symlinks: %w", err)
+	}
+
+	identity.canonical = filepath.Clean(canonical)
+	identity.info, err = os.Stat(identity.canonical)
+	if err != nil {
+		return identity, fmt.Errorf("stat canonical source: %w", err)
+	}
+
+	return identity, nil
+}
+
+func (i sourceIdentity) same(other sourceIdentity) bool {
+	if i.canonical != "" && i.canonical == other.canonical {
+		return true
+	}
+
+	if i.info == nil || other.info == nil {
+		return false
+	}
+
+	return os.SameFile(i.info, other.info)
 }
 
 func (s *Server) clientPath(path string) (string, error) {

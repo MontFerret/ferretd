@@ -394,7 +394,12 @@ func TestDAPLaunchIgnoresUnknownMetadataAndPreservesSupportedArguments(t *testin
 			client.server.stateMu.Lock()
 			owned := client.server.owned
 			client.server.stateMu.Unlock()
-			if owned.program != program || !owned.stopOnEntry {
+			wantIdentity, err := newSourceIdentity(program, root)
+			if err != nil {
+				t.Fatalf("newSourceIdentity: %v", err)
+			}
+			if owned.root != root || owned.program != program ||
+				!owned.programIdentity.same(wantIdentity) || !owned.stopOnEntry {
 				t.Fatalf("owned Session = %+v, want program %q and stopOnEntry", owned, program)
 			}
 
@@ -460,6 +465,204 @@ func TestDAPLaunchUnknownMetadataPreservesSupportedArgumentValidation(t *testing
 				t.Fatalf("launch response = %#v, want failure containing %q", response, test.want)
 			}
 
+			client.disconnect()
+		})
+	}
+}
+
+func TestDAPSetBreakpointsAcceptsEquivalentSourcePaths(t *testing.T) {
+	root := t.TempDir()
+	program := writeDAPProgram(t, root, "RETURN 1")
+	client := newTestClient(t)
+	initializeDAP(t, client)
+	launchDAP(t, client, program, root, true)
+
+	relativeRequest := client.request("setBreakpoints")
+	client.send(&protocol.SetBreakpointsRequest{
+		Request: relativeRequest,
+		Arguments: protocol.SetBreakpointsArguments{
+			Source:      protocol.Source{Path: filepath.Base(program)},
+			Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
+		},
+	})
+	relativeResponse, ok := client.read().(*protocol.SetBreakpointsResponse)
+	if !ok || !relativeResponse.Success || len(relativeResponse.Body.Breakpoints) != 1 {
+		t.Fatalf("relative setBreakpoints response = %#v", relativeResponse)
+	}
+	relativeBreakpoint := relativeResponse.Body.Breakpoints[0]
+	if !relativeBreakpoint.Verified || relativeBreakpoint.Id == 0 ||
+		relativeBreakpoint.Source == nil || relativeBreakpoint.Source.Path != program {
+		t.Fatalf("relative breakpoint = %#v", relativeBreakpoint)
+	}
+
+	absoluteRequest := client.request("setBreakpoints")
+	client.send(&protocol.SetBreakpointsRequest{
+		Request: absoluteRequest,
+		Arguments: protocol.SetBreakpointsArguments{
+			Source:      protocol.Source{Path: program},
+			Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
+		},
+	})
+	absoluteResponse, ok := client.read().(*protocol.SetBreakpointsResponse)
+	if !ok || !absoluteResponse.Success || len(absoluteResponse.Body.Breakpoints) != 1 {
+		t.Fatalf("absolute setBreakpoints response = %#v", absoluteResponse)
+	}
+	if got := absoluteResponse.Body.Breakpoints[0]; got.Id != relativeBreakpoint.Id ||
+		got.Source == nil || got.Source.Path != program {
+		t.Fatalf("absolute breakpoint = %#v, want stable ID %d", got, relativeBreakpoint.Id)
+	}
+
+	configurationDone := client.request("configurationDone")
+	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
+		t.Fatalf("configurationDone response = %#v", response)
+	}
+	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
+		t.Fatalf("launch response = %#v", response)
+	}
+	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
+		t.Fatalf("stopped event = %#v", stopped)
+	}
+
+	client.disconnect()
+}
+
+func TestDAPSetBreakpointsReturnsUnverifiedForUnownedSource(t *testing.T) {
+	root := t.TempDir()
+	program := writeDAPProgram(t, root, "RETURN 1")
+	other := filepath.Join(root, "other.fql")
+	if err := os.WriteFile(other, []byte("RETURN 2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	client := newTestClient(t)
+	initializeDAP(t, client)
+	launchDAP(t, client, program, root, true)
+
+	requested := []protocol.SourceBreakpoint{
+		{Line: 1},
+		{Line: 2, Column: 3},
+	}
+	setBreakpoints := client.request("setBreakpoints")
+	client.send(&protocol.SetBreakpointsRequest{
+		Request: setBreakpoints,
+		Arguments: protocol.SetBreakpointsArguments{
+			Source:      protocol.Source{Path: other},
+			Breakpoints: requested,
+		},
+	})
+	response, ok := client.read().(*protocol.SetBreakpointsResponse)
+	if !ok || !response.Success || len(response.Body.Breakpoints) != 2 {
+		t.Fatalf("setBreakpoints response = %#v", response)
+	}
+	for index, breakpoint := range response.Body.Breakpoints {
+		requestedBreakpoint := requested[index]
+		if breakpoint.Verified || breakpoint.Id != 0 || breakpoint.Message != "breakpoints are only supported for the launched program" ||
+			breakpoint.Source == nil || breakpoint.Source.Path != other ||
+			breakpoint.Line != requestedBreakpoint.Line || breakpoint.Column != requestedBreakpoint.Column {
+			t.Fatalf("breakpoint %d = %#v", index, breakpoint)
+		}
+	}
+
+	client.server.breakpointMu.Lock()
+	stableCount := len(client.server.stableBreakpoints)
+	nativeCount := len(client.server.nativeBreakpoints)
+	client.server.breakpointMu.Unlock()
+	if stableCount != 0 || nativeCount != 0 {
+		t.Fatalf("unowned source created breakpoint state: stable=%d native=%d", stableCount, nativeCount)
+	}
+
+	completePendingDAPLaunch(t, client)
+	client.disconnect()
+}
+
+func TestDAPSetBreakpointsReturnsUnverifiedForUnavailableSource(t *testing.T) {
+	root := t.TempDir()
+	program := writeDAPProgram(t, root, "RETURN 1")
+	missing := filepath.Join(root, "missing.fql")
+	client := newTestClient(t)
+	initializeDAP(t, client)
+	launchDAP(t, client, program, root, true)
+
+	setBreakpoints := client.request("setBreakpoints")
+	client.send(&protocol.SetBreakpointsRequest{
+		Request: setBreakpoints,
+		Arguments: protocol.SetBreakpointsArguments{
+			Source:      protocol.Source{Path: filepath.Base(missing)},
+			Breakpoints: []protocol.SourceBreakpoint{{Line: 7}},
+		},
+	})
+	response, ok := client.read().(*protocol.SetBreakpointsResponse)
+	if !ok || !response.Success || len(response.Body.Breakpoints) != 1 {
+		t.Fatalf("setBreakpoints response = %#v", response)
+	}
+	breakpoint := response.Body.Breakpoints[0]
+	if breakpoint.Verified || breakpoint.Message != "breakpoint source is unavailable" || breakpoint.Source == nil ||
+		breakpoint.Source.Path != missing || breakpoint.Line != 7 {
+		t.Fatalf("breakpoint = %#v", breakpoint)
+	}
+
+	completePendingDAPLaunch(t, client)
+	client.disconnect()
+}
+
+func TestDAPSetBreakpointsRejectsMalformedSourceForms(t *testing.T) {
+	tests := []struct {
+		name       string
+		pathFormat string
+		source     protocol.Source
+		want       string
+	}{
+		{name: "empty_path", pathFormat: "path", source: protocol.Source{}, want: "source path is required"},
+		{
+			name:       "source_reference",
+			pathFormat: "path",
+			source:     protocol.Source{Path: "/query.fql", SourceReference: 1},
+			want:       "source references are not supported",
+		},
+		{
+			name:       "remote_uri",
+			pathFormat: "uri",
+			source:     protocol.Source{Path: "https://example.com/query.fql"},
+			want:       "unsupported URI scheme",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			program := writeDAPProgram(t, root, "RETURN 1")
+			client := newTestClient(t)
+
+			initialize := client.request("initialize")
+			client.send(&protocol.InitializeRequest{
+				Request: initialize,
+				Arguments: protocol.InitializeRequestArguments{
+					AdapterID:       "ferretd",
+					PathFormat:      test.pathFormat,
+					LinesStartAt1:   true,
+					ColumnsStartAt1: true,
+				},
+			})
+			if response, ok := client.read().(*protocol.InitializeResponse); !ok || !response.Success {
+				t.Fatalf("initialize response = %#v", response)
+			}
+			launchDAP(t, client, program, root, true)
+
+			setBreakpoints := client.request("setBreakpoints")
+			client.send(&protocol.SetBreakpointsRequest{
+				Request: setBreakpoints,
+				Arguments: protocol.SetBreakpointsArguments{
+					Source:      test.source,
+					Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
+				},
+			})
+			response, ok := client.read().(*protocol.ErrorResponse)
+			if !ok || response.Success || !strings.Contains(response.Message, test.want) {
+				t.Fatalf("setBreakpoints response = %#v, want failure containing %q", response, test.want)
+			}
+
+			completePendingDAPLaunch(t, client)
 			client.disconnect()
 		})
 	}
@@ -994,6 +1197,22 @@ func launchDAP(t *testing.T, client *testClient, program, root string, stopOnEnt
 	client.send(&protocol.LaunchRequest{Request: launch, Arguments: arguments})
 	if _, ok := client.read().(*protocol.InitializedEvent); !ok {
 		t.Fatal("expected initialized event")
+	}
+}
+
+func completePendingDAPLaunch(t *testing.T, client *testClient) {
+	t.Helper()
+
+	configurationDone := client.request("configurationDone")
+	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
+		t.Fatalf("configurationDone response = %#v", response)
+	}
+	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
+		t.Fatalf("launch response = %#v", response)
+	}
+	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
+		t.Fatalf("stopped event = %#v", stopped)
 	}
 }
 

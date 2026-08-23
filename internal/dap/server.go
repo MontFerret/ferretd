@@ -59,11 +59,13 @@ type (
 	}
 
 	ownedSession struct {
-		workspace   workspace.ID
-		session     exec.SessionID
-		debug       debug.SessionID
-		program     string
-		stopOnEntry bool
+		workspace       workspace.ID
+		session         exec.SessionID
+		debug           debug.SessionID
+		root            string
+		program         string
+		programIdentity sourceIdentity
+		stopOnEntry     bool
 	}
 
 	breakpointKey struct {
