@@ -12,17 +12,17 @@ import (
 
 func TestNewLoggerLevels(t *testing.T) {
 	tests := []struct {
-		value string
+		value logLevel
 		level zerolog.Level
 	}{
-		{value: "debug", level: zerolog.DebugLevel},
-		{value: "info", level: zerolog.InfoLevel},
-		{value: "warn", level: zerolog.WarnLevel},
-		{value: "error", level: zerolog.ErrorLevel},
+		{value: logLevelDebug, level: zerolog.DebugLevel},
+		{value: logLevelInfo, level: zerolog.InfoLevel},
+		{value: logLevelWarn, level: zerolog.WarnLevel},
+		{value: logLevelError, level: zerolog.ErrorLevel},
 	}
 
 	for _, test := range tests {
-		t.Run(test.value, func(t *testing.T) {
+		t.Run(test.value.String(), func(t *testing.T) {
 			logger, err := newLogger(&bytes.Buffer{}, test.value)
 			if err != nil {
 				t.Fatalf("newLogger: %v", err)
@@ -37,7 +37,7 @@ func TestNewLoggerLevels(t *testing.T) {
 
 func TestNewLoggerWritesJSONLines(t *testing.T) {
 	var output bytes.Buffer
-	logger, err := newLogger(&output, "info")
+	logger, err := newLogger(&output, logLevelInfo)
 	if err != nil {
 		t.Fatalf("newLogger: %v", err)
 	}
@@ -48,7 +48,9 @@ func TestNewLoggerWritesJSONLines(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(output.Bytes()), &record); err != nil {
 		t.Fatalf("decode diagnostic %q: %v", output.String(), err)
 	}
-	if record["level"] != "info" || record["message"] != "started" || record["component"] != "test" {
+	if record["level"] != logLevelInfo.String() ||
+		record["message"] != "started" ||
+		record["component"] != "test" {
 		t.Fatalf("diagnostic = %#v", record)
 	}
 	if _, ok := record["time"].(string); !ok {
@@ -68,7 +70,7 @@ func TestLoggingCommandDefaults(t *testing.T) {
 			}
 
 			flag := command.Flags().Lookup("log-level")
-			if flag == nil || flag.DefValue != defaultLogLevel {
+			if flag == nil || flag.DefValue != defaultLogLevel.String() {
 				t.Fatalf("%s --log-level default = %#v, want %q", name, flag, defaultLogLevel)
 			}
 		})
