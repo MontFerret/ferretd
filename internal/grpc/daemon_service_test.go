@@ -23,8 +23,8 @@ func TestDaemonGetInfoNegotiatesAPIVersion(t *testing.T) {
 		if response.ServerInfo.Version != "v1.2.3" || response.ServerInfo.InstanceId != "instance" {
 			t.Fatalf("server info = %#v", response.ServerInfo)
 		}
-		if got := response.ServerInfo.ApiVersion; got.Major != 1 || got.Minor != 2 {
-			t.Fatalf("API version = %#v, want 1.2", got)
+		if got := response.ServerInfo.ApiVersion; got.Major != 1 || got.Minor != 1 {
+			t.Fatalf("API version = %#v, want 1.1", got)
 		}
 	}
 }

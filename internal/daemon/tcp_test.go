@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -78,17 +79,20 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 		t.Fatalf("reported endpoint = %q, want assigned port", bound.String())
 	}
 
-	for _, option := range []client.Option{nil, client.WithBearerToken("wrong-token")} {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		options := []client.Option{client.WithEndpoint(bound)}
-		if option != nil {
-			options = append(options, option)
-		}
-		_, dialErr := client.Dial(ctx, options...)
-		cancel()
-		if status.Code(dialErr) != codes.Unauthenticated {
-			t.Fatalf("Dial with option %#v error = %v, want Unauthenticated", option, dialErr)
-		}
+	_, dialErr := client.Dial(context.Background(), client.WithEndpoint(bound))
+	if !errors.Is(dialErr, client.ErrBearerTokenRequired) {
+		t.Fatalf("Dial without token error = %v, want ErrBearerTokenRequired", dialErr)
+	}
+
+	unauthenticatedCtx, cancelUnauthenticated := context.WithTimeout(context.Background(), time.Second)
+	_, dialErr = client.Dial(
+		unauthenticatedCtx,
+		client.WithEndpoint(bound),
+		client.WithBearerToken("wrong-token"),
+	)
+	cancelUnauthenticated()
+	if status.Code(dialErr) != codes.Unauthenticated {
+		t.Fatalf("Dial with wrong token error = %v, want Unauthenticated", dialErr)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -104,7 +108,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Version != "test-version" || info.APIVersion != (client.APIVersion{Major: 1, Minor: 2}) {
+	if info.Version != "test-version" || info.APIVersion != (client.APIVersion{Major: 1, Minor: 1}) {
 		t.Fatalf("Info = %#v", info)
 	}
 

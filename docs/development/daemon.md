@@ -70,9 +70,10 @@ TCP requires `--auth-token-env=<name>`. Command setup reads a nonempty bearer
 token from that environment variable without logging it. `internal/grpc`
 requires `authorization: Bearer <token>` on every unary and streaming RPC,
 including health checks, and compares credentials in constant time. Native
-endpoints reject bearer-token configuration and remain unauthenticated. The
-public client attaches TCP credentials only through the explicit
-`client.WithBearerToken` option.
+endpoints reject bearer-token configuration and remain unauthenticated. After
+resolving its effective endpoint, the public client enforces the same invariant
+and attaches TCP credentials only through the explicit `client.WithBearerToken`
+option.
 
 ## gRPC services and compatibility
 
@@ -82,8 +83,8 @@ domain errors without retaining workspace, Session, or Execution state.
 
 Clients send their API version during daemon information negotiation. A major
 version mismatch is rejected with structured compatibility detail; minor
-versions are additive. The current version is 1.2, so existing 1.1 clients remain
-compatible over their native transports. Process-local state survives client
+versions are additive. The current version is 1.1; transport and bootstrap
+features do not change the RPC API version. Process-local state survives client
 disconnects but not daemon restarts.
 
 The supported `client` package owns public discovery, dialing, negotiation,

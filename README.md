@@ -126,6 +126,9 @@ c, err := client.Dial(
 )
 ```
 
+The client rejects TCP endpoints without a bearer token and rejects bearer-token
+configuration for native endpoints before opening a connection.
+
 Opening a workspace recursively discovers lowercase `.fql` files, loads their
 contents, and retains daemon-owned documents with Ferret syntax state and
 diagnostics. No Ferret project manifest is required. While the workspace remains
@@ -172,7 +175,7 @@ parameters, expressions, or evaluated values. See
 
 ## Current Status
 
-The daemon exposes API v1.2 `DaemonService`, `WorkspaceService`, and
+The daemon exposes API v1.1 `DaemonService`, `WorkspaceService`, and
 `ExecutionService` contracts over permission-restricted native local transports
 or authenticated ephemeral IPv4 loopback TCP, plus the standard gRPC health
 service. The checked-in Go code under `gen/` is generated from `proto/` with

@@ -1,5 +1,7 @@
 package client
 
+import "github.com/MontFerret/ferretd/internal/transport"
+
 type (
 	// Option configures a daemon connection.
 	Option func(*dialOptions) error
@@ -23,7 +25,7 @@ func WithEndpoint(endpoint Endpoint) Option {
 	}
 }
 
-// WithBearerToken authenticates each RPC to an authenticated local endpoint.
+// WithBearerToken authenticates each RPC to a TCP endpoint.
 func WithBearerToken(token string) Option {
 	return func(options *dialOptions) error {
 		if token == "" {
@@ -36,10 +38,30 @@ func WithBearerToken(token string) Option {
 	}
 }
 
-func configuredEndpoint(options dialOptions) (Endpoint, error) {
-	if options.endpoint != nil {
-		return *options.endpoint, nil
+func (o dialOptions) resolvedEndpoint() (transport.Endpoint, error) {
+	var endpoint Endpoint
+	if o.endpoint != nil {
+		endpoint = *o.endpoint
+	} else {
+		var err error
+		endpoint, err = Discover()
+		if err != nil {
+			return transport.Endpoint{}, err
+		}
 	}
 
-	return Discover()
+	result, err := endpoint.transportEndpoint()
+	if err != nil {
+		return transport.Endpoint{}, err
+	}
+
+	if result.Network == transport.NetworkTCP && o.bearerToken == "" {
+		return transport.Endpoint{}, ErrBearerTokenRequired
+	}
+
+	if result.Network != transport.NetworkTCP && o.bearerToken != "" {
+		return transport.Endpoint{}, ErrBearerTokenUnsupported
+	}
+
+	return result, nil
 }

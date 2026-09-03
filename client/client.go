@@ -15,7 +15,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/transport"
 )
 
-var currentAPIVersion = APIVersion{Major: 1, Minor: 2}
+var currentAPIVersion = APIVersion{Major: 1, Minor: 1}
 
 // Client owns a negotiated connection to a local daemon.
 type Client struct {
@@ -42,12 +42,7 @@ func Dial(ctx context.Context, options ...Option) (*Client, error) {
 		}
 	}
 
-	endpoint, err := configuredEndpoint(configuration)
-	if err != nil {
-		return nil, err
-	}
-
-	transportEndpoint, err := endpoint.transportEndpoint()
+	transportEndpoint, err := configuration.resolvedEndpoint()
 	if err != nil {
 		return nil, err
 	}
