@@ -28,17 +28,17 @@ func TestNewRequiresDomainServices(t *testing.T) {
 	}{
 		{
 			name: "workspace manager",
-			new:  func() (*Server, error) { return New(nil, executions, "dev", "instance", nil) },
+			new:  func() (*Server, error) { return New(nil, executions, "dev", "instance", nil, Options{}) },
 			want: errNilWorkspaceManager,
 		},
 		{
 			name: "execution manager",
-			new:  func() (*Server, error) { return New(workspaces, nil, "dev", "instance", nil) },
+			new:  func() (*Server, error) { return New(workspaces, nil, "dev", "instance", nil, Options{}) },
 			want: errNilExecutionManager,
 		},
 		{
 			name: "shutdown callback",
-			new:  func() (*Server, error) { return New(workspaces, executions, "dev", "instance", nil) },
+			new:  func() (*Server, error) { return New(workspaces, executions, "dev", "instance", nil, Options{}) },
 			want: errNilShutdown,
 		},
 	}

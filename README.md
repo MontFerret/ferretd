@@ -53,6 +53,10 @@ make proto-lint
 ./bin/ferretd --version
 ./bin/ferretd serve
 ./bin/ferretd serve --endpoint unix:///tmp/ferretd.sock
+FERRETD_AUTH_TOKEN="$(openssl rand -base64 32)" \
+  ./bin/ferretd serve \
+  --endpoint tcp://127.0.0.1:0 \
+  --auth-token-env FERRETD_AUTH_TOKEN
 ./bin/ferretd serve --log-level debug
 ./bin/ferretd lsp
 ./bin/ferretd dap
@@ -62,10 +66,28 @@ make proto-lint
 `serve` starts the local daemon and waits for an interrupt or a `Shutdown` RPC.
 It uses `$XDG_RUNTIME_DIR/ferret/ferretd.sock` on macOS and Linux, falling back
 to the user cache directory, and `\\.\pipe\ferretd` on Windows. Explicit local
-endpoints use `unix:///absolute/path` or `npipe:////./pipe/name`; TCP is not
-supported. The `serve` and `dap` commands write newline-delimited JSON
-diagnostics to stderr at `info` level by default. Their shared `--log-level`
-option accepts `debug`, `info`, `warn`, or `error`.
+endpoints use `unix:///absolute/path` or `npipe:////./pipe/name`. These native
+transports remain unauthenticated and are the defaults.
+
+An integration that cannot use a native endpoint may opt into authenticated
+loopback TCP. The server accepts only `tcp://127.0.0.1:0`, always lets the OS
+assign the port, and requires `--auth-token-env` to name an environment variable
+containing a nonempty bearer token. Every unary and streaming RPC, including
+health RPCs, requires that credential. After listening, `serve` writes one
+stable readiness diagnostic to stderr containing the actual endpoint:
+
+```json
+{"event":"ferretd.ready","endpoint":"tcp://127.0.0.1:49152","version":"...","message":"ferretd started"}
+```
+
+Clients must parse the reported nonzero port. Hostnames, other addresses,
+configured nonzero listener ports, unauthenticated TCP, TLS, and remote access
+are intentionally unsupported. The readiness handshake is not filtered by
+`--log-level`, and the token is never included in diagnostics.
+
+The `serve` and `dap` commands write newline-delimited JSON diagnostics to
+stderr at `info` level by default. Their shared `--log-level` option accepts
+`debug`, `info`, `warn`, or `error`.
 
 The supported Go client discovers the default endpoint, performs API
 compatibility negotiation, and exposes daemon, workspace, and execution
@@ -90,6 +112,18 @@ execution, err := c.Executions().CreateExecution(ctx, client.CreateExecutionRequ
 })
 watcher, err := c.Executions().WatchExecution(ctx, execution.ID)
 running, err := c.Executions().RunExecution(ctx, execution.ID)
+```
+
+For the opt-in TCP transport, parse the endpoint from the `ferretd.ready` event
+and pass the same token explicitly:
+
+```go
+endpoint, err := client.ParseEndpoint(reportedEndpoint)
+c, err := client.Dial(
+	ctx,
+	client.WithEndpoint(endpoint),
+	client.WithBearerToken(token),
+)
 ```
 
 Opening a workspace recursively discovers lowercase `.fql` files, loads their
@@ -138,11 +172,12 @@ parameters, expressions, or evaluated values. See
 
 ## Current Status
 
-The daemon exposes API v1.1 `DaemonService`, `WorkspaceService`, and
-`ExecutionService` contracts over a permission-restricted local transport, plus
-the standard gRPC health service. The checked-in Go code under `gen/` is
-generated from `proto/` with pinned Buf and protobuf tools. The debug protobuf
-remains an ungenerated placeholder.
+The daemon exposes API v1.2 `DaemonService`, `WorkspaceService`, and
+`ExecutionService` contracts over permission-restricted native local transports
+or authenticated ephemeral IPv4 loopback TCP, plus the standard gRPC health
+service. The checked-in Go code under `gen/` is generated from `proto/` with
+pinned Buf and protobuf tools. The debug protobuf remains an ungenerated
+placeholder.
 
 Daemon workspaces retain deterministically discovered source files, source
 contents, Ferret parse trees, and syntax diagnostics, and track eligible

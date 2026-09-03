@@ -72,6 +72,7 @@ func New(options Options) (*Daemon, error) {
 		options.Version,
 		instanceID.String(),
 		result.requestShutdown,
+		grpcadapter.Options{BearerToken: options.BearerToken},
 	)
 
 	if err != nil {
@@ -108,6 +109,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 		return fmt.Errorf("listen for daemon connections: %w", err)
 	}
 
+	boundEndpoint := listener.Endpoint()
+
 	d.mu.Lock()
 	if d.state == stateStopping {
 		d.mu.Unlock()
@@ -121,12 +124,16 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 
 	d.listener = listener
+	d.endpoint = boundEndpoint
 	d.state = stateRunning
 	d.grpc.SetServing()
 	d.mu.Unlock()
 
-	d.logger.Info().
-		Str("endpoint", d.endpoint.String()).
+	// Readiness is a process handshake and must not be filtered by --log-level.
+	readyLogger := d.logger.Level(zerolog.TraceLevel)
+	readyLogger.Info().
+		Str("event", "ferretd.ready").
+		Str("endpoint", boundEndpoint.String()).
 		Str("version", d.version).
 		Msg("ferretd started")
 

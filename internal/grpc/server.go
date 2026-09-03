@@ -16,11 +16,18 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// Server owns the gRPC transport adapter and its health state.
-type Server struct {
-	server *grpcgo.Server
-	health *health.Server
-}
+type (
+	// Options configures the gRPC transport adapter.
+	Options struct {
+		BearerToken string
+	}
+
+	// Server owns the gRPC transport adapter and its health state.
+	Server struct {
+		server *grpcgo.Server
+		health *health.Server
+	}
+)
 
 // New constructs the daemon's gRPC adapter over the supplied domain services.
 // It returns an error when a required service or the shutdown callback is nil.
@@ -30,6 +37,7 @@ func New(
 	version string,
 	instanceID string,
 	shutdown func(),
+	options Options,
 ) (*Server, error) {
 	workspaceAdapter, err := newWorkspaceService(workspaces)
 	if err != nil {
@@ -46,7 +54,17 @@ func New(
 		return nil, err
 	}
 
-	server := grpcgo.NewServer()
+	serverOptions := make([]grpcgo.ServerOption, 0, 2)
+	if options.BearerToken != "" {
+		authentication := newBearerAuthentication(options.BearerToken)
+		serverOptions = append(
+			serverOptions,
+			grpcgo.UnaryInterceptor(authentication.interceptUnary),
+			grpcgo.StreamInterceptor(authentication.interceptStream),
+		)
+	}
+
+	server := grpcgo.NewServer(serverOptions...)
 	healthServer := health.NewServer()
 
 	daemonv1.RegisterDaemonServiceServer(server, daemonAdapter)

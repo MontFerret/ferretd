@@ -15,7 +15,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/transport"
 )
 
-var currentAPIVersion = APIVersion{Major: 1, Minor: 1}
+var currentAPIVersion = APIVersion{Major: 1, Minor: 2}
 
 // Client owns a negotiated connection to a local daemon.
 type Client struct {
@@ -52,13 +52,21 @@ func Dial(ctx context.Context, options ...Option) (*Client, error) {
 		return nil, err
 	}
 
-	connection, err := grpc.NewClient(
-		"passthrough:///ferretd",
+	grpcOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return transport.Dial(ctx, transportEndpoint)
 		}),
-	)
+	}
+
+	if configuration.bearerToken != "" {
+		grpcOptions = append(
+			grpcOptions,
+			grpc.WithPerRPCCredentials(newBearerCredentials(configuration.bearerToken)),
+		)
+	}
+
+	connection, err := grpc.NewClient("passthrough:///ferretd", grpcOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("create daemon client: %w", err)
 	}

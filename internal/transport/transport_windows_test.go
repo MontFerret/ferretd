@@ -23,7 +23,7 @@ func TestParseEndpoint(t *testing.T) {
 		t.Fatalf("String = %q, want %q", got, want)
 	}
 
-	for _, value := range []string{"unix:///tmp/ferretd.sock", "tcp://127.0.0.1:50051"} {
+	for _, value := range []string{"unix:///tmp/ferretd.sock"} {
 		if _, err := ParseEndpoint(value); !errors.Is(err, ErrInvalidEndpoint) {
 			t.Fatalf("ParseEndpoint(%q) error = %v, want ErrInvalidEndpoint", value, err)
 		}

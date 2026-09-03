@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-func dial(ctx context.Context, endpoint Endpoint) (net.Conn, error) {
+func dialLocal(ctx context.Context, endpoint Endpoint) (net.Conn, error) {
 	if endpoint.Network != NetworkUnix || !filepath.IsAbs(endpoint.Address) {
 		return nil, fmt.Errorf("%w: expected an absolute unix endpoint", ErrInvalidEndpoint)
 	}

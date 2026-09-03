@@ -10,13 +10,14 @@ owned below the daemon.
 
 ## Process composition
 
-`cmd/ferretd/serve.go` parses an optional local endpoint and the shared
-`--log-level` setting, creates a logger that writes newline-delimited JSON to
-stderr, constructs the daemon, and starts it with the command context. The level
-accepts `debug`, `info`, `warn`, or `error` and defaults to `info`; the DAP
-command uses the same logger construction and level contract. After `Start`
-returns, `serve` calls `Stop` with a bounded shutdown context. Process signals
-cancel the root context in `cmd/ferretd/main.go`.
+`cmd/ferretd/serve.go` parses an optional local endpoint, the TCP-only
+`--auth-token-env` setting, and the shared `--log-level` setting. It creates a
+logger that writes newline-delimited JSON to stderr, constructs the daemon, and
+starts it with the command context. The level accepts `debug`, `info`, `warn`,
+or `error` and defaults to `info`; the DAP command uses the same logger
+construction and level contract. After `Start` returns, `serve` calls `Stop`
+with a bounded shutdown context. Process signals cancel the root context in
+`cmd/ferretd/main.go`.
 
 The daemon constructs one workspace manager, one execution manager, and one
 gRPC server. The execution manager registers its workspace close hook during
@@ -28,7 +29,10 @@ engine closes. Required service dependencies are passed explicitly.
 `internal/daemon` has one authoritative lifecycle from new through starting,
 running, stopping, and stopped. `Start` listens, marks gRPC health serving, and
 serves until process cancellation, an RPC shutdown request, explicit stop, or a
-transport failure.
+transport failure. Once startup succeeds, it emits one `ferretd.ready` JSON
+diagnostic containing the actual bound endpoint and daemon version. Callers use
+that event as the machine-readable startup handshake; it reports the OS-assigned
+port for an ephemeral TCP listener and is never filtered by `--log-level`.
 
 `Stop` is idempotent and coordinates these responsibilities:
 
@@ -47,7 +51,11 @@ individual failure.
 
 The daemon is local-only. `internal/transport` represents endpoint families with
 `Network`, using `NetworkUnix` on macOS and Linux and `NetworkNamedPipe` on
-Windows; TCP, TLS, and remote modes are not supported.
+Windows. Those permission-restricted native transports remain the defaults.
+Opt-in TCP is restricted to IPv4 loopback: servers accept only
+`tcp://127.0.0.1:0`, and clients dial only a reported nonzero loopback port.
+Hostnames, other addresses, configured listener ports, TLS, and remote modes are
+not supported.
 
 The default Unix endpoint uses the runtime directory when available and falls
 back to the user cache directory. Created directories and sockets are restricted
@@ -58,6 +66,14 @@ contract and is shared by the server and public client.
 Transport code owns endpoint parsing, default discovery, listener cleanup, and
 platform-specific dialing. gRPC code should not duplicate those rules.
 
+TCP requires `--auth-token-env=<name>`. Command setup reads a nonempty bearer
+token from that environment variable without logging it. `internal/grpc`
+requires `authorization: Bearer <token>` on every unary and streaming RPC,
+including health checks, and compares credentials in constant time. Native
+endpoints reject bearer-token configuration and remain unauthenticated. The
+public client attaches TCP credentials only through the explicit
+`client.WithBearerToken` option.
+
 ## gRPC services and compatibility
 
 `internal/grpc` registers the standard health service plus the implemented
@@ -66,8 +82,9 @@ domain errors without retaining workspace, Session, or Execution state.
 
 Clients send their API version during daemon information negotiation. A major
 version mismatch is rejected with structured compatibility detail; minor
-versions are additive. Process-local state survives client disconnects but not
-daemon restarts.
+versions are additive. The current version is 1.2, so existing 1.1 clients remain
+compatible over their native transports. Process-local state survives client
+disconnects but not daemon restarts.
 
 The supported `client` package owns public discovery, dialing, negotiation,
 workspace and execution facades, stream handling, conversion, and error
@@ -96,9 +113,10 @@ are compatibility-sensitive.
 
 ## Testing changes
 
-Daemon lifecycle tests belong in `internal/daemon`; local endpoint behavior in
-`internal/transport`; RPC conversion and health behavior in `internal/grpc`;
-and public discovery, negotiation, streaming, and error behavior in `client`.
+Daemon lifecycle and readiness tests belong in `internal/daemon`; local endpoint
+behavior in `internal/transport`; RPC conversion, authentication, and health
+behavior in `internal/grpc`; and public discovery, negotiation, streaming,
+credentials, and error behavior in `client`.
 
 Lifecycle coverage should include cancellation, partial startup, repeated stop,
 concurrent stop, listener cleanup, health transitions, and resource-close

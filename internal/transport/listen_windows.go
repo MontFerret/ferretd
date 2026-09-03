@@ -11,8 +11,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Listen creates a private local listener for the endpoint.
-func Listen(endpoint Endpoint) (net.Listener, error) {
+func listenLocal(endpoint Endpoint) (net.Listener, error) {
 	if err := validateNamedPipe(endpoint); err != nil {
 		return nil, err
 	}

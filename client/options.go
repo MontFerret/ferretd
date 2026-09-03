@@ -5,7 +5,8 @@ type (
 	Option func(*dialOptions) error
 
 	dialOptions struct {
-		endpoint *Endpoint
+		endpoint    *Endpoint
+		bearerToken string
 	}
 )
 
@@ -17,6 +18,19 @@ func WithEndpoint(endpoint Endpoint) Option {
 		}
 
 		options.endpoint = &endpoint
+
+		return nil
+	}
+}
+
+// WithBearerToken authenticates each RPC to an authenticated local endpoint.
+func WithBearerToken(token string) Option {
+	return func(options *dialOptions) error {
+		if token == "" {
+			return ErrInvalidBearerToken
+		}
+
+		options.bearerToken = token
 
 		return nil
 	}

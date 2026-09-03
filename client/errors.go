@@ -15,6 +15,8 @@ var (
 	ErrDaemonUnavailable = errors.New("daemon unavailable")
 	// ErrInvalidEndpoint reports a malformed or unsupported endpoint.
 	ErrInvalidEndpoint = errors.New("invalid daemon endpoint")
+	// ErrInvalidBearerToken reports an empty bearer token option.
+	ErrInvalidBearerToken = errors.New("invalid bearer token")
 	// ErrInvalidWorkspaceRoot reports a root rejected by the daemon.
 	ErrInvalidWorkspaceRoot = errors.New("invalid workspace root")
 	// ErrWorkspaceNotFound reports an unknown workspace ID.
