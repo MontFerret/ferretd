@@ -5,11 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
+	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
 	"github.com/MontFerret/ferretd/client"
@@ -79,6 +83,13 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 		t.Fatalf("reported endpoint = %q, want assigned port", bound.String())
 	}
 
+	tcpEndpoint, err := transport.ParseEndpoint(ready.Endpoint)
+	if err != nil {
+		t.Fatalf("ParseEndpoint reported transport endpoint: %v", err)
+	}
+
+	assertTCPRejectsUnauthenticatedRPCs(t, tcpEndpoint)
+
 	_, dialErr := client.Dial(context.Background(), client.WithEndpoint(bound))
 	if !errors.Is(dialErr, client.ErrBearerTokenRequired) {
 		t.Fatalf("Dial without token error = %v, want ErrBearerTokenRequired", dialErr)
@@ -133,6 +144,41 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	defer cancelStop()
 	if err := d.Stop(stopCtx); err != nil {
 		t.Fatalf("Stop: %v", err)
+	}
+}
+
+func assertTCPRejectsUnauthenticatedRPCs(t *testing.T, endpoint transport.Endpoint) {
+	t.Helper()
+
+	connection, err := grpcgo.NewClient(
+		"passthrough:///ferretd",
+		grpcgo.WithTransportCredentials(insecure.NewCredentials()),
+		grpcgo.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return transport.Dial(ctx, endpoint)
+		}),
+	)
+	if err != nil {
+		t.Fatalf("create unauthenticated TCP client: %v", err)
+	}
+
+	t.Cleanup(func() { _ = connection.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	health := healthv1.NewHealthClient(connection)
+	_, err = health.Check(ctx, &healthv1.HealthCheckRequest{})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unauthenticated TCP Check error = %v, want Unauthenticated", err)
+	}
+
+	watch, err := health.Watch(ctx, &healthv1.HealthCheckRequest{})
+	if err == nil {
+		_, err = watch.Recv()
+	}
+
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unauthenticated TCP Watch error = %v, want Unauthenticated", err)
 	}
 }
 
