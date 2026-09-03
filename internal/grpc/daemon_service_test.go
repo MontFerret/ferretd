@@ -13,17 +13,19 @@ import (
 func TestDaemonGetInfoNegotiatesAPIVersion(t *testing.T) {
 	service := mustNewDaemonService(t, "v1.2.3", "instance", func() {})
 
-	response, err := service.GetInfo(context.Background(), &daemonv1.GetInfoRequest{
-		ClientApi: &daemonv1.ApiVersion{Major: 1, Minor: 99},
-	})
-	if err != nil {
-		t.Fatalf("GetInfo: %v", err)
-	}
-	if response.ServerInfo.Version != "v1.2.3" || response.ServerInfo.InstanceId != "instance" {
-		t.Fatalf("server info = %#v", response.ServerInfo)
-	}
-	if got := response.ServerInfo.ApiVersion; got.Major != 1 || got.Minor != 1 {
-		t.Fatalf("API version = %#v, want 1.1", got)
+	for _, minor := range []uint32{1, 99} {
+		response, err := service.GetInfo(context.Background(), &daemonv1.GetInfoRequest{
+			ClientApi: &daemonv1.ApiVersion{Major: 1, Minor: minor},
+		})
+		if err != nil {
+			t.Fatalf("GetInfo with client API 1.%d: %v", minor, err)
+		}
+		if response.ServerInfo.Version != "v1.2.3" || response.ServerInfo.InstanceId != "instance" {
+			t.Fatalf("server info = %#v", response.ServerInfo)
+		}
+		if got := response.ServerInfo.ApiVersion; got.Major != 1 || got.Minor != 1 {
+			t.Fatalf("API version = %#v, want 1.1", got)
+		}
 	}
 }
 

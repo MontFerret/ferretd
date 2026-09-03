@@ -3,9 +3,11 @@ package transport
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +27,8 @@ const (
 	NetworkUnix Network = "unix"
 	// NetworkNamedPipe identifies a local Windows named-pipe endpoint.
 	NetworkNamedPipe Network = "npipe"
+	// NetworkTCP identifies an IPv4 loopback TCP endpoint.
+	NetworkTCP Network = "tcp"
 )
 
 // ParseEndpoint parses a supported local endpoint URL for the current platform.
@@ -60,6 +64,29 @@ func ParseEndpoint(value string) (Endpoint, error) {
 		}
 
 		return Endpoint{Network: NetworkNamedPipe, Address: address}, nil
+	case NetworkTCP:
+		if parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return Endpoint{}, fmt.Errorf("%w: TCP endpoint contains unsupported URL components", ErrInvalidEndpoint)
+		}
+
+		host, portValue, err := net.SplitHostPort(parsed.Host)
+		if err != nil {
+			return Endpoint{}, fmt.Errorf("%w: TCP endpoint must contain an IPv4 loopback host and port", ErrInvalidEndpoint)
+		}
+
+		if host != "127.0.0.1" {
+			return Endpoint{}, fmt.Errorf("%w: TCP endpoint must use 127.0.0.1", ErrInvalidEndpoint)
+		}
+
+		port, err := strconv.ParseUint(portValue, 10, 16)
+		if err != nil {
+			return Endpoint{}, fmt.Errorf("%w: TCP endpoint contains an invalid port", ErrInvalidEndpoint)
+		}
+
+		return Endpoint{
+			Network: NetworkTCP,
+			Address: net.JoinHostPort(host, strconv.FormatUint(port, 10)),
+		}, nil
 	default:
 		return Endpoint{}, fmt.Errorf("%w: unsupported scheme %q", ErrInvalidEndpoint, parsed.Scheme)
 	}
@@ -75,6 +102,8 @@ func (e Endpoint) String() string {
 			Scheme: string(e.Network),
 			Path:   strings.ReplaceAll(e.Address, `\`, "/"),
 		}).String()
+	case NetworkTCP:
+		return (&url.URL{Scheme: string(e.Network), Host: e.Address}).String()
 	default:
 		return ""
 	}

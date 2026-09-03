@@ -25,7 +25,7 @@ func mustNewServer(
 ) *Server {
 	t.Helper()
 
-	server, err := New(workspaces, executions, "dev", "instance", func() {})
+	server, err := New(workspaces, executions, "dev", "instance", func() {}, Options{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

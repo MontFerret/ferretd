@@ -9,7 +9,7 @@ import (
 	"github.com/Microsoft/go-winio"
 )
 
-func dial(ctx context.Context, endpoint Endpoint) (net.Conn, error) {
+func dialLocal(ctx context.Context, endpoint Endpoint) (net.Conn, error) {
 	if err := validateNamedPipe(endpoint); err != nil {
 		return nil, err
 	}

@@ -10,8 +10,9 @@ import (
 
 // Options configures a daemon instance.
 type Options struct {
-	Version  string
-	Endpoint transport.Endpoint
+	Version     string
+	Endpoint    transport.Endpoint
+	BearerToken string
 	// Logger receives daemon diagnostics. Its writer must be safe for concurrent
 	// use. A nil logger discards diagnostics.
 	Logger *zerolog.Logger
@@ -29,6 +30,14 @@ func (o Options) normalized() (Options, error) {
 
 	if o.Version == "" {
 		o.Version = "dev"
+	}
+
+	if o.Endpoint.Network == transport.NetworkTCP && o.BearerToken == "" {
+		return Options{}, fmt.Errorf("TCP endpoint requires bearer authentication")
+	}
+
+	if o.Endpoint.Network != transport.NetworkTCP && o.BearerToken != "" {
+		return Options{}, fmt.Errorf("bearer authentication is only supported for TCP endpoints")
 	}
 
 	if o.Logger == nil {

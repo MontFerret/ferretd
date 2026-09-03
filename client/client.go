@@ -42,23 +42,26 @@ func Dial(ctx context.Context, options ...Option) (*Client, error) {
 		}
 	}
 
-	endpoint, err := configuredEndpoint(configuration)
+	transportEndpoint, err := configuration.resolvedEndpoint()
 	if err != nil {
 		return nil, err
 	}
 
-	transportEndpoint, err := endpoint.transportEndpoint()
-	if err != nil {
-		return nil, err
-	}
-
-	connection, err := grpc.NewClient(
-		"passthrough:///ferretd",
+	grpcOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return transport.Dial(ctx, transportEndpoint)
 		}),
-	)
+	}
+
+	if configuration.bearerToken != "" {
+		grpcOptions = append(
+			grpcOptions,
+			grpc.WithPerRPCCredentials(newBearerCredentials(configuration.bearerToken)),
+		)
+	}
+
+	connection, err := grpc.NewClient("passthrough:///ferretd", grpcOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("create daemon client: %w", err)
 	}

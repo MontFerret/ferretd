@@ -15,7 +15,7 @@ import (
 func testClientEndpoint(t *testing.T) client.Endpoint {
 	t.Helper()
 
-	directory, err := os.MkdirTemp("/tmp", "ferretd-")
+	directory, err := os.MkdirTemp("/var/tmp", "ferretd-")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}

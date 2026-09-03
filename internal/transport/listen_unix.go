@@ -19,8 +19,7 @@ type cleanupListener struct {
 	err  error
 }
 
-// Listen creates a private local listener for the endpoint.
-func Listen(endpoint Endpoint) (net.Listener, error) {
+func listenLocal(endpoint Endpoint) (net.Listener, error) {
 	if endpoint.Network != NetworkUnix || !filepath.IsAbs(endpoint.Address) {
 		return nil, fmt.Errorf("%w: expected an absolute unix endpoint", ErrInvalidEndpoint)
 	}

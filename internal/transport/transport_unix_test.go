@@ -21,7 +21,6 @@ func TestParseEndpoint(t *testing.T) {
 		{name: "unix", value: "unix:///tmp/ferret/../ferretd.sock", want: "unix:///tmp/ferretd.sock"},
 		{name: "relative", value: "unix://relative", want: "invalid"},
 		{name: "query", value: "unix:///tmp/ferretd.sock?x=1", want: "invalid"},
-		{name: "tcp", value: "tcp://127.0.0.1:50051", want: "invalid"},
 		{name: "named pipe", value: "npipe:////./pipe/ferretd", want: "invalid"},
 	}
 
@@ -186,7 +185,7 @@ func TestListenReclaimsStaleSocket(t *testing.T) {
 func shortTempDir(t *testing.T) string {
 	t.Helper()
 
-	directory, err := os.MkdirTemp("/tmp", "ferretd-")
+	directory, err := os.MkdirTemp("/var/tmp", "ferretd-")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
