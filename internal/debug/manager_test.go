@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	ferretruntime "github.com/MontFerret/ferret/v2/pkg/runtime"
-
+	"github.com/MontFerret/api"
+	apidebugger "github.com/MontFerret/api/debugger"
+	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
 )
 
@@ -164,13 +166,7 @@ func TestDebugManagerRequiresContexts(t *testing.T) {
 }
 
 func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T) {
-	fixture := newDebugFixture(t, `LET box = {value: 10}
-FUNC add(a) {
-  LET b = a + 1
-  RETURN b
-}
-LET result = add(@input)
-RETURN {result, box}`)
+	fixture := newDebugFixture(t, "RETURN @input")
 	created, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.session.ID,
@@ -184,18 +180,141 @@ RETURN {result, box}`)
 		t.Fatalf("created = %+v", created)
 	}
 
+	debuggerSession := fixture.runtime.latestDebugger()
+	if debuggerSession == nil {
+		t.Fatal("debugger session was not created")
+	}
+
 	program := filepath.Join(fixture.workspace.Root(), "query.fql")
+	var breakpointSequence atomic.Int64
+	breakpointSequence.Store(40)
+	debuggerSession.setFn = func(
+		location apisource.Location,
+		options apidebugger.BreakpointOptions,
+	) (apidebugger.Breakpoint, error) {
+		id := apidebugger.BreakpointID(breakpointSequence.Add(1))
+
+		return apidebugger.Breakpoint{
+			Location: apisource.Range{
+				Location: apisource.Location{
+					SourceName: location.SourceName,
+					Position: apisource.Position{
+						Line:   location.Line + 1,
+						Column: location.Column + 2,
+					},
+				},
+				Span: apisource.Span{Start: 10, End: 20},
+			},
+			RequestedLocation: location,
+			ID:                id,
+			PointID:           apidebugger.PointID(id + 100),
+			FunctionID:        apidebugger.FunctionID(id + 200),
+			BindingMode:       options.BindingMode,
+			Bound:             true,
+		}, nil
+	}
+
+	firstBreakpoints, err := fixture.manager.ReplaceBreakpoints(
+		context.Background(),
+		created.ID,
+		program,
+		[]apisource.Position{{Line: 2, Column: 3}},
+	)
+	if err != nil {
+		t.Fatalf("ReplaceBreakpoints first: %v", err)
+	}
+	if len(firstBreakpoints) != 1 || firstBreakpoints[0].ID != 41 {
+		t.Fatalf("first breakpoints = %+v", firstBreakpoints)
+	}
+
 	breakpoints, err := fixture.manager.ReplaceBreakpoints(
 		context.Background(),
 		created.ID,
 		program,
-		[]BreakpointLocation{{Line: 2}},
+		[]apisource.Position{{Line: 3, Column: 4}},
 	)
 	if err != nil {
-		t.Fatalf("ReplaceBreakpoints: %v", err)
+		t.Fatalf("ReplaceBreakpoints second: %v", err)
 	}
-	if len(breakpoints) != 1 || !breakpoints[0].Verified || breakpoints[0].Line != 3 || breakpoints[0].ID == 0 {
-		t.Fatalf("breakpoints = %+v", breakpoints)
+	if len(breakpoints) != 1 || breakpoints[0].ID != 42 || !breakpoints[0].Bound ||
+		breakpoints[0].RequestedLocation.SourceName != program ||
+		breakpoints[0].RequestedLocation.Position != (apisource.Position{Line: 3, Column: 4}) ||
+		breakpoints[0].Location.Position != (apisource.Position{Line: 4, Column: 6}) ||
+		breakpoints[0].Location.Span != (apisource.Span{Start: 10, End: 20}) ||
+		breakpoints[0].PointID != 142 || breakpoints[0].FunctionID != 242 ||
+		breakpoints[0].BindingMode != apidebugger.BreakpointBindNextExecutableInSource {
+		t.Fatalf("canonical breakpoint = %+v", breakpoints)
+	}
+
+	debuggerSession.frames = []apidebugger.Frame{
+		{
+			Name:       "callee",
+			Location:   apisource.Location{SourceName: program, Position: apisource.Position{Line: 4, Column: 2}},
+			FunctionID: 91,
+		},
+		{
+			Name:       "caller",
+			Location:   apisource.Location{SourceName: program, Position: apisource.Position{Line: 8, Column: 1}},
+			FunctionID: 92,
+		},
+	}
+	debuggerSession.locals[0] = []apidebugger.Variable{
+		{Name: "local", Value: apidebugger.Value{Type: "Number", Display: "3", Reference: 77}},
+		{Name: "@input", Value: apidebugger.Value{Type: "Number", Display: "2"}, Param: true},
+	}
+	debuggerSession.variables[77] = []apidebugger.Variable{{
+		Name:  "child",
+		Value: apidebugger.Value{Type: "Number", Display: "4"},
+	}}
+	debuggerSession.values["@input + 3"] = apidebugger.Value{
+		Type:      "Number",
+		Display:   "5",
+		Reference: 88,
+	}
+
+	pauseRequested := make(chan struct{})
+	var pauseOnce sync.Once
+	var continueCalls atomic.Int64
+	debuggerSession.startFn = func(context.Context) (*apidebugger.Event, error) {
+		return debuggerEvent(apidebugger.ReasonEntry, program, 1), nil
+	}
+	debuggerSession.continueFn = func(ctx context.Context) (*apidebugger.Event, error) {
+		switch continueCalls.Add(1) {
+		case 1:
+			event := debuggerEvent(apidebugger.ReasonBreakpoint, program, 4)
+			event.HitBreakpointIDs = []apidebugger.BreakpointID{breakpoints[0].ID}
+
+			return event, nil
+		case 2:
+			select {
+			case <-pauseRequested:
+				return debuggerEvent(apidebugger.ReasonPause, program, 7), nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		default:
+			return &apidebugger.Event{
+				Reason: apidebugger.ReasonCompleted,
+				Output: &api.Output{
+					ContentType: "application/json",
+					Content:     []byte(`{"result":5}`),
+				},
+			}, nil
+		}
+	}
+	debuggerSession.stepInFn = func(context.Context) (*apidebugger.Event, error) {
+		return debuggerEvent(apidebugger.ReasonStep, program, 5), nil
+	}
+	debuggerSession.stepOverFn = func(context.Context) (*apidebugger.Event, error) {
+		return debuggerEvent(apidebugger.ReasonStep, program, 6), nil
+	}
+	debuggerSession.stepOutFn = func(context.Context) (*apidebugger.Event, error) {
+		return debuggerEvent(apidebugger.ReasonStep, program, 7), nil
+	}
+	debuggerSession.pauseFn = func() error {
+		pauseOnce.Do(func() { close(pauseRequested) })
+
+		return nil
 	}
 
 	subscription, err := fixture.manager.WatchSession(context.Background(), created.ID)
@@ -212,7 +331,7 @@ RETURN {result, box}`)
 		t.Fatalf("start state = %v", running.State)
 	}
 	entry := waitForState(t, subscription, StateStopped)
-	if entry.Reason != StopEntry {
+	if entry.Reason != apidebugger.ReasonEntry || entry.Location.SourceName != program {
 		t.Fatalf("entry = %+v", entry)
 	}
 
@@ -220,7 +339,8 @@ RETURN {result, box}`)
 		t.Fatalf("ContinueSession: %v", err)
 	}
 	stopped := waitForState(t, subscription, StateStopped)
-	if stopped.Reason != StopBreakpoint || stopped.Location.Line != 3 {
+	if stopped.Reason != apidebugger.ReasonBreakpoint || stopped.Location.Line != 4 ||
+		len(stopped.HitBreakpointIDs) != 1 || stopped.HitBreakpointIDs[0] != breakpoints[0].ID {
 		t.Fatalf("breakpoint stop = %+v", stopped)
 	}
 
@@ -228,7 +348,8 @@ RETURN {result, box}`)
 	if err != nil {
 		t.Fatalf("Frames: %v", err)
 	}
-	if len(frames) != 2 || frames[0].Index != 0 || frames[0].Name != "add" || frames[1].Index != 1 {
+	if len(frames) != 2 || frames[0].Name != "callee" || frames[0].FunctionID != 91 ||
+		frames[1].Name != "caller" || frames[1].FunctionID != 92 {
 		t.Fatalf("frames = %+v", frames)
 	}
 
@@ -237,25 +358,51 @@ RETURN {result, box}`)
 		t.Fatalf("Scopes: %v", err)
 	}
 	if len(scopes) != 2 || scopes[0].Kind != ScopeLocals || scopes[1].Kind != ScopeParameters ||
-		!debugScopeHas(scopes[0], "a", "2") || !debugScopeHas(scopes[1], "@input", "2") {
+		!debugScopeHas(scopes[0], "local", "3") || !debugScopeHas(scopes[1], "@input", "2") {
 		t.Fatalf("scopes = %+v", scopes)
+	}
+	variables, err := fixture.manager.Variables(context.Background(), created.ID, 77)
+	if err != nil || len(variables) != 1 || variables[0].Name != "child" {
+		t.Fatalf("variables = %+v, %v", variables, err)
 	}
 
 	value, err := fixture.manager.Evaluate(context.Background(), created.ID, 1, "@input + 3")
-	if err != nil || value.Display != "5" {
+	if err != nil || value.Display != "5" || value.Reference != 88 {
 		t.Fatalf("caller evaluation = %+v, %v", value, err)
 	}
-	if _, err := fixture.manager.Evaluate(context.Background(), created.ID, 1, ""); !errors.Is(err, ferretruntime.ErrInvalidArgument) ||
-		!strings.Contains(err.Error(), "debug expression is empty") {
-		t.Fatalf("empty caller evaluation error = %v, want debug expression invalid argument", err)
+
+	if _, err := fixture.manager.StepInSession(context.Background(), created.ID); err != nil {
+		t.Fatalf("StepInSession: %v", err)
+	}
+	if stepped := waitForState(t, subscription, StateStopped); stepped.Reason != apidebugger.ReasonStep ||
+		stepped.Location.Line != 5 {
+		t.Fatalf("step-in stop = %+v", stepped)
 	}
 
 	if _, err := fixture.manager.StepOverSession(context.Background(), created.ID); err != nil {
 		t.Fatalf("StepOverSession: %v", err)
 	}
 	stepped := waitForState(t, subscription, StateStopped)
-	if stepped.Reason != StopStep || stepped.Location.Line != 4 {
+	if stepped.Reason != apidebugger.ReasonStep || stepped.Location.Line != 6 {
 		t.Fatalf("step stop = %+v", stepped)
+	}
+	if _, err := fixture.manager.StepOutSession(context.Background(), created.ID); err != nil {
+		t.Fatalf("StepOutSession: %v", err)
+	}
+	if stepped := waitForState(t, subscription, StateStopped); stepped.Reason != apidebugger.ReasonStep ||
+		stepped.Location.Line != 7 {
+		t.Fatalf("step-out stop = %+v", stepped)
+	}
+
+	if _, err := fixture.manager.ContinueSession(context.Background(), created.ID); err != nil {
+		t.Fatalf("pause ContinueSession: %v", err)
+	}
+	if _, err := fixture.manager.PauseSession(context.Background(), created.ID); err != nil {
+		t.Fatalf("PauseSession: %v", err)
+	}
+	paused := waitForState(t, subscription, StateStopped)
+	if paused.Reason != apidebugger.ReasonPause || paused.Location.Line != 7 {
+		t.Fatalf("pause stop = %+v", paused)
 	}
 
 	if _, err := fixture.manager.ContinueSession(context.Background(), created.ID); err != nil {
@@ -268,15 +415,135 @@ RETURN {result, box}`)
 	if _, err := fixture.manager.Frames(context.Background(), created.ID); !errors.Is(err, ErrSessionNotStopped) {
 		t.Fatalf("terminal Frames error = %v", err)
 	}
+
+	commands := debuggerSession.recordedCommands()
+	if !debuggerCommandsInclude(commands, "start", "continue", "pause", "step in", "step over", "step out",
+		"set breakpoint", "delete breakpoint", "frames", "frame locals", "variables", "evaluate frame") {
+		t.Fatalf("debugger commands = %+v", commands)
+	}
+}
+
+func TestReplaceBreakpointsRetainsCanonicalPartialReplacement(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+	created, err := fixture.manager.CreateSession(
+		context.Background(),
+		fixture.session.ID,
+		nil,
+		exec.RuntimeOptions{},
+	)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	debuggerSession := fixture.runtime.latestDebugger()
+	if debuggerSession == nil {
+		t.Fatal("debugger session was not created")
+	}
+
+	program := filepath.Join(fixture.workspace.Root(), "query.fql")
+	wantErr := errors.New("bind breakpoint")
+	debuggerSession.setFn = func(
+		location apisource.Location,
+		options apidebugger.BreakpointOptions,
+	) (apidebugger.Breakpoint, error) {
+		if location.Line == 4 {
+			return apidebugger.Breakpoint{}, wantErr
+		}
+
+		return apidebugger.Breakpoint{
+			ID:                apidebugger.BreakpointID(location.Line),
+			RequestedLocation: location,
+			Location:          apisource.Range{Location: location},
+			BindingMode:       options.BindingMode,
+			Bound:             true,
+		}, nil
+	}
+
+	if _, err := fixture.manager.ReplaceBreakpoints(
+		context.Background(),
+		created.ID,
+		program,
+		[]apisource.Position{{Line: 2}},
+	); err != nil {
+		t.Fatalf("initial ReplaceBreakpoints: %v", err)
+	}
+
+	_, err = fixture.manager.ReplaceBreakpoints(
+		context.Background(),
+		created.ID,
+		program,
+		[]apisource.Position{{Line: 3}, {Line: 4}},
+	)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("partial ReplaceBreakpoints error = %v, want %v", err, wantErr)
+	}
+
+	fixture.manager.mu.RLock()
+	session := fixture.manager.sessions[created.ID]
+	fixture.manager.mu.RUnlock()
+	session.mu.Lock()
+	retained := append([]apidebugger.Breakpoint(nil), session.breakpoints[program]...)
+	session.mu.Unlock()
+	if len(retained) != 1 || retained[0].ID != 3 || retained[0].RequestedLocation.SourceName != program {
+		t.Fatalf("retained partial breakpoints = %+v", retained)
+	}
+
+	if _, err := fixture.manager.ReplaceBreakpoints(
+		context.Background(),
+		created.ID,
+		program,
+		nil,
+	); err != nil {
+		t.Fatalf("clear partial breakpoints: %v", err)
+	}
+
+	commands := debuggerSession.recordedCommands()
+	deleted := make([]apidebugger.BreakpointID, 0, 2)
+	for _, command := range commands {
+		if command.name == "delete breakpoint" {
+			deleted = append(deleted, command.breakpoint)
+		}
+	}
+	if len(deleted) != 2 || deleted[0] != 2 || deleted[1] != 3 {
+		t.Fatalf("deleted breakpoint IDs = %v, want [2 3]", deleted)
+	}
 }
 
 func TestDebugSessionRuntimeErrorRemainsInspectableThenFailsOnResume(t *testing.T) {
-	fixture := newDebugFixture(t, `LET x = 7
-RETURN x / 0`)
+	fixture := newDebugFixture(t, "RETURN 1")
 	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+	debuggerSession := fixture.runtime.latestDebugger()
+	if debuggerSession == nil {
+		t.Fatal("debugger session was not created")
+	}
+
+	program := filepath.Join(fixture.workspace.Root(), "query.fql")
+	wantRuntimeError := errors.New("division by zero")
+	var continueCalls atomic.Int64
+	debuggerSession.startFn = func(context.Context) (*apidebugger.Event, error) {
+		return debuggerEvent(apidebugger.ReasonEntry, program, 1), nil
+	}
+	debuggerSession.continueFn = func(context.Context) (*apidebugger.Event, error) {
+		if continueCalls.Add(1) == 1 {
+			event := debuggerEvent(apidebugger.ReasonRuntimeError, program, 2)
+			event.Error = wantRuntimeError
+
+			return event, nil
+		}
+
+		return &apidebugger.Event{
+			Reason: apidebugger.ReasonTerminated,
+			Error:  wantRuntimeError,
+		}, nil
+	}
+	debuggerSession.locals[0] = []apidebugger.Variable{{
+		Name:  "x",
+		Value: apidebugger.Value{Type: "Number", Display: "7"},
+	}}
+
 	subscription, err := fixture.manager.WatchSession(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("WatchSession: %v", err)
@@ -291,13 +558,9 @@ RETURN x / 0`)
 		t.Fatalf("ContinueSession: %v", err)
 	}
 	runtimeError := waitForState(t, subscription, StateStopped)
-	if runtimeError.Reason != StopRuntimeError || runtimeError.Failure == nil {
+	if runtimeError.Reason != apidebugger.ReasonRuntimeError || runtimeError.Failure == nil ||
+		runtimeError.Failure.Message != wantRuntimeError.Error() {
 		t.Fatalf("runtime error = %+v", runtimeError)
-	}
-	if diagnostics := runtimeError.Failure.Diagnostics; len(diagnostics) != 1 ||
-		diagnostics[0].URI != fixture.session.Source.URI || diagnostics[0].Code == "" ||
-		diagnostics[0].Range.Start == diagnostics[0].Range.End {
-		t.Fatalf("runtime error diagnostics = %+v, want one source-located diagnostic", diagnostics)
 	}
 
 	scopes, err := fixture.manager.Scopes(context.Background(), created.ID, 0)
@@ -315,12 +578,12 @@ RETURN x / 0`)
 }
 
 func TestDebugSessionTerminateCloseAndParentCascade(t *testing.T) {
-	fixture := newDebugFixture(t, `RETURN FOR i IN 1..10000000
-  RETURN i`)
+	fixture := newDebugFixture(t, "RETURN 1")
 	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+	blockDebuggerOnContinue(t, fixture.runtime.latestDebugger())
 	subscription, err := fixture.manager.WatchSession(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("WatchSession: %v", err)
@@ -354,12 +617,12 @@ func TestDebugSessionTerminateCloseAndParentCascade(t *testing.T) {
 }
 
 func TestDebugSessionCloseRacesTermination(t *testing.T) {
-	fixture := newDebugFixture(t, `RETURN FOR i IN 1..10000000
-  RETURN i`)
+	fixture := newDebugFixture(t, "RETURN 1")
 	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+	blockDebuggerOnContinue(t, fixture.runtime.latestDebugger())
 	subscription, err := fixture.manager.WatchSession(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("WatchSession: %v", err)
@@ -400,12 +663,12 @@ func TestDebugSessionCloseRacesTermination(t *testing.T) {
 }
 
 func TestSessionCloseCascadesRunningDebugSession(t *testing.T) {
-	fixture := newDebugFixture(t, `RETURN FOR i IN 1..10000000
-  RETURN i`)
+	fixture := newDebugFixture(t, "RETURN 1")
 	created, err := fixture.manager.CreateSession(context.Background(), fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+	blockDebuggerOnContinue(t, fixture.runtime.latestDebugger())
 	subscription, err := fixture.manager.WatchSession(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("WatchSession: %v", err)

@@ -36,22 +36,29 @@ not expose mutable Session maps, locks, or child state.
 cleanup hook during construction. Each DebugSession owns one `exec.DebugRuntime`
 plus breakpoints, authoritative debugger lifecycle state, asynchronous command
 coordination, event watchers, paused-state inspection, and terminal debugger
-data. It does not prepare runtime values, construct Universal sessions,
-translate runtime failures, or release Plan leases independently.
+data. Breakpoints, frames, variables, values, references, stop reasons, and
+source locations use `github.com/MontFerret/api/debugger` and `api/source`
+directly. The package does not prepare runtime values, construct Universal
+sessions, translate native debugger values, or release Plan leases
+independently.
 
 The concrete debug Session implementation is package-private; adapters consume
 `debug.Manager` operations and immutable `SessionSnapshot` values.
 
-Resolved breakpoint identities and reported hits use `debug.BreakpointID`; DAP
-owns the projection from those identities to stable protocol breakpoint IDs.
+Resolved breakpoint identities and reported hits use `debugger.BreakpointID`;
+DAP owns the projection from those session-scoped identities to stable protocol
+breakpoint IDs.
 
 Supported commands include start, continue, pause, step-in, step-over, step-out,
 and terminate. Inspection includes threads, stack frames, scopes, variables, and
 frame-scoped evaluation. Ferret decides executable locations, debugger stops,
-stack semantics, values, and runtime behavior. The provisional
-`internal/ferretapi` adapter translates Universal debugger events, locations,
-breakpoints, variables, and outputs into the existing daemon debug model;
-replacing that model is outside the current boundary.
+stack semantics, values, and runtime behavior. Daemon lifecycle snapshots retain
+canonical Universal debugger reasons, locations, and breakpoint identities while
+adding daemon state, output/failure materialization, parameters, and options.
+Locals and Parameters remain presentation scopes derived from the canonical
+variable `Param` flag. The provisional `internal/ferretapi` adapter is the only
+package that translates native Ferret debugger values into these Universal API
+contracts.
 
 Debug watches publish current and future ordered events through bounded buffers.
 Lagging subscribers disconnect without blocking the session. Commands that run
@@ -79,7 +86,10 @@ required order.
 
 `internal/dap` owns client path format, line and column base conversion, message
 sequence numbers, and all integer frame, scope, and variable handles. The
-protocol-neutral debug model keeps Ferret source locations and value references.
+adapter consumes Universal debugger frames, variables, values, source locations,
+and value references directly. It derives frame indexes from Universal frame
+ordering and projects session-scoped breakpoint and value references into DAP
+integer handles.
 Current handle payloads are invalidated whenever execution runs, steps,
 completes, fails, terminates, or the adapter cleans up. The allocator remains
 monotonic for the adapter session and never recycles an integer, so a stale
@@ -145,8 +155,9 @@ public debug client. DAP work must not create those surfaces as a side effect.
 
 Execution-runtime tests own lazy debug Plan behavior, lease lifetime, shared
 parameter/options semantics, setup rollback, cancellation, output/failure
-conversion, and Universal-session cleanup. Adapter tests own native translation
-and diagnostic identity. Debug-manager tests own commands, state
+conversion, and Universal-session cleanup. `internal/ferretapi` tests own native
+translation and diagnostic identity. Debug-manager tests use Universal debugger
+Session fakes and own commands, state
 transitions, event ordering, watcher lag, paused-state inspection, terminal
 retention, parent cleanup, and concurrent close. DAP tests own initialization
 defaults, launch sequencing, coordinate conversion, breakpoints,

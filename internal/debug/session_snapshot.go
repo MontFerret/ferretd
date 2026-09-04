@@ -2,6 +2,8 @@ package debug
 
 import (
 	"github.com/MontFerret/api"
+	apidebugger "github.com/MontFerret/api/debugger"
+	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
 )
 
@@ -10,9 +12,9 @@ type SessionSnapshot struct {
 	ID               SessionID
 	ExecutionSession exec.SessionID
 	State            State
-	Reason           StopReason
-	Location         Location
-	HitBreakpointIDs []BreakpointID
+	Reason           apidebugger.Reason
+	Location         apisource.Location
+	HitBreakpointIDs []apidebugger.BreakpointID
 	Parameters       exec.Parameters
 	Options          exec.RuntimeOptions
 	Output           *api.Output
@@ -23,7 +25,7 @@ type SessionSnapshot struct {
 // Parameter copying follows exec.Parameters' recursive container contract.
 func (s SessionSnapshot) Clone() SessionSnapshot {
 	result := s
-	result.HitBreakpointIDs = append([]BreakpointID(nil), s.HitBreakpointIDs...)
+	result.HitBreakpointIDs = append([]apidebugger.BreakpointID(nil), s.HitBreakpointIDs...)
 	result.Parameters = s.Parameters.Clone()
 	if s.Output != nil {
 		result.Output = &api.Output{

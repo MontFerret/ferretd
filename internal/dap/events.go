@@ -7,6 +7,7 @@ import (
 	protocol "github.com/google/go-dap"
 	"github.com/rs/zerolog"
 
+	apidebugger "github.com/MontFerret/api/debugger"
 	"github.com/MontFerret/ferretd/internal/debug"
 )
 
@@ -64,11 +65,12 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 		s.logger.Info().Msg("DAP execution running")
 	case debug.StateStopped:
 		s.stateMu.Lock()
-		suppress := s.suppressEntry && snapshot.Reason == debug.StopEntry
+		suppress := s.suppressEntry && snapshot.Reason == apidebugger.ReasonEntry
 		if suppress {
 			s.suppressEntry = false
 		}
 		s.stateMu.Unlock()
+
 		if suppress {
 			s.logger.Info().
 				Str("reason", stopReasonEntry).
@@ -147,15 +149,15 @@ func (s *Server) sendStopped(snapshot debug.SessionSnapshot) error {
 	reason := stopReasonPause
 	description := ""
 	switch snapshot.Reason {
-	case debug.StopEntry:
+	case apidebugger.ReasonEntry:
 		reason = stopReasonEntry
-	case debug.StopBreakpoint:
+	case apidebugger.ReasonBreakpoint:
 		reason = stopReasonBreakpoint
-	case debug.StopStep:
+	case apidebugger.ReasonStep:
 		reason = stopReasonStep
-	case debug.StopPause:
+	case apidebugger.ReasonPause:
 		reason = stopReasonPause
-	case debug.StopRuntimeError:
+	case apidebugger.ReasonRuntimeError:
 		reason = stopReasonException
 		if snapshot.Failure != nil {
 			description = snapshot.Failure.Message

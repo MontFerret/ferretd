@@ -1,12 +1,7 @@
 package debug
 
-type (
-	// State identifies a debug Session lifecycle state.
-	State uint8
-
-	// StopReason identifies why a debug Session is stopped.
-	StopReason uint8
-)
+// State identifies a debug Session lifecycle state.
+type State uint8
 
 const (
 	// StateCreated accepts configuration before execution starts.
@@ -21,21 +16,6 @@ const (
 	StateFailed
 	// StateTerminated is terminal cancellation requested by the debugger owner.
 	StateTerminated
-)
-
-const (
-	// StopNone is the natural zero value when no stop reason applies.
-	StopNone StopReason = iota
-	// StopEntry reports the debugger's initial entry suspension.
-	StopEntry
-	// StopBreakpoint reports a source breakpoint hit.
-	StopBreakpoint
-	// StopStep reports completion of a debugger step command.
-	StopStep
-	// StopPause reports an explicit pause request.
-	StopPause
-	// StopRuntimeError reports suspension at a runtime failure.
-	StopRuntimeError
 )
 
 // Terminal reports whether state can no longer transition.

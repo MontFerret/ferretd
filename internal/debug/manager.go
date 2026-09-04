@@ -6,6 +6,8 @@ import (
 	"errors"
 	"sync"
 
+	apidebugger "github.com/MontFerret/api/debugger"
+	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
@@ -171,19 +173,19 @@ func (m *Manager) StepOutSession(ctx context.Context, id SessionID) (SessionSnap
 func (m *Manager) ReplaceBreakpoints(
 	ctx context.Context,
 	id SessionID,
-	file string,
-	locations []BreakpointLocation,
-) ([]Breakpoint, error) {
+	sourceName string,
+	locations []apisource.Position,
+) ([]apidebugger.Breakpoint, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	return session.replaceBreakpoints(ctx, file, locations)
+	return session.replaceBreakpoints(ctx, sourceName, locations)
 }
 
 // Frames returns the current-to-caller paused frame stack.
-func (m *Manager) Frames(ctx context.Context, id SessionID) ([]Frame, error) {
+func (m *Manager) Frames(ctx context.Context, id SessionID) ([]apidebugger.Frame, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
 		return nil, err
@@ -206,8 +208,8 @@ func (m *Manager) Scopes(ctx context.Context, id SessionID, frame int) ([]Scope,
 func (m *Manager) Variables(
 	ctx context.Context,
 	id SessionID,
-	reference ValueReference,
-) ([]Variable, error) {
+	reference apidebugger.ValueReference,
+) ([]apidebugger.Variable, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
 		return nil, err
@@ -222,10 +224,10 @@ func (m *Manager) Evaluate(
 	id SessionID,
 	frame int,
 	expression string,
-) (Value, error) {
+) (apidebugger.Value, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
-		return Value{}, err
+		return apidebugger.Value{}, err
 	}
 
 	return session.evaluate(ctx, frame, expression)

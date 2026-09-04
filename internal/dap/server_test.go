@@ -582,10 +582,14 @@ func TestDAPSetBreakpointsReturnsUnverifiedForUnownedSource(t *testing.T) {
 
 	client.server.breakpointMu.Lock()
 	stableCount := len(client.server.stableBreakpoints)
-	nativeCount := len(client.server.nativeBreakpoints)
+	debuggerCount := len(client.server.debuggerBreakpoints)
 	client.server.breakpointMu.Unlock()
-	if stableCount != 0 || nativeCount != 0 {
-		t.Fatalf("unowned source created breakpoint state: stable=%d native=%d", stableCount, nativeCount)
+	if stableCount != 0 || debuggerCount != 0 {
+		t.Fatalf(
+			"unowned source created breakpoint state: stable=%d debugger=%d",
+			stableCount,
+			debuggerCount,
+		)
 	}
 
 	completePendingDAPLaunch(t, client)
@@ -818,6 +822,25 @@ RETURN outer(@input) + box.value`)
 	}
 	if stackResponse.Body.StackFrames[0].Name != "inner" || stackResponse.Body.StackFrames[2].Source.Path != programURI {
 		t.Fatalf("stack frames = %#v", stackResponse.Body.StackFrames)
+	}
+
+	pagedStackTrace := client.request("stackTrace")
+	client.send(&protocol.StackTraceRequest{
+		Request: pagedStackTrace,
+		Arguments: protocol.StackTraceArguments{
+			ThreadId:   threadID,
+			StartFrame: 1,
+			Levels:     1,
+		},
+	})
+	pagedStackResponse, ok := client.read().(*protocol.StackTraceResponse)
+	if !ok || len(pagedStackResponse.Body.StackFrames) != 1 ||
+		pagedStackResponse.Body.TotalFrames != 3 {
+		t.Fatalf("paged stackTrace response = %#v", pagedStackResponse)
+	}
+	pagedFrame := pagedStackResponse.Body.StackFrames[0]
+	if frameIndex, status := client.server.handles.FrameIndex(pagedFrame.Id); status != handleCurrent || frameIndex != 1 {
+		t.Fatalf("paged frame handle = (%d, %v), want (1, current)", frameIndex, status)
 	}
 
 	scopes := client.request("scopes")

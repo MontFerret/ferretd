@@ -23,9 +23,9 @@ type (
 		id               SessionID
 		runtime          *exec.DebugRuntime
 		state            State
-		reason           StopReason
-		location         Location
-		hitBreakpointIDs []BreakpointID
+		reason           apidebugger.Reason
+		location         apisource.Location
+		hitBreakpointIDs []apidebugger.BreakpointID
 		output           *api.Output
 		failure          *exec.RuntimeFailure
 		breakpoints      map[string][]apidebugger.Breakpoint
@@ -119,12 +119,12 @@ func (d *session) pause(ctx context.Context) (SessionSnapshot, error) {
 	return d.snapshot(), nil
 }
 
-// replaceBreakpoints replaces every breakpoint for one source file.
+// replaceBreakpoints replaces every breakpoint for one source.
 func (d *session) replaceBreakpoints(
 	ctx context.Context,
-	file string,
-	locations []BreakpointLocation,
-) ([]Breakpoint, error) {
+	sourceName string,
+	locations []apisource.Position,
+) ([]apidebugger.Breakpoint, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func (d *session) replaceBreakpoints(
 	}
 
 	d.mu.Lock()
-	existing := append([]apidebugger.Breakpoint(nil), d.breakpoints[file]...)
+	existing := append([]apidebugger.Breakpoint(nil), d.breakpoints[sourceName]...)
 	d.mu.Unlock()
 
 	for _, breakpoint := range existing {
@@ -147,19 +147,15 @@ func (d *session) replaceBreakpoints(
 	}
 
 	d.mu.Lock()
-	d.breakpoints[file] = nil
+	d.breakpoints[sourceName] = nil
 	d.mu.Unlock()
 
 	bound := make([]apidebugger.Breakpoint, 0, len(locations))
-	result := make([]Breakpoint, 0, len(locations))
 	for _, location := range locations {
 		breakpoint, err := d.runtime.Debugger().SetBreakpointAt(
 			apisource.Location{
-				SourceName: file,
-				Position: apisource.Position{
-					Line:   location.Line,
-					Column: location.Column,
-				},
+				SourceName: sourceName,
+				Position:   location,
 			},
 			apidebugger.BreakpointOptions{
 				BindingMode: apidebugger.BreakpointBindNextExecutableInSource,
@@ -167,25 +163,24 @@ func (d *session) replaceBreakpoints(
 		)
 		if err != nil {
 			d.mu.Lock()
-			d.breakpoints[file] = bound
+			d.breakpoints[sourceName] = bound
 			d.mu.Unlock()
 
 			return nil, err
 		}
 
 		bound = append(bound, breakpoint)
-		result = append(result, convertBreakpoint(breakpoint))
 	}
 
 	d.mu.Lock()
-	d.breakpoints[file] = bound
+	d.breakpoints[sourceName] = bound
 	d.mu.Unlock()
 
-	return result, nil
+	return bound, nil
 }
 
 // frames returns the paused frame stack in current-to-caller order.
-func (d *session) frames(ctx context.Context) ([]Frame, error) {
+func (d *session) frames(ctx context.Context) ([]apidebugger.Frame, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -197,21 +192,7 @@ func (d *session) frames(ctx context.Context) ([]Frame, error) {
 		return nil, err
 	}
 
-	frames, err := d.runtime.Debugger().Frames()
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]Frame, len(frames))
-	for index, frame := range frames {
-		result[index] = Frame{
-			Index:    index,
-			Name:     frame.Name,
-			Location: convertSourceLocation(frame.Location),
-		}
-	}
-
-	return result, nil
+	return d.runtime.Debugger().Frames()
 }
 
 // scopes returns Locals and Parameters for one paused frame.
@@ -235,12 +216,10 @@ func (d *session) scopes(ctx context.Context, frame int) ([]Scope, error) {
 	locals := Scope{Kind: ScopeLocals, Name: "Locals"}
 	parameters := Scope{Kind: ScopeParameters, Name: "Parameters"}
 	for _, variable := range variables {
-		converted := convertVariable(variable)
-
 		if variable.Param {
-			parameters.Variables = append(parameters.Variables, converted)
+			parameters.Variables = append(parameters.Variables, variable)
 		} else {
-			locals.Variables = append(locals.Variables, converted)
+			locals.Variables = append(locals.Variables, variable)
 		}
 	}
 
@@ -248,7 +227,10 @@ func (d *session) scopes(ctx context.Context, frame int) ([]Scope, error) {
 }
 
 // variables expands one value reference from the current paused state.
-func (d *session) variables(ctx context.Context, reference ValueReference) ([]Variable, error) {
+func (d *session) variables(
+	ctx context.Context,
+	reference apidebugger.ValueReference,
+) ([]apidebugger.Variable, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -260,33 +242,32 @@ func (d *session) variables(ctx context.Context, reference ValueReference) ([]Va
 		return nil, err
 	}
 
-	variables, err := d.runtime.Debugger().Variables(apidebugger.ValueReference(reference))
-	if err != nil {
-		return nil, err
-	}
-
-	return convertVariables(variables), nil
+	return d.runtime.Debugger().Variables(reference)
 }
 
 // evaluate evaluates a side-effect-free expression in one paused frame.
-func (d *session) evaluate(ctx context.Context, frame int, expression string) (Value, error) {
+func (d *session) evaluate(
+	ctx context.Context,
+	frame int,
+	expression string,
+) (apidebugger.Value, error) {
 	if err := ctx.Err(); err != nil {
-		return Value{}, err
+		return apidebugger.Value{}, err
 	}
 
 	d.controlMu.Lock()
 	defer d.controlMu.Unlock()
 
 	if err := d.requireStopped(); err != nil {
-		return Value{}, err
+		return apidebugger.Value{}, err
 	}
 
 	value, err := d.runtime.Debugger().EvaluateFrame(ctx, frame, expression)
 	if err != nil {
-		return Value{}, err
+		return apidebugger.Value{}, err
 	}
 
-	return convertValue(value), nil
+	return value, nil
 }
 
 // terminateExecution idempotently requests runtime termination while retaining the resource.
@@ -340,7 +321,7 @@ func (d *session) resumeCommand(
 	command func(context.Context) (*apidebugger.Event, error),
 ) (SessionSnapshot, error) {
 	d.mu.Lock()
-	runtimeErrorResume := d.state == StateStopped && d.reason == StopRuntimeError
+	runtimeErrorResume := d.state == StateStopped && d.reason == apidebugger.ReasonRuntimeError
 	d.mu.Unlock()
 
 	return d.startCommand(ctx, StateStopped, func() (*apidebugger.Event, error) {
@@ -384,8 +365,8 @@ func (d *session) startCommand(
 	}
 
 	d.state = StateRunning
-	d.reason = StopNone
-	d.location = Location{}
+	d.reason = ""
+	d.location = apisource.Location{}
 	d.hitBreakpointIDs = nil
 	d.failure = nil
 	d.publishLocked(EventRunning, false)
@@ -430,22 +411,19 @@ func (d *session) applyRuntimeEventLocked(event *apidebugger.Event, runtimeError
 		return
 	}
 
-	d.location = convertRangeLocation(event.Location)
+	d.location = event.Location.Location
 	switch event.Reason {
 	case apidebugger.ReasonEntry:
-		d.stopLocked(StopEntry)
+		d.stopLocked(apidebugger.ReasonEntry)
 	case apidebugger.ReasonBreakpoint:
-		d.hitBreakpointIDs = make([]BreakpointID, len(event.HitBreakpointIDs))
-		for index, id := range event.HitBreakpointIDs {
-			d.hitBreakpointIDs[index] = BreakpointID(id)
-		}
-		d.stopLocked(StopBreakpoint)
+		d.hitBreakpointIDs = append([]apidebugger.BreakpointID(nil), event.HitBreakpointIDs...)
+		d.stopLocked(apidebugger.ReasonBreakpoint)
 	case apidebugger.ReasonStep:
-		d.stopLocked(StopStep)
+		d.stopLocked(apidebugger.ReasonStep)
 	case apidebugger.ReasonPause:
-		d.stopLocked(StopPause)
+		d.stopLocked(apidebugger.ReasonPause)
 	case apidebugger.ReasonRuntimeError:
-		d.reason = StopRuntimeError
+		d.reason = apidebugger.ReasonRuntimeError
 		d.state = StateStopped
 		d.failure = d.runtime.MaterializeFailure(event.Error)
 		d.publishLocked(EventStopped, false)
@@ -465,7 +443,7 @@ func (d *session) applyRuntimeEventLocked(event *apidebugger.Event, runtimeError
 	}
 }
 
-func (d *session) stopLocked(reason StopReason) {
+func (d *session) stopLocked(reason apidebugger.Reason) {
 	d.reason = reason
 	d.failure = nil
 	d.state = StateStopped
@@ -528,8 +506,8 @@ func (d *session) terminate() {
 	d.mu.Lock()
 	if !d.state.Terminal() {
 		d.state = StateTerminated
-		d.reason = StopNone
-		d.location = Location{}
+		d.reason = ""
+		d.location = apisource.Location{}
 		d.failure = nil
 		d.publishLocked(EventTerminated, true)
 	}
@@ -566,7 +544,7 @@ func (d *session) snapshotLocked() SessionSnapshot {
 		State:            d.state,
 		Reason:           d.reason,
 		Location:         d.location,
-		HitBreakpointIDs: append([]BreakpointID(nil), d.hitBreakpointIDs...),
+		HitBreakpointIDs: append([]apidebugger.BreakpointID(nil), d.hitBreakpointIDs...),
 		Parameters:       d.runtime.Parameters(),
 		Options:          d.runtime.Options(),
 		Output:           d.output,

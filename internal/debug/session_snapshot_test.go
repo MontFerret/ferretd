@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/MontFerret/api"
+	apidebugger "github.com/MontFerret/api/debugger"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/exec"
 )
 
 func TestSessionSnapshotClone(t *testing.T) {
 	value := SessionSnapshot{
-		HitBreakpointIDs: []BreakpointID{1},
+		HitBreakpointIDs: []apidebugger.BreakpointID{1},
 		Parameters:       map[string]any{"nested": []any{map[string]any{"key": "value"}}},
 		Options: exec.RuntimeOptions{
 			WorkingDirectory:    "/runtime root",
