@@ -13,21 +13,8 @@ import (
 )
 
 func TestSupportedClientExecutionWorkingDirectoryOutsideWorkspace(t *testing.T) {
-	endpoint := testEndpoint(t)
-	d, err := New(Options{Endpoint: endpoint})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	startDone := make(chan error, 1)
-	go func() { startDone <- d.Start(context.Background()) }()
-	waitForEndpoint(t, endpoint)
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_ = d.Stop(ctx)
-		<-startDone
-	})
-
+	// Register the roots before daemon cleanup so LIFO teardown releases Windows
+	// filesystem handles before TempDir removes their directories.
 	workspaceRoot := t.TempDir()
 	if err := os.WriteFile(
 		filepath.Join(workspaceRoot, "query.fql"),
@@ -44,6 +31,21 @@ func TestSupportedClientExecutionWorkingDirectoryOutsideWorkspace(t *testing.T) 
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
+
+	endpoint := testEndpoint(t)
+	d, err := New(Options{Endpoint: endpoint})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	startDone := make(chan error, 1)
+	go func() { startDone <- d.Start(context.Background()) }()
+	waitForEndpoint(t, endpoint)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = d.Stop(ctx)
+		<-startDone
+	})
 
 	publicEndpoint, err := supportedclient.ParseEndpoint(endpoint.String())
 	if err != nil {
