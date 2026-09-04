@@ -25,6 +25,30 @@ func fromProtoSession(value *executionv1.Session) (Session, error) {
 	}, nil
 }
 
+func toProtoExecutionOptions(value ExecutionOptions) *executionv1.ExecutionOptions {
+	result := &executionv1.ExecutionOptions{
+		OutputContentType: value.OutputContentType,
+	}
+
+	if value.WorkingDirectory != "" {
+		workingDirectory := value.WorkingDirectory
+		result.WorkingDirectory = &workingDirectory
+	}
+
+	return result
+}
+
+func fromProtoExecutionOptions(value *executionv1.ExecutionOptions) ExecutionOptions {
+	if value == nil {
+		return ExecutionOptions{}
+	}
+
+	return ExecutionOptions{
+		OutputContentType: value.OutputContentType,
+		WorkingDirectory:  value.GetWorkingDirectory(),
+	}
+}
+
 func fromProtoExecution(value *executionv1.Execution) (Execution, error) {
 	if value == nil || value.Id == nil || value.Id.Value == "" || value.SessionId == nil ||
 		value.SessionId.Value == "" {
@@ -41,16 +65,13 @@ func fromProtoExecution(value *executionv1.Execution) (Execution, error) {
 		ID:        ExecutionID(value.Id.Value),
 		SessionID: SessionID(value.SessionId.Value),
 		State:     state,
+		Options:   fromProtoExecutionOptions(value.Options),
 	}
 
 	if value.Parameters != nil {
 		result.Parameters = value.Parameters.AsMap()
 	} else {
 		result.Parameters = map[string]any{}
-	}
-
-	if value.Options != nil {
-		result.Options.OutputContentType = value.Options.OutputContentType
 	}
 
 	if value.Output != nil {

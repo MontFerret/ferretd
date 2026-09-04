@@ -35,6 +35,7 @@ type (
 	// ExecutionOptions contains one-shot invocation settings.
 	ExecutionOptions struct {
 		OutputContentType string
+		WorkingDirectory  string
 	}
 
 	// CreateExecutionRequest creates one isolated invocation from a compiled Session.

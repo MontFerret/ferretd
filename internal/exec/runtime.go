@@ -59,10 +59,15 @@ func newRuntimeInput(parameters Parameters, options RuntimeOptions) (runtimeInpu
 		return runtimeInput{}, fmt.Errorf("%w: %v", ErrInvalidParameters, err)
 	}
 
+	normalizedOptions, err := options.normalized()
+	if err != nil {
+		return runtimeInput{}, err
+	}
+
 	return runtimeInput{
 		ferretParameters: ferretParameters,
 		parameters:       retained,
-		options:          options.normalized(),
+		options:          normalizedOptions,
 	}, nil
 }
 
@@ -103,6 +108,10 @@ func (r *executionRuntime) sessionOptions() []ferret.SessionOption {
 	options := []ferret.SessionOption{ferret.WithSessionRuntimeParams(r.input.ferretParameters)}
 	if r.input.options.OutputContentType != "" {
 		options = append(options, ferret.WithOutputContentType(r.input.options.OutputContentType))
+	}
+
+	if r.input.options.WorkingDirectorySet {
+		options = append(options, ferret.WithSessionFSRoot(r.input.options.WorkingDirectory))
 	}
 
 	return options

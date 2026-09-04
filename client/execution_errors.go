@@ -24,6 +24,8 @@ var (
 	ErrInvalidExecutionState = errors.New("invalid execution state")
 	// ErrInvalidExecutionParameters reports parameter values rejected by the runtime boundary.
 	ErrInvalidExecutionParameters = errors.New("invalid execution parameters")
+	// ErrInvalidExecutionOptions reports invocation settings rejected by the runtime boundary.
+	ErrInvalidExecutionOptions = errors.New("invalid execution options")
 	// ErrExecutionWatcherLagged reports a watcher disconnected after its buffer overflowed.
 	ErrExecutionWatcherLagged = errors.New("execution watcher lagged")
 	// ErrExecutionServiceClosed reports a daemon execution manager that is shutting down.

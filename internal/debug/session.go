@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/MontFerret/ferret/v2"
+	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
@@ -152,7 +153,13 @@ func (d *session) replaceBreakpoints(
 	result := make([]Breakpoint, 0, len(locations))
 	for _, location := range locations {
 		breakpoint, err := d.runtime.Debugger().SetBreakpointAt(
-			ferret.DebugSourceLocation{File: file, Line: location.Line, Column: location.Column},
+			ferret.DebugSourceLocation{
+				File: file,
+				Position: ferretsource.Position{
+					Line:   location.Line,
+					Column: location.Column,
+				},
+			},
 			ferret.DebugBreakpointOptions{BindingMode: ferret.DebugBreakpointBindNextExecutableInFile},
 		)
 		if err != nil {
@@ -197,7 +204,7 @@ func (d *session) frames(ctx context.Context) ([]Frame, error) {
 		result[index] = Frame{
 			Index:    index,
 			Name:     frame.Name,
-			Location: convertLocation(frame.Location),
+			Location: convertSourceLocation(frame.Location),
 		}
 	}
 
@@ -420,7 +427,7 @@ func (d *session) applyFerretEventLocked(event *ferret.DebugEvent, runtimeErrorR
 		return
 	}
 
-	d.location = convertLocation(event.Location)
+	d.location = convertRangeLocation(event.Location)
 	switch event.Reason {
 	case ferret.DebugReasonEntry:
 		d.stopLocked(StopEntry)

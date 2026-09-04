@@ -42,7 +42,11 @@ func New(
 	}
 
 	options = options.normalized()
-	compilerInstance := compiler.New()
+	compilerInstance, err := compiler.New()
+	if err != nil {
+		return nil, fmt.Errorf("create compiler: %w", err)
+	}
+
 	result := &Service{
 		overlays:   make(map[source.URI]overlay),
 		cache:      make(map[source.URI]*analysisEntry),

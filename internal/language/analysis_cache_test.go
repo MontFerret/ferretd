@@ -23,7 +23,7 @@ func TestAnalysisCacheCoalescesConcurrentRequests(t *testing.T) {
 	release := make(chan struct{})
 	var calls atomic.Int32
 	realAnalyze := service.compiler.Analyze
-	service.analyze = func(src *ferretsource.Source) (*compiler.Analysis, error) {
+	service.analyze = func(src ferretsource.Source) (*compiler.Analysis, error) {
 		if calls.Add(1) == 1 {
 			close(started)
 		}
@@ -58,7 +58,7 @@ func TestAnalysisCacheCancellationDoesNotCancelAtomicOwner(t *testing.T) {
 	release := make(chan struct{})
 	completed := make(chan struct{})
 	realAnalyze := service.compiler.Analyze
-	service.analyze = func(src *ferretsource.Source) (*compiler.Analysis, error) {
+	service.analyze = func(src ferretsource.Source) (*compiler.Analysis, error) {
 		close(started)
 		<-release
 		defer close(completed)
@@ -103,7 +103,7 @@ func TestAnalysisCacheLateOldResultCannotReplaceNewSnapshot(t *testing.T) {
 	v1Release := make(chan struct{})
 	v2Release := make(chan struct{})
 	realAnalyze := service.compiler.Analyze
-	service.analyze = func(src *ferretsource.Source) (*compiler.Analysis, error) {
+	service.analyze = func(src ferretsource.Source) (*compiler.Analysis, error) {
 		switch src.Content() {
 		case "RETURN missingOne":
 			close(v1Started)

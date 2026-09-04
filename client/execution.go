@@ -71,9 +71,7 @@ func (c *ExecutionClient) CreateExecution(
 	response, err := c.client.CreateExecution(ctx, &executionv1.CreateExecutionRequest{
 		SessionId:  &executionv1.SessionId{Value: string(request.SessionID)},
 		Parameters: parameters,
-		Options: &executionv1.ExecutionOptions{
-			OutputContentType: request.Options.OutputContentType,
-		},
+		Options:    toProtoExecutionOptions(request.Options),
 	})
 	if err != nil {
 		return Execution{}, mapCreateExecutionError(ctx, err)

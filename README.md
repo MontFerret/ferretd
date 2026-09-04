@@ -109,10 +109,19 @@ session, err := c.Executions().CreateSession(ctx, client.CreateSessionRequest{
 execution, err := c.Executions().CreateExecution(ctx, client.CreateExecutionRequest{
 	SessionID:  session.ID,
 	Parameters: map[string]any{"url": "https://example.com"},
+	Options: client.ExecutionOptions{
+		// runtimeRoot is an existing absolute directory and may be outside projectRoot.
+		WorkingDirectory: runtimeRoot,
+	},
 })
 watcher, err := c.Executions().WatchExecution(ctx, execution.ID)
 running, err := c.Executions().RunExecution(ctx, execution.ID)
 ```
+
+`WorkingDirectory` is optional. When omitted, the Ferret runtime session uses
+the workspace-rooted filesystem associated with the compiled Session. When
+supplied, it must resolve to an existing absolute local directory; it may be
+outside the workspace and is retained canonically in Execution snapshots.
 
 For the opt-in TCP transport, parse the endpoint from the `ferretd.ready` event
 and pass the same token explicitly:
@@ -149,7 +158,9 @@ contents of one eligible workspace-relative `.fql` document into an immutable
 reusable plan. A missed creation notification is recovered during this refresh;
 excluded or escaping paths remain rejected. Existing Sessions keep their
 original source revision and normal and lazy debug Plans. Each `Execution` owns
-isolated JSON-shaped parameter bindings and a fresh, one-shot Ferret runtime session.
+isolated JSON-shaped parameter bindings and a fresh, one-shot Ferret runtime
+session. Its optional working directory changes only that runtime session's
+rooted filesystem; compilation and source containment remain workspace-owned.
 `RunExecution` returns the `RUNNING` snapshot immediately; execution then
 continues independently of the triggering RPC context. Clients can observe the
 latest lifecycle event and subsequent events with `WatchExecution`, cancel an

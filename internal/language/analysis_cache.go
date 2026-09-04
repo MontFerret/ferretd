@@ -41,7 +41,7 @@ type (
 		analysis *compiler.Analysis
 	}
 
-	analyzeFunc func(*ferretsource.Source) (*compiler.Analysis, error)
+	analyzeFunc func(ferretsource.Source) (*compiler.Analysis, error)
 
 	snapshotOrigin uint8
 )

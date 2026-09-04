@@ -41,9 +41,7 @@ func toProtoExecution(value exec.ExecutionSnapshot) (*executionv1.Execution, err
 		SessionId:  &executionv1.SessionId{Value: value.Session.String()},
 		State:      toProtoExecutionState(value.State),
 		Parameters: parameters,
-		Options: &executionv1.ExecutionOptions{
-			OutputContentType: value.Options.OutputContentType,
-		},
+		Options:    toProtoExecutionOptions(value.Options),
 	}
 
 	if value.Output != nil {

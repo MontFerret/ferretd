@@ -94,16 +94,11 @@ func (s *executionService) CreateExecution(
 		parameters = request.Parameters.AsMap()
 	}
 
-	options := exec.RuntimeOptions{}
-	if request.Options != nil {
-		options.OutputContentType = request.Options.OutputContentType
-	}
-
 	result, err := s.executions.CreateExecution(
 		ctx,
 		exec.SessionID(request.SessionId.Value),
 		exec.Parameters(parameters),
-		options,
+		fromProtoExecutionOptions(request.Options),
 	)
 	if err != nil {
 		return nil, toExecutionStatusError(err)

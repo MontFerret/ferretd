@@ -56,6 +56,14 @@ cancellation function, one Ferret session resource, `RuntimeOutput` and
 `RuntimeFailure` materialization, and idempotent Ferret-session cleanup. Both
 normal and debug creation use the same preparation and cloning semantics.
 
+Runtime options also retain an optional canonical working directory. Validation
+requires a nonblank absolute path that resolves to an accessible directory and
+uses the same rooted-filesystem opening semantics as Ferret. This option is
+independent of source/workspace containment and may name a directory outside the
+workspace. An absent option preserves the workspace engine filesystem; a
+present option is passed to `ferret.WithSessionFSRoot` for the fresh runtime
+session without changing compilation or creating another Plan.
+
 Each Execution owns that runtime plus its ordinary one-shot state, ordered
 lifecycle events, and terminal result or failure. The fresh Ferret runtime
 Session is still created only after `Start`, so session-creation failures remain
@@ -122,12 +130,15 @@ workspaces.
 
 The execution v1 protobuf defines Session and Execution identity, source
 snapshots, JSON-shaped parameters, output, structured failures, lifecycle RPCs,
-and the server-streaming watch. `internal/grpc` maps those values and stable
-domain errors without owning execution state.
+the optional runtime working directory, and the server-streaming watch.
+`internal/grpc` preserves optional-field presence and maps those values and
+stable domain errors without owning execution state. A present blank working
+directory is classified separately from invalid parameters.
 
 The public `client` package presents supported Session, Execution, watcher,
-output, and failure types while hiding generated protobuf clients. Its sentinel
-and typed error mapping is part of the public compatibility surface.
+output, failure, and working-directory option types while hiding generated
+protobuf clients. An empty Go working-directory value omits the wire field. Its
+sentinel and typed error mapping is part of the public compatibility surface.
 
 ## Testing changes
 

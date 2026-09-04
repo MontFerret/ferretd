@@ -12,6 +12,107 @@ import (
 	supportedclient "github.com/MontFerret/ferretd/client"
 )
 
+func TestSupportedClientExecutionWorkingDirectoryOutsideWorkspace(t *testing.T) {
+	// Register the roots before daemon cleanup so LIFO teardown releases Windows
+	// filesystem handles before TempDir removes their directories.
+	workspaceRoot := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(workspaceRoot, "query.fql"),
+		[]byte(`RETURN TO_STRING(IO::FS::READ("value.txt"))`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write query: %v", err)
+	}
+	runtimeRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "value.txt"), []byte("runtime"), 0o600); err != nil {
+		t.Fatalf("write runtime value: %v", err)
+	}
+	canonicalRuntimeRoot, err := filepath.EvalSymlinks(runtimeRoot)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+
+	endpoint := testEndpoint(t)
+	d, err := New(Options{Endpoint: endpoint})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	startDone := make(chan error, 1)
+	go func() { startDone <- d.Start(context.Background()) }()
+	waitForEndpoint(t, endpoint)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = d.Stop(ctx)
+		<-startDone
+	})
+
+	publicEndpoint, err := supportedclient.ParseEndpoint(endpoint.String())
+	if err != nil {
+		t.Fatalf("ParseEndpoint: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := supportedclient.Dial(ctx, supportedclient.WithEndpoint(publicEndpoint))
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	workspace, err := client.Workspaces().Open(ctx, workspaceRoot)
+	if err != nil {
+		t.Fatalf("Workspace Open: %v", err)
+	}
+	session, err := client.Executions().CreateSession(ctx, supportedclient.CreateSessionRequest{
+		WorkspaceID:  workspace.ID,
+		RelativePath: "query.fql",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	created, err := client.Executions().CreateExecution(ctx, supportedclient.CreateExecutionRequest{
+		SessionID: session.ID,
+		Options: supportedclient.ExecutionOptions{
+			WorkingDirectory: runtimeRoot,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateExecution: %v", err)
+	}
+	if created.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
+		t.Fatalf("WorkingDirectory = %q, want %q", created.Options.WorkingDirectory, canonicalRuntimeRoot)
+	}
+
+	watch, err := client.Executions().WatchExecution(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("WatchExecution: %v", err)
+	}
+	if event, err := watch.Recv(); err != nil || event.Kind != supportedclient.ExecutionEventCreated ||
+		event.Execution.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
+		t.Fatalf("created event = %+v, %v", event, err)
+	}
+	running, err := client.Executions().RunExecution(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("RunExecution: %v", err)
+	}
+	if running.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
+		t.Fatalf("running WorkingDirectory = %q, want %q", running.Options.WorkingDirectory, canonicalRuntimeRoot)
+	}
+	if event, err := watch.Recv(); err != nil || event.Kind != supportedclient.ExecutionEventStarted ||
+		event.Execution.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
+		t.Fatalf("started event = %+v, %v", event, err)
+	}
+	terminal, err := watch.Recv()
+	if err != nil {
+		t.Fatalf("terminal event: %v", err)
+	}
+	if terminal.Kind != supportedclient.ExecutionEventCompleted || terminal.Execution.Output == nil ||
+		string(terminal.Execution.Output.Data) != `"runtime"` ||
+		terminal.Execution.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
+		t.Fatalf("terminal event = %+v", terminal)
+	}
+}
+
 func TestSupportedClientExecutionFlowAndReconnectPersistence(t *testing.T) {
 	endpoint := testEndpoint(t)
 	d, err := New(Options{Endpoint: endpoint})
