@@ -5,12 +5,12 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// session owns one immutable reusable Ferret Plan. The child gate orders
+// session owns one immutable reusable Universal Plan. The child gate orders
 // execution-runtime creation before close; its mutex owns debug compilation and
 // Plan lease state. No operation holds the Session mutex while waiting on the gate.
 type session struct {
@@ -20,9 +20,10 @@ type session struct {
 	source       workspace.SourceSnapshot
 	parameters   []string
 	text         string
-	compileDebug func(context.Context) (workspace.Compilation, error)
-	plan         *ferret.Plan
-	debugPlan    *ferret.Plan
+	fsRoot       string
+	compileDebug func(context.Context) (api.Plan, error)
+	plan         api.Plan
+	debugPlan    api.Plan
 
 	debugCompileDone   chan struct{}
 	debugCompileErr    error
@@ -35,17 +36,20 @@ type session struct {
 
 func newSession(
 	id SessionID,
-	compilation workspace.Compilation,
+	source workspace.SourceSnapshot,
+	plan api.Plan,
 	text string,
-	compileDebug func(context.Context) (workspace.Compilation, error),
+	fsRoot string,
+	compileDebug func(context.Context) (api.Plan, error),
 ) *session {
 	return &session{
 		id:           id,
-		source:       compilation.Source,
-		parameters:   compilation.Plan.Params(),
+		source:       source,
+		parameters:   plan.Params(),
 		text:         text,
+		fsRoot:       fsRoot,
 		compileDebug: compileDebug,
-		plan:         compilation.Plan,
+		plan:         plan,
 	}
 }
 
@@ -99,24 +103,19 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 		s.debugCompileDone = make(chan struct{})
 		done := s.debugCompileDone
 		compileDebug := s.compileDebug
-		source := s.source
 		s.mu.Unlock()
 
-		compilation, err := compileDebug(ctx)
-		if err == nil && compilation.Plan == nil {
+		plan, err := compileDebug(ctx)
+		if err == nil && plan == nil {
 			err = errors.New("debug compilation returned no plan")
-		}
-
-		if err == nil && compilation.Source != source {
-			err = ErrDebugSourceChanged
 		}
 
 		s.mu.Lock()
 		closing := !s.children.Accepting()
 		var target runtimeTarget
 		if err == nil && !closing {
-			s.debugPlan = compilation.Plan
-			target = s.newDebugRuntimeTargetLocked(compilation.Plan)
+			s.debugPlan = plan
+			target = s.newDebugRuntimeTargetLocked(plan)
 		} else if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			s.debugCompileErr = err
 			s.debugCompileFailed = true
@@ -127,7 +126,9 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 		s.mu.Unlock()
 
 		if err != nil || closing {
-			err = errors.Join(err, compilation.Close())
+			if plan != nil {
+				err = errors.Join(err, plan.Close())
+			}
 
 			if closing {
 				err = errors.Join(ErrSessionClosed, err)
@@ -140,13 +141,19 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 	}
 }
 
-func (s *session) newDebugRuntimeTargetLocked(plan *ferret.Plan) runtimeTarget {
+func (s *session) newDebugRuntimeTargetLocked(plan api.Plan) runtimeTarget {
 	if s.debugRuntimes == 0 {
 		s.debugRuntimeDone = make(chan struct{})
 	}
 	s.debugRuntimes++
 
-	return runtimeTarget{sessionID: s.id, source: s.source, text: s.text, plan: plan}
+	return runtimeTarget{
+		sessionID: s.id,
+		source:    s.source,
+		text:      s.text,
+		fsRoot:    s.fsRoot,
+		plan:      plan,
+	}
 }
 
 func (s *session) releaseDebugRuntime() {
@@ -169,6 +176,7 @@ func (s *session) runtimeTarget() runtimeTarget {
 		sessionID: s.id,
 		source:    s.source,
 		text:      s.text,
+		fsRoot:    s.fsRoot,
 		plan:      s.plan,
 	}
 }
@@ -189,7 +197,7 @@ func (s *session) waitForRuntimeCreates() {
 	s.children.WaitForCreates()
 }
 
-func (s *session) releasePlans() (*ferret.Plan, *ferret.Plan) {
+func (s *session) releasePlans() (api.Plan, api.Plan) {
 	s.mu.Lock()
 	compileDone := s.debugCompileDone
 	runtimeDone := s.debugRuntimeDone

@@ -9,7 +9,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
 
@@ -22,18 +21,15 @@ type (
 		opening       map[string]*openOperation
 		closeHooks    []CloseHook
 		loadWorkspace workspaceLoader
-		newEngine     newEngineFunc
 		newWatcher    workspaceWatcherFactory
 		startWatcher  func(*workspaceWatcher, *Workspace)
 		generation    uint64
 	}
 
-	// CloseHook releases resources parented by a workspace before its Engine closes.
+	// CloseHook releases resources parented by a workspace before retained source state is cleared.
 	CloseHook func(context.Context, ID) error
 
 	workspaceLoader func(context.Context, string, directoryObserver) (workspaceContent, error)
-
-	newEngineFunc func(string) (*ferret.Engine, error)
 
 	openOperation struct {
 		generation uint64
@@ -63,10 +59,7 @@ func New() *Manager {
 		byRoot:        make(map[string]ID),
 		opening:       make(map[string]*openOperation),
 		loadWorkspace: loadWorkspace,
-		newEngine: func(root string) (*ferret.Engine, error) {
-			return ferret.New(ferret.WithFSRoot(root))
-		},
-		newWatcher: newWorkspaceWatcher,
+		newWatcher:    newWorkspaceWatcher,
 		startWatcher: func(watcher *workspaceWatcher, workspace *Workspace) {
 			watcher.Start(workspace)
 		},
@@ -382,23 +375,7 @@ func (m *Manager) loadAndCommit(ctx context.Context, operation *openOperation) (
 		err = ctx.Err()
 	}
 
-	var engine *ferret.Engine
-	if err == nil {
-		engine, err = m.newEngine(operation.workspace.Root())
-		if err != nil {
-			err = fmt.Errorf("create workspace engine: %w", err)
-		}
-	}
-
-	if err == nil {
-		err = ctx.Err()
-	}
-
 	if err != nil {
-		if engine != nil {
-			err = errors.Join(err, engine.Close())
-		}
-
 		if watcher != nil {
 			err = errors.Join(err, watcher.Close())
 		}
@@ -416,7 +393,7 @@ func (m *Manager) loadAndCommit(ctx context.Context, operation *openOperation) (
 		m.mu.Unlock()
 
 		err = fmt.Errorf("workspace manager was cleared during load")
-		err = errors.Join(err, engine.Close(), watcher.Close())
+		err = errors.Join(err, watcher.Close())
 		err = fmt.Errorf("%w: load %q: %w", ErrLoad, operation.workspace.Root(), err)
 		operation.workspace.setFailed(err)
 		m.finishOpen(operation, err)
@@ -424,7 +401,7 @@ func (m *Manager) loadAndCommit(ctx context.Context, operation *openOperation) (
 		return nil, err
 	}
 
-	operation.workspace.setReady(content, engine, watcher)
+	operation.workspace.setReady(content, watcher)
 	m.startWatcher(watcher, operation.workspace)
 	m.byID[operation.workspace.ID()] = &workspaceEntry{
 		workspace: operation.workspace,

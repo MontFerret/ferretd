@@ -1,19 +1,33 @@
 package grpc
 
 import (
+	"context"
 	"testing"
 
+	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 func mustNewExecutionManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
 	t.Helper()
 
-	manager, err := exec.New(workspaces)
+	engine, err := ferret.New()
 	if err != nil {
+		t.Fatalf("ferret.New: %v", err)
+	}
+	runtime := ferretapi.New(engine)
+
+	manager, err := exec.New(workspaces, runtime)
+	if err != nil {
+		_ = runtime.Close()
 		t.Fatalf("exec.New: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = manager.Close(context.Background())
+		_ = runtime.Close()
+	})
 
 	return manager
 }

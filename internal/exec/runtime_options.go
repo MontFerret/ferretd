@@ -9,7 +9,7 @@ import (
 
 const defaultOutputContentType = "application/json"
 
-// RuntimeOptions contains per-run Ferret settings shared by ordinary and
+// RuntimeOptions contains per-run Universal runtime settings shared by ordinary and
 // debugger execution. WorkingDirectorySet distinguishes an absent filesystem
 // root override from an explicitly supplied value.
 type RuntimeOptions struct {

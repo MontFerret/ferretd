@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/api"
 )
 
 func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
@@ -271,7 +271,7 @@ func TestWorkingDirectoryRemovedBeforeRunFailsSessionCreation(t *testing.T) {
 
 func TestRepeatedExecutionsDoNotRecompileSessionPlan(t *testing.T) {
 	var compilations atomic.Int64
-	manager, session, _ := newHookedManager(t, "RETURN @value", ferret.WithBeforeCompileHook(
+	manager, session, _ := newHookedManager(t, "RETURN @value", withBeforeCompileHook(
 		func(context.Context) error {
 			compilations.Add(1)
 
@@ -300,6 +300,37 @@ func TestRepeatedExecutionsDoNotRecompileSessionPlan(t *testing.T) {
 }
 
 func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
+	t.Run("partial session creation cleanup", func(t *testing.T) {
+		want := errors.New("session creation failed")
+		var closes atomic.Int32
+		manager, snapshot, runtime := newHookedManager(
+			t,
+			"RETURN 1",
+			withSessionCloseHook(func() error {
+				closes.Add(1)
+
+				return nil
+			}),
+		)
+		plan := retainedSession(t, manager, snapshot.ID).session.plan.(*planSpy)
+		plan.newSessionFn = func(context.Context, ...api.SessionOption) (api.Session, error) {
+			return &sessionSpy{runtime: runtime}, want
+		}
+
+		created, err := manager.CreateExecution(context.Background(), snapshot.ID, nil, RuntimeOptions{})
+		if err != nil {
+			t.Fatalf("CreateExecution: %v", err)
+		}
+		terminal, _ := runAndObserve(t, manager, created.ID)
+		assertFailure(t, terminal, FailureSessionCreation, false)
+		if !strings.Contains(terminal.Failure.Message, want.Error()) {
+			t.Fatalf("failure = %+v, want %v", terminal.Failure, want)
+		}
+		if closes.Load() != 1 {
+			t.Fatalf("partial Session close calls = %d, want 1", closes.Load())
+		}
+	})
+
 	t.Run("session creation", func(t *testing.T) {
 		manager, session, _ := newHookedManager(t, "RETURN 1")
 		created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
@@ -374,7 +405,7 @@ RETURN [first, second, third]`)
 
 	t.Run("cleanup with output", func(t *testing.T) {
 		want := errors.New("cleanup failed")
-		manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithSessionCloseHook(func() error {
+		manager, session, _ := newHookedManager(t, "RETURN 1", withSessionCloseHook(func() error {
 			return want
 		}))
 		created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
@@ -667,14 +698,18 @@ func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 
 func TestInvalidParametersAndUnknownCloseContracts(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
-	if _, err := fixture.manager.CreateExecution(
+	created, err := fixture.manager.CreateExecution(
 		context.Background(),
 		fixture.session.ID,
 		map[string]any{"invalid": make(chan int)},
 		RuntimeOptions{},
-	); !errors.Is(err, ErrInvalidParameters) {
-		t.Fatalf("CreateExecution error = %v, want ErrInvalidParameters", err)
+	)
+	if err != nil {
+		t.Fatalf("CreateExecution: %v", err)
 	}
+	terminal, _ := runAndObserve(t, fixture.manager, created.ID)
+	assertFailure(t, terminal, FailureSessionCreation, false)
+
 	if _, err := fixture.manager.CreateExecution(
 		context.Background(),
 		fixture.session.ID,

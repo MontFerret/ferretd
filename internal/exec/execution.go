@@ -5,18 +5,19 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
 
 type (
-	// execution owns one isolated, one-shot Ferret invocation.
+	// execution owns one isolated, one-shot Universal runtime invocation.
 	execution struct {
 		mu sync.Mutex
 
 		id          ExecutionID
 		runtime     *executionRuntime
 		state       State
-		output      *RuntimeOutput
+		output      *api.Output
 		failure     *Failure
 		runDone     chan struct{}
 		close       lifecycle.CloseOperation
@@ -149,7 +150,7 @@ func (e *execution) run() {
 	e.finish(result.output, result.err, result.category)
 }
 
-func (e *execution) finish(output *RuntimeOutput, err error, category FailureCategory) {
+func (e *execution) finish(output *api.Output, err error, category FailureCategory) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

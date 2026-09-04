@@ -23,12 +23,12 @@ requests converge on one result. A failed debug compilation is retained
 consistently with the Session's source snapshot.
 
 `internal/exec` creates a DebugRuntime through the same lower-level machinery as
-ordinary execution. The common runtime owns prepared parameters, normalized
-`exec.RuntimeOptions`, immutable source/Plan data, manager-owned cancellation,
-the concrete Ferret session, shared `RuntimeOutput` and `RuntimeFailure`
-materialization, and idempotent cleanup. The DebugRuntime exposes the Ferret
-debugger capability and owns the debug-Plan lease. It does not expose mutable
-Session maps, locks, or child state.
+ordinary execution. The common execution state owns cloned parameters,
+normalized `exec.RuntimeOptions`, immutable source/Plan data, manager-owned
+cancellation, one Universal debugger Session, copied `api.Output` and
+`RuntimeFailure` materialization, and idempotent cleanup. The DebugRuntime
+exposes the Universal debugger capability and owns the debug-Plan lease. It does
+not expose mutable Session maps, locks, or child state.
 
 ## Retained DebugSessions
 
@@ -36,8 +36,8 @@ Session maps, locks, or child state.
 cleanup hook during construction. Each DebugSession owns one `exec.DebugRuntime`
 plus breakpoints, authoritative debugger lifecycle state, asynchronous command
 coordination, event watchers, paused-state inspection, and terminal debugger
-data. It does not prepare runtime values, construct Ferret sessions, translate
-runtime failures, or release Plan leases independently.
+data. It does not prepare runtime values, construct Universal sessions,
+translate runtime failures, or release Plan leases independently.
 
 The concrete debug Session implementation is package-private; adapters consume
 `debug.Manager` operations and immutable `SessionSnapshot` values.
@@ -48,8 +48,10 @@ owns the projection from those identities to stable protocol breakpoint IDs.
 Supported commands include start, continue, pause, step-in, step-over, step-out,
 and terminate. Inspection includes threads, stack frames, scopes, variables, and
 frame-scoped evaluation. Ferret decides executable locations, debugger stops,
-stack semantics, values, and runtime behavior; this repository coordinates
-identity and lifecycle around those capabilities.
+stack semantics, values, and runtime behavior. The provisional
+`internal/ferretapi` adapter translates Universal debugger events, locations,
+breakpoints, variables, and outputs into the existing daemon debug model;
+replacing that model is outside the current boundary.
 
 Debug watches publish current and future ordered events through bounded buffers.
 Lagging subscribers disconnect without blocking the session. Commands that run
@@ -64,9 +66,10 @@ releasing normal or debug Plans.
 ## DAP composition
 
 The `dap` command runs one protocol-pure server over stdin and stdout. It does
-not connect to `ferretd serve`. The adapter constructs in-process workspace,
-execution, and debug managers and owns one launched workspace, execution
-Session, and DebugSession.
+not connect to `ferretd serve`. DAP composition constructs one native Ferret
+engine, wraps it with `internal/ferretapi`, and owns that Universal runtime plus
+in-process workspace, execution, and debug managers. It also owns one launched
+workspace, execution Session, and DebugSession.
 
 Launch follows the DAP initialization and configuration sequence. The launch
 request remains pending while breakpoints are configured. After
@@ -121,12 +124,12 @@ result output and successful exit. Explicit termination ends the session without
 inventing a normal process exit.
 
 Adapter cleanup cancels the active watch, terminates and closes the DebugSession,
-closes its execution Session, closes the workspace, and then closes each manager.
-The common execution runtime owns the concrete Ferret session and performs
-cancellation and its one-time close attempt. The DebugRuntime releases its
-debug-Plan lease afterward even when cleanup reports failure. Repeated
-disconnect, termination, context cancellation, or transport failure cannot
-release resources twice.
+closes its execution Session, closes the workspace, closes each manager, and
+then closes the composition runtime exactly once. The common execution state
+owns the Universal debugger Session and performs cancellation and its one-time
+close attempt. The DebugRuntime releases its debug-Plan lease afterward even
+when cleanup reports failure. Repeated disconnect, termination, context
+cancellation, or transport failure cannot release resources twice.
 
 ## Deliberate exclusions
 
@@ -142,7 +145,8 @@ public debug client. DAP work must not create those surfaces as a side effect.
 
 Execution-runtime tests own lazy debug Plan behavior, lease lifetime, shared
 parameter/options semantics, setup rollback, cancellation, output/failure
-conversion, and Ferret-session cleanup. Debug-manager tests own commands, state
+conversion, and Universal-session cleanup. Adapter tests own native translation
+and diagnostic identity. Debug-manager tests own commands, state
 transitions, event ordering, watcher lag, paused-state inspection, terminal
 retention, parent cleanup, and concurrent close. DAP tests own initialization
 defaults, launch sequencing, coordinate conversion, breakpoints,

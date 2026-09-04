@@ -19,10 +19,14 @@ construction and level contract. After `Start` returns, `serve` calls `Stop`
 with a bounded shutdown context. Process signals cancel the root context in
 `cmd/ferretd/main.go`.
 
-The daemon constructs one workspace manager, one execution manager, and one
-gRPC server. The execution manager registers its workspace close hook during
-construction so child Sessions and Executions are released before a workspace
-engine closes. Required service dependencies are passed explicitly.
+The daemon constructs one native Ferret engine, wraps it with
+`internal/ferretapi`, and owns that Universal runtime together with one workspace
+manager, one execution manager, and one gRPC server. The execution manager
+borrows the runtime and registers its workspace close hook during construction
+so child Sessions, Executions, and Plans are released before workspace state.
+Required service dependencies are passed explicitly. Runtime cleanup closes the
+wrapper, which delegates exactly once to the native engine; composition does not
+also close the engine independently.
 
 ## Lifecycle
 
@@ -38,14 +42,17 @@ port for an ephemeral TCP listener and is never filtered by `--log-level`.
 
 1. mark health unavailable;
 2. close execution resources;
-3. clear workspaces and their rooted engines;
-4. drain or force-stop gRPC according to its context;
+3. clear workspaces;
+4. drain gRPC under the committed cleanup operation;
 5. close the local listener;
-6. publish one retained stop result to concurrent callers.
+6. close the composition-owned runtime exactly once;
+7. publish one retained stop result to concurrent callers.
 
 Cancellation and partial startup must not leave a listener, manager resource,
-or goroutine behind. Shutdown errors are joined so cleanup continues after an
-individual failure.
+runtime, or goroutine behind. Once stop commits, cleanup proceeds under its own
+operation even if an individual caller stops waiting. Concurrent and repeated
+callers observe the retained final result. Shutdown errors are joined so cleanup
+continues after an individual failure.
 
 ## Local transport
 

@@ -10,6 +10,7 @@ import (
 
 var (
 	errNilWorkspaceManager = errors.New("execution: nil workspace manager")
+	errNilRuntime          = errors.New("execution: nil runtime")
 	errExecutionCanceled   = errors.New("execution cancellation requested")
 
 	// ErrClosed reports an execution service that is shutting down.
@@ -24,19 +25,15 @@ var (
 	ErrExecutionRunning = errors.New("execution already running")
 	// ErrExecutionTerminal reports an Execution that has already terminated.
 	ErrExecutionTerminal = errors.New("execution already terminal")
-	// ErrInvalidParameters reports parameter values Ferret cannot bind.
-	ErrInvalidParameters = errors.New("invalid execution parameters")
 	// ErrInvalidExecutionOptions reports invocation settings rejected before execution creation.
 	ErrInvalidExecutionOptions = errors.New("invalid execution options")
 	// ErrWatcherLagged reports a watcher that exceeded its bounded event buffer.
 	ErrWatcherLagged = errors.New("execution watcher lagged")
-	// ErrCompilationFailed classifies Ferret compiler diagnostics.
+	// ErrCompilationFailed classifies runtime compiler diagnostics.
 	ErrCompilationFailed = errors.New("session compilation failed")
-	// ErrDebugSourceChanged reports debug compilation from a different source snapshot.
-	ErrDebugSourceChanged = errors.New("debug compilation source changed")
 )
 
-// CompilationError retains structured Ferret compiler diagnostics.
+// CompilationError retains structured runtime compiler diagnostics.
 type CompilationError struct {
 	Source      workspace.SourceSnapshot
 	Diagnostics []diagnostic.Diagnostic

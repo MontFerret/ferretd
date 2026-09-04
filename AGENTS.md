@@ -50,19 +50,29 @@ translate; they do not become alternate owners of domain behavior.
 
 * `cmd/ferretd` owns process startup, Cobra command behavior, signal handling,
   process-facing output, and top-level composition.
-* `internal/daemon` owns long-running service lifecycle and coordination.
+* `internal/daemon` owns long-running service lifecycle and coordination. Its
+  composition constructs the native Ferret engine and wraps it as the shared
+  Universal runtime.
 * `internal/transport` owns local endpoint discovery, listening, and dialing.
-* `internal/grpc`, `internal/lsp`, and `internal/dap` own their protocol
-  translation, framing, handles, and transport-facing state.
+* `internal/grpc` and `internal/lsp` own their protocol translation, framing,
+  handles, and transport-facing state.
 * `internal/language` owns protocol-neutral editor overlays, snapshot
   resolution, analysis coordination, and language features.
 * `internal/workspace` owns process-local workspace identity, discovery,
-  retained source and syntax state, engines, refresh, and close coordination.
-* `internal/exec` owns compiled Sessions, the shared per-run execution runtime,
+  retained source and syntax state, refresh, and close coordination.
+* `internal/exec` owns compiled Sessions, the shared per-run execution state,
   caller parameters (`Parameters`), one-shot Executions, lazy debug Plans,
-  DebugRuntime leases, and execution lifecycle observation.
+  DebugRuntime leases, and execution lifecycle observation. It borrows one
+  composition-owned `api.Runtime` and never closes it.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
   events, and debug child cleanup.
+* `internal/dap` owns DAP composition as well as protocol translation. Its
+  composition constructs the native Ferret engine and wraps it as the shared
+  Universal runtime.
+* `internal/ferretapi` is the provisional and sole bridge between the
+  Universal Runtime API and native Ferret runtime, Plan, Session, debugger, and
+  diagnostic types. It adapts a caller-constructed native engine rather than
+  deciding how that engine is configured.
 * `internal/source`, `internal/diagnostic`, and `internal/lifecycle` own their
   protocol-neutral shared concepts. Do not move those semantics into adapters
   or process setup.
@@ -71,12 +81,14 @@ translate; they do not become alternate owners of domain behavior.
 * `proto/ferretd` owns versioned wire source contracts. `gen/` contains
   checked-in generated output and must not be edited manually.
 * The Ferret dependency owns language, compiler, runtime, VM, standard-library,
-  and core debugger semantics. Change those in Ferret rather than copying or
-  redefining them here.
+  and core debugger semantics. Execution and debug domain packages use the
+  Universal API; native runtime translation stays in `internal/ferretapi`.
+  Change Ferret semantics in Ferret rather than copying or redefining them here.
 
 Keep dependency direction clear: commands compose adapters and services;
-adapters depend on protocol-neutral services; domain services consume Ferret.
-Do not export internal APIs merely to share implementation across packages.
+adapters depend on protocol-neutral services; execution and debug consume the
+Universal API; native runtime translation stays in `internal/ferretapi`. Do not
+export internal APIs merely to share implementation across packages.
 
 ## Compatibility and observable behavior
 
@@ -197,6 +209,9 @@ they make a deliberate choice.
 These rules are mandatory unless the task explicitly requires otherwise.
 
 * Prefer grouped `type ( ... )` declarations for package-level types.
+* Give a substantial primary type with an independent responsibility and method
+  set its own responsibility-focused file. Keep small supporting types with the
+  primary type they serve.
 * Types declared in the same file should normally be placed in a single grouped
   `type` declaration rather than written as independent `type` declarations.
 * This applies equally to structs, interfaces, aliases, named primitive types,

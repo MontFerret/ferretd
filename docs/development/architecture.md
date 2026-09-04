@@ -26,7 +26,8 @@ ferretd serve
         -> internal/grpc
             -> internal/workspace
             -> internal/exec
-            -> Ferret compiler and runtime
+            -> Universal Runtime API
+                -> internal/ferretapi -> native Ferret
 
 local daemon client
     -> client
@@ -38,19 +39,23 @@ debug adapter client
     -> ferretd dap over stdio
     -> internal/dap
     -> internal/workspace + internal/exec + internal/debug
-    -> Ferret debugger
+    -> Universal Runtime API
+        -> internal/ferretapi -> native Ferret debugger
 ```
 
 The `lsp` and `dap` commands compose in-process services independently of
 `ferretd serve`. The daemon exposes workspace and execution behavior over gRPC;
-debugging is not currently a daemon gRPC capability.
+debugging is not currently a daemon gRPC capability. Daemon and DAP composition
+each construct one native Ferret engine, pass it to `internal/ferretapi`, and
+own the resulting Universal runtime through final cleanup.
 
 ## Dependency direction
 
 Commands compose services and adapters. Protocol adapters translate requests,
 responses, events, coordinates, and errors, then delegate to protocol-neutral
-packages. Domain packages consume Ferret's public embedding, compiler, runtime,
-and debugger contracts.
+packages. Execution and debug domain packages consume the Universal Runtime API;
+`internal/ferretapi` alone translates that contract to native Ferret runtime
+objects.
 
 ```text
 cmd/ferretd serve -> internal/daemon -> internal/transport + internal/grpc
@@ -59,8 +64,8 @@ cmd/ferretd lsp   -> internal/lsp -> internal/language -> internal/workspace
 cmd/ferretd dap   -> internal/dap -> internal/workspace + internal/exec
                                     + internal/debug
 
-domain services -> internal/source + internal/diagnostic + internal/lifecycle
-                -> Ferret
+domain services  -> internal/source + internal/diagnostic + internal/lifecycle
+execution/debug -> github.com/MontFerret/api -> internal/ferretapi -> Ferret
 ```
 
 Protocol types do not flow into domain services. Mutable manager or session
@@ -82,12 +87,16 @@ than access to protected state.
   centralizes endpoint discovery, dialing, negotiation, conversion, streaming,
   and public error classification.
 * `internal/workspace` owns process-local workspace identity, dynamic discovery,
-  retained documents and Ferret syntax state, rooted engines, refresh, and close
-  coordination.
-* `internal/exec` owns compiled Sessions, the common per-run execution runtime,
-  `Parameters`, normalized `RuntimeOptions`, shared `RuntimeOutput` and
-  `RuntimeFailure` results, one-shot Executions, watches, cancellation, lazy
-  debug Plans, and debugger-runtime leases.
+  retained documents and Ferret syntax state, refresh, and close coordination.
+* `internal/exec` borrows a composition-owned `api.Runtime` and owns compiled
+  Sessions, common per-run execution state, `Parameters`, normalized
+  `RuntimeOptions`, copied `api.Output` and `RuntimeFailure` results, one-shot
+  Executions, watches, cancellation, lazy debug Plans, and debugger-runtime
+  leases.
+* `internal/ferretapi` provisionally adapts a caller-constructed native Ferret
+  engine and its Plan, Session, debugger Session, source, option, output, and
+  diagnostic contracts to the Universal API. Composition may construct the
+  native engine, but no other package translates between the runtime APIs.
 * `internal/debug` owns retained DebugSessions, commands, paused-state
   inspection, event streams, and cleanup.
 * `internal/dap` adapts workspace, execution, and debug services to one stdio DAP
@@ -105,21 +114,24 @@ than access to protected state.
 
 ## State and resource hierarchy
 
-An open workspace owns retained file and document snapshots plus one rooted
-Ferret engine. An execution Session is a child of that workspace and owns an
-immutable compiled Plan. Each ordinary Execution is a one-shot child of a
-Session and uses a fresh `internal/exec` execution runtime around one Ferret
-runtime Session.
+Each daemon or DAP service graph constructs one native Ferret engine, wraps it
+as one shared Universal runtime, and closes only that wrapper after its child
+services. An open workspace owns retained file and document snapshots, but no
+execution engine.
+An execution Session is a child of that workspace and owns an immutable
+`api.Plan` compiled by the shared runtime. Each ordinary Execution is a one-shot
+child of a Session and creates a fresh `api.Session`.
 
 A Session can also lazily own one matching debug Plan. `internal/exec` builds an
-execution runtime that owns one concrete Ferret debugger session. A DebugRuntime
+execution runtime that owns one Universal debugger Session. A DebugRuntime
 exposes that session's debugger capability and owns the debug-Plan lease through
 the common runtime's one-time session close attempt. `internal/debug` layers
 DebugSession identity, commands, inspection, events, and state on that
 DebugRuntime. Ordinary Executions and DebugSessions remain sibling resources
 with distinct observable state machines. Closing a parent stops new runtime
 creation, settles both child kinds, releases leases, and only then closes its
-Plans.
+Plans. Composition cleanup then clears workspaces and closes the shared runtime
+exactly once last.
 
 The language service consumes workspace documents as saved-source baselines but
 owns editor overlays separately. Opening or changing an editor document does

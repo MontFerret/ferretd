@@ -1,11 +1,13 @@
-// Package exec coordinates daemon-owned Ferret Plans and one-shot Executions.
+// Package exec coordinates daemon-owned Universal Plans and one-shot Executions.
 package exec
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
+	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
@@ -15,6 +17,7 @@ type (
 	// Manager orchestrates process-local daemon Sessions and Executions.
 	Manager struct {
 		workspaces *workspace.Manager
+		runtime    api.Runtime
 		sessions   *sessionRegistry
 		executions *executionRegistry
 
@@ -26,15 +29,20 @@ type (
 	SessionCloseHook func(context.Context, SessionID) error
 )
 
-// New creates an execution manager that borrows the existing workspace manager.
-// It returns an error when the workspace manager is nil.
-func New(workspaces *workspace.Manager) (*Manager, error) {
+// New creates an execution manager that borrows the workspace manager and runtime.
+// It returns an error when either required dependency is nil.
+func New(workspaces *workspace.Manager, runtime api.Runtime) (*Manager, error) {
 	if workspaces == nil {
 		return nil, errNilWorkspaceManager
 	}
 
+	if runtime == nil {
+		return nil, errNilRuntime
+	}
+
 	result := &Manager{
 		workspaces: workspaces,
+		runtime:    runtime,
 		sessions:   newSessionRegistry(),
 		executions: newExecutionRegistry(),
 	}
@@ -98,42 +106,70 @@ func (m *Manager) prepareSession(
 		return nil, err
 	}
 
-	compilation, err := parent.CompileDocument(ctx, document)
+	file := document.File()
+	sourceSnapshot := workspace.SourceSnapshot{
+		Workspace:    workspaceID,
+		RelativePath: file.RelativePath,
+		URI:          file.URI,
+		Revision:     document.Revision(),
+	}
+	text := document.Content()
+
+	if !document.Loaded() {
+		compileErr := fmt.Errorf("%w: %s", workspace.ErrDocumentUnavailable, file.RelativePath)
+		mapper := source.NewMapper(text)
+		diagnostics := make([]diagnostic.Diagnostic, 0, len(document.Diagnostics()))
+
+		for _, item := range document.Diagnostics() {
+			diagnostics = append(diagnostics, diagnostic.Convert(sourceSnapshot.URI, mapper, item))
+		}
+
+		return nil, &CompilationError{
+			Source:      sourceSnapshot,
+			Diagnostics: diagnostics,
+			Cause:       compileErr,
+		}
+	}
+
+	apiSource := api.NewSource(file.Path, text)
+	plan, err := m.runtime.Compile(ctx, apiSource)
 	if err != nil {
-		err = errors.Join(err, compilation.Close())
+		if plan != nil {
+			err = errors.Join(err, plan.Close())
+		}
 
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, workspace.ErrClosed) || errors.Is(err, workspace.ErrDocumentNotFound) {
 			return nil, err
 		}
 
-		diagnostics := diagnostic.FromError(compilation.Source.URI, document.Content(), err)
-		if errors.Is(err, workspace.ErrDocumentUnavailable) {
-			mapper := source.NewMapper(document.Content())
-			for _, item := range document.Diagnostics() {
-				diagnostics = append(diagnostics, diagnostic.Convert(compilation.Source.URI, mapper, item))
-			}
-		}
-
 		return nil, &CompilationError{
-			Source:      compilation.Source,
-			Diagnostics: diagnostics,
+			Source:      sourceSnapshot,
+			Diagnostics: diagnostic.FromError(sourceSnapshot.URI, text, err),
 			Cause:       err,
 		}
 	}
 
+	if plan == nil {
+		err = errors.New("runtime returned no plan")
+
+		return nil, &CompilationError{Source: sourceSnapshot, Cause: err}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, errors.Join(err, plan.Close())
+	}
+
 	id, err := newSessionID()
 	if err != nil {
-		return nil, errors.Join(err, compilation.Close())
+		return nil, errors.Join(err, plan.Close())
 	}
 
-	text := document.Content()
-	sourceSnapshot := compilation.Source
-	compileDebug := func(ctx context.Context) (workspace.Compilation, error) {
-		return parent.CompileDebugSnapshot(ctx, sourceSnapshot, text)
+	compileDebug := func(ctx context.Context) (api.Plan, error) {
+		return m.runtime.CompileDebug(ctx, apiSource)
 	}
 
-	return newSession(id, compilation, text, compileDebug), nil
+	return newSession(id, sourceSnapshot, plan, text, parent.Root(), compileDebug), nil
 }
 
 // GetSession returns an immutable Session snapshot.

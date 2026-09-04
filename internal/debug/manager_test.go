@@ -130,8 +130,8 @@ func TestCreateSessionRejectsInvalidParameters(t *testing.T) {
 		fixture.session.ID,
 		map[string]any{"invalid": make(chan int)},
 		exec.RuntimeOptions{},
-	); !errors.Is(err, exec.ErrInvalidParameters) {
-		t.Fatalf("CreateSession error = %v, want exec.ErrInvalidParameters", err)
+	); err == nil {
+		t.Fatal("CreateSession unexpectedly accepted invalid parameters")
 	}
 }
 

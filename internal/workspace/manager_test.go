@@ -192,6 +192,86 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCloseCallerCancellationDoesNotStopCleanup(t *testing.T) {
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	manager := New()
+	manager.RegisterCloseHook(func(context.Context, ID) error {
+		close(closeStarted)
+		<-releaseClose
+
+		return nil
+	})
+
+	opened, err := manager.Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := manager.Close(ctx, opened.ID()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Close error = %v, want context.Canceled", err)
+	}
+	<-closeStarted
+	if _, err := manager.Get(context.Background(), opened.ID()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get during committed close error = %v, want ErrNotFound", err)
+	}
+
+	close(releaseClose)
+	if err := manager.Close(context.Background(), opened.ID()); err != nil {
+		t.Fatalf("wait for committed Close: %v", err)
+	}
+	if opened.State() != StateClosed {
+		t.Fatalf("state = %v, want closed", opened.State())
+	}
+}
+
+func TestWorkspaceClearJoinsCommittedClose(t *testing.T) {
+	want := errors.New("workspace child close failed")
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	manager := New()
+	manager.RegisterCloseHook(func(context.Context, ID) error {
+		close(closeStarted)
+		<-releaseClose
+
+		return want
+	})
+
+	opened, err := manager.Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	closed := make(chan error, 1)
+	go func() {
+		closed <- manager.Close(context.Background(), opened.ID())
+	}()
+	<-closeStarted
+
+	clearContext := newObservedDoneContext(context.Background())
+	cleared := make(chan error, 1)
+	go func() {
+		cleared <- manager.Clear(clearContext)
+	}()
+	<-clearContext.observed
+
+	close(releaseClose)
+	if err := <-closed; !errors.Is(err, want) {
+		t.Fatalf("Close error = %v, want %v", err, want)
+	}
+	if err := <-cleared; !errors.Is(err, want) {
+		t.Fatalf("Clear error = %v, want %v", err, want)
+	}
+
+	manager.mu.RLock()
+	entries := len(manager.byID)
+	manager.mu.RUnlock()
+	if entries != 0 {
+		t.Fatalf("workspace entries after close = %d, want 0", entries)
+	}
+}
+
 func TestConcurrentOpenConverges(t *testing.T) {
 	root := t.TempDir()
 	manager := newTestManager(t)

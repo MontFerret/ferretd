@@ -12,8 +12,12 @@ import (
 	protocol "github.com/google/go-dap"
 	"github.com/rs/zerolog"
 
+	"github.com/MontFerret/api"
+	"github.com/MontFerret/ferret/v2"
+
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -38,6 +42,7 @@ type (
 		workspaces            *workspace.Manager
 		executions            *exec.Manager
 		debugs                *debug.Manager
+		runtime               api.Runtime
 		logger                zerolog.Logger
 		handles               *handleTable
 		owned                 ownedSession
@@ -89,10 +94,20 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 
 	options = options.normalized()
 
-	workspaces := workspace.New()
-	executions, err := exec.New(workspaces)
+	engine, err := ferret.New()
 	if err != nil {
-		cleanupErr := workspaces.Clear(context.Background())
+		return nil, fmt.Errorf("create runtime: %w", err)
+	}
+	runtime := ferretapi.New(engine)
+
+	return newServer(input, output, options, runtime)
+}
+
+func newServer(input io.Reader, output io.Writer, options Options, runtime api.Runtime) (*Server, error) {
+	workspaces := workspace.New()
+	executions, err := exec.New(workspaces, runtime)
+	if err != nil {
+		cleanupErr := errors.Join(workspaces.Clear(context.Background()), runtime.Close())
 
 		return nil, errors.Join(fmt.Errorf("create execution manager: %w", err), cleanupErr)
 	}
@@ -100,7 +115,7 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 	debugs, err := debug.New(executions)
 	if err != nil {
 		ctx := context.Background()
-		cleanupErr := errors.Join(executions.Close(ctx), workspaces.Clear(ctx))
+		cleanupErr := errors.Join(executions.Close(ctx), workspaces.Clear(ctx), runtime.Close())
 
 		return nil, errors.Join(fmt.Errorf("create debug manager: %w", err), cleanupErr)
 	}
@@ -114,6 +129,7 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 		workspaces:            workspaces,
 		executions:            executions,
 		debugs:                debugs,
+		runtime:               runtime,
 		logger:                options.Logger.With().Str("component", "dap").Logger(),
 		handles:               newHandleTable(),
 		nextBreakpointID:      1,
@@ -338,6 +354,7 @@ func (s *Server) cleanup() error {
 		result = errors.Join(result, s.debugs.Close(ctx))
 		result = errors.Join(result, s.executions.Close(ctx))
 		result = errors.Join(result, s.workspaces.Clear(ctx))
+		result = errors.Join(result, s.runtime.Close())
 		s.cleanupErr = result
 	})
 

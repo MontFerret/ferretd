@@ -211,7 +211,7 @@ func TestRefreshDocumentSerializesConcurrentCommits(t *testing.T) {
 	}
 }
 
-func TestRefreshDocumentSnapshotsCompileIndependently(t *testing.T) {
+func TestRefreshDocumentSnapshotsRemainIndependent(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspaceSource(t, root, "query.fql", "RETURN 1")
 	manager := newTestManager(t)
@@ -230,26 +230,15 @@ func TestRefreshDocumentSnapshotsCompileIndependently(t *testing.T) {
 		t.Fatalf("second RefreshDocument: %v", err)
 	}
 
-	firstCompilation, err := opened.CompileDocument(context.Background(), first)
-	if err != nil {
-		t.Fatalf("compile first: %v", err)
-	}
-	defer func() { _ = firstCompilation.Close() }()
-	secondCompilation, err := opened.CompileDocument(context.Background(), second)
-	if err != nil {
-		t.Fatalf("compile second: %v", err)
-	}
-	defer func() { _ = secondCompilation.Close() }()
-
-	if firstCompilation.Source.Revision != 1 || secondCompilation.Source.Revision != 2 {
+	if first.Revision() != 1 || second.Revision() != 2 {
 		t.Fatalf("source revisions = %d and %d, want 1 and 2",
-			firstCompilation.Source.Revision, secondCompilation.Source.Revision)
+			first.Revision(), second.Revision())
 	}
-	if got := runCompilation(t, firstCompilation); got != "1" {
-		t.Fatalf("first output = %q, want 1", got)
+	if first.Content() != "RETURN 1" {
+		t.Fatalf("first content = %q, want RETURN 1", first.Content())
 	}
-	if got := runCompilation(t, secondCompilation); got != "2" {
-		t.Fatalf("second output = %q, want 2", got)
+	if second.Content() != "RETURN 2" {
+		t.Fatalf("second content = %q, want RETURN 2", second.Content())
 	}
 }
 
@@ -326,20 +315,4 @@ func TestRefreshAdmissionLosesToWorkspaceCloseDeterministically(t *testing.T) {
 	if _, found := opened.Document("created.fql"); found {
 		t.Fatal("closing workspace admitted a new source")
 	}
-}
-
-func runCompilation(t *testing.T, compilation Compilation) string {
-	t.Helper()
-
-	session, err := compilation.Plan.NewSession(context.Background())
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	defer func() { _ = session.Close() }()
-	output, err := session.Run(context.Background())
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-
-	return string(output.Content)
 }
