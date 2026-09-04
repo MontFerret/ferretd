@@ -50,10 +50,12 @@ translate; they do not become alternate owners of domain behavior.
 
 * `cmd/ferretd` owns process startup, Cobra command behavior, signal handling,
   process-facing output, and top-level composition.
-* `internal/daemon` owns long-running service lifecycle and coordination.
+* `internal/daemon` owns long-running service lifecycle and coordination. Its
+  composition constructs the native Ferret engine and wraps it as the shared
+  Universal runtime.
 * `internal/transport` owns local endpoint discovery, listening, and dialing.
-* `internal/grpc`, `internal/lsp`, and `internal/dap` own their protocol
-  translation, framing, handles, and transport-facing state.
+* `internal/grpc` and `internal/lsp` own their protocol translation, framing,
+  handles, and transport-facing state.
 * `internal/language` owns protocol-neutral editor overlays, snapshot
   resolution, analysis coordination, and language features.
 * `internal/workspace` owns process-local workspace identity, discovery,
@@ -64,9 +66,13 @@ translate; they do not become alternate owners of domain behavior.
   composition-owned `api.Runtime` and never closes it.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
   events, and debug child cleanup.
+* `internal/dap` owns DAP composition as well as protocol translation. Its
+  composition constructs the native Ferret engine and wraps it as the shared
+  Universal runtime.
 * `internal/ferretapi` is the provisional and sole bridge between the
   Universal Runtime API and native Ferret runtime, Plan, Session, debugger, and
-  diagnostic types.
+  diagnostic types. It adapts a caller-constructed native engine rather than
+  deciding how that engine is configured.
 * `internal/source`, `internal/diagnostic`, and `internal/lifecycle` own their
   protocol-neutral shared concepts. Do not move those semantics into adapters
   or process setup.
@@ -203,6 +209,9 @@ they make a deliberate choice.
 These rules are mandatory unless the task explicitly requires otherwise.
 
 * Prefer grouped `type ( ... )` declarations for package-level types.
+* Give a substantial primary type with an independent responsibility and method
+  set its own responsibility-focused file. Keep small supporting types with the
+  primary type they serve.
 * Types declared in the same file should normally be placed in a single grouped
   `type` declaration rather than written as independent `type` declarations.
 * This applies equally to structs, interfaces, aliases, named primitive types,

@@ -34,8 +34,9 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 				strings.HasPrefix(name, "github.com/MontFerret/ferret/v2") {
 				t.Errorf("%s imports native Ferret runtime package %q", path, name)
 			}
-			if name == "github.com/MontFerret/ferret/v2" && packagePath != "../ferretapi" {
-				t.Errorf("%s imports native Ferret runtime outside internal/ferretapi", path)
+			if name == "github.com/MontFerret/ferret/v2" && packagePath != "../ferretapi" &&
+				packagePath != "../daemon" && packagePath != "../dap" {
+				t.Errorf("%s imports native Ferret runtime outside composition or internal/ferretapi", path)
 			}
 		}
 

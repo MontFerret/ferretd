@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/ferretd/internal/debug"
+	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -63,6 +64,19 @@ func TestNewRequiresStreams(t *testing.T) {
 				t.Fatalf("New server = %v, want nil", server)
 			}
 		})
+	}
+}
+
+func TestNewConstructsNativeRuntimeAdapter(t *testing.T) {
+	server, err := New(strings.NewReader(""), io.Discard, Options{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, ok := server.runtime.(*ferretapi.Runtime); !ok {
+		t.Fatalf("New runtime = %T, want native Ferret adapter", server.runtime)
+	}
+	if err := server.cleanup(); err != nil {
+		t.Fatalf("cleanup: %v", err)
 	}
 }
 

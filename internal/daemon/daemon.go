@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/api"
+	"github.com/MontFerret/ferret/v2"
 
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/ferretapi"
@@ -47,10 +48,11 @@ func New(options Options) (*Daemon, error) {
 		return nil, err
 	}
 
-	runtime, err := ferretapi.New()
+	engine, err := ferret.New()
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
+	runtime := ferretapi.New(engine)
 
 	return newDaemon(options, runtime)
 }

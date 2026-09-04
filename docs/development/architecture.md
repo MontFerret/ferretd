@@ -45,7 +45,9 @@ debug adapter client
 
 The `lsp` and `dap` commands compose in-process services independently of
 `ferretd serve`. The daemon exposes workspace and execution behavior over gRPC;
-debugging is not currently a daemon gRPC capability.
+debugging is not currently a daemon gRPC capability. Daemon and DAP composition
+each construct one native Ferret engine, pass it to `internal/ferretapi`, and
+own the resulting Universal runtime through final cleanup.
 
 ## Dependency direction
 
@@ -91,9 +93,10 @@ than access to protected state.
   `RuntimeOptions`, copied `api.Output` and `RuntimeFailure` results, one-shot
   Executions, watches, cancellation, lazy debug Plans, and debugger-runtime
   leases.
-* `internal/ferretapi` provisionally adapts the Universal runtime, Plan,
-  Session, debugger Session, source, option, output, and diagnostic contracts to
-  native Ferret. No other package bridges both runtime APIs.
+* `internal/ferretapi` provisionally adapts a caller-constructed native Ferret
+  engine and its Plan, Session, debugger Session, source, option, output, and
+  diagnostic contracts to the Universal API. Composition may construct the
+  native engine, but no other package translates between the runtime APIs.
 * `internal/debug` owns retained DebugSessions, commands, paused-state
   inspection, event streams, and cleanup.
 * `internal/dap` adapts workspace, execution, and debug services to one stdio DAP
@@ -111,8 +114,10 @@ than access to protected state.
 
 ## State and resource hierarchy
 
-Each daemon or DAP service graph owns one shared Universal runtime. An open
-workspace owns retained file and document snapshots, but no execution engine.
+Each daemon or DAP service graph constructs one native Ferret engine, wraps it
+as one shared Universal runtime, and closes only that wrapper after its child
+services. An open workspace owns retained file and document snapshots, but no
+execution engine.
 An execution Session is a child of that workspace and owns an immutable
 `api.Plan` compiled by the shared runtime. Each ordinary Execution is a one-shot
 child of a Session and creates a fresh `api.Session`.

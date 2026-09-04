@@ -106,7 +106,7 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 		s.mu.Unlock()
 
 		plan, err := compileDebug(ctx)
-		if err == nil && isNilAPI(plan) {
+		if err == nil && plan == nil {
 			err = errors.New("debug compilation returned no plan")
 		}
 
@@ -126,7 +126,9 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 		s.mu.Unlock()
 
 		if err != nil || closing {
-			err = errors.Join(err, closeAPIPlan(plan))
+			if plan != nil {
+				err = errors.Join(err, plan.Close())
+			}
 
 			if closing {
 				err = errors.Join(ErrSessionClosed, err)

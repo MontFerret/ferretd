@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/transport"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -24,6 +25,9 @@ func TestNew(t *testing.T) {
 	}
 	if d.runtime == nil {
 		t.Fatal("New did not construct the composition runtime")
+	}
+	if _, ok := d.runtime.(*ferretapi.Runtime); !ok {
+		t.Fatalf("New runtime = %T, want native Ferret adapter", d.runtime)
 	}
 	if err := d.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)

@@ -135,11 +135,14 @@ func (m *Manager) CreateDebugRuntime(
 	if err != nil {
 		runtime.cancel(errExecutionCanceled)
 		parent.releaseDebugRuntime()
+		if debugger != nil {
+			err = errors.Join(err, debugger.Close())
+		}
 
-		return nil, errors.Join(err, closeAPIResource(debugger))
+		return nil, err
 	}
 
-	if isNilAPI(debugger) {
+	if debugger == nil {
 		runtime.cancel(errExecutionCanceled)
 		parent.releaseDebugRuntime()
 

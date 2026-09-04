@@ -36,7 +36,7 @@ func New(workspaces *workspace.Manager, runtime api.Runtime) (*Manager, error) {
 		return nil, errNilWorkspaceManager
 	}
 
-	if isNilAPI(runtime) {
+	if runtime == nil {
 		return nil, errNilRuntime
 	}
 
@@ -134,7 +134,9 @@ func (m *Manager) prepareSession(
 	apiSource := api.NewSource(file.Path, text)
 	plan, err := m.runtime.Compile(ctx, apiSource)
 	if err != nil {
-		err = errors.Join(err, closeAPIPlan(plan))
+		if plan != nil {
+			err = errors.Join(err, plan.Close())
+		}
 
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, workspace.ErrClosed) || errors.Is(err, workspace.ErrDocumentNotFound) {
@@ -148,19 +150,19 @@ func (m *Manager) prepareSession(
 		}
 	}
 
-	if isNilAPI(plan) {
+	if plan == nil {
 		err = errors.New("runtime returned no plan")
 
 		return nil, &CompilationError{Source: sourceSnapshot, Cause: err}
 	}
 
 	if err := ctx.Err(); err != nil {
-		return nil, errors.Join(err, closeAPIPlan(plan))
+		return nil, errors.Join(err, plan.Close())
 	}
 
 	id, err := newSessionID()
 	if err != nil {
-		return nil, errors.Join(err, closeAPIPlan(plan))
+		return nil, errors.Join(err, plan.Close())
 	}
 
 	compileDebug := func(ctx context.Context) (api.Plan, error) {

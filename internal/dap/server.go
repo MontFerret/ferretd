@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/api"
+	"github.com/MontFerret/ferret/v2"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
@@ -93,10 +94,11 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 
 	options = options.normalized()
 
-	runtime, err := ferretapi.New()
+	engine, err := ferret.New()
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
+	runtime := ferretapi.New(engine)
 
 	return newServer(input, output, options, runtime)
 }

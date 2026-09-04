@@ -25,7 +25,6 @@ func TestNewRequiresDependencies(t *testing.T) {
 	}{
 		{name: "workspace manager", runtime: runtime, want: errNilWorkspaceManager},
 		{name: "runtime", workspaces: workspace.New(), want: errNilRuntime},
-		{name: "typed nil runtime", workspaces: workspace.New(), runtime: (*runtimeSpy)(nil), want: errNilRuntime},
 	}
 
 	for _, test := range tests {

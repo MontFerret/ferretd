@@ -19,11 +19,14 @@ construction and level contract. After `Start` returns, `serve` calls `Stop`
 with a bounded shutdown context. Process signals cancel the root context in
 `cmd/ferretd/main.go`.
 
-The daemon constructs and owns one Universal runtime, one workspace manager,
-one execution manager, and one gRPC server. The execution manager borrows the
-runtime and registers its workspace close hook during construction so child
-Sessions, Executions, and Plans are released before workspace state. Required
-service dependencies are passed explicitly.
+The daemon constructs one native Ferret engine, wraps it with
+`internal/ferretapi`, and owns that Universal runtime together with one workspace
+manager, one execution manager, and one gRPC server. The execution manager
+borrows the runtime and registers its workspace close hook during construction
+so child Sessions, Executions, and Plans are released before workspace state.
+Required service dependencies are passed explicitly. Runtime cleanup closes the
+wrapper, which delegates exactly once to the native engine; composition does not
+also close the engine independently.
 
 ## Lifecycle
 

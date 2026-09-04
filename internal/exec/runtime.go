@@ -72,13 +72,17 @@ func newExecutionRuntime(target runtimeTarget, input runtimeInput) *executionRun
 func (r *executionRuntime) run() runtimeRunResult {
 	session, err := r.target.plan.NewSession(r.ctx, r.sessionOptions()...)
 	if err != nil {
+		if session != nil {
+			err = errors.Join(err, session.Close())
+		}
+
 		return runtimeRunResult{
-			err:      errors.Join(err, closeAPIResource(session)),
+			err:      err,
 			category: FailureSessionCreation,
 		}
 	}
 
-	if isNilAPI(session) {
+	if session == nil {
 		return runtimeRunResult{
 			err:      errors.New("runtime returned no session"),
 			category: FailureSessionCreation,

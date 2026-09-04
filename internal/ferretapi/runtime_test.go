@@ -16,6 +16,16 @@ import (
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
 )
 
+func TestNewRequiresNativeEngine(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("New did not panic for a nil native engine")
+		}
+	}()
+
+	New(nil)
+}
+
 func TestRuntimeTranslatesSourceOptionsAndReusesPlan(t *testing.T) {
 	runtime := newTestRuntime(t)
 	root := t.TempDir()
@@ -300,7 +310,7 @@ func TestRuntimeResourcesCloseExactlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ferret.New: %v", err)
 	}
-	runtime := &Runtime{engine: engine}
+	runtime := New(engine)
 
 	compiled, err := runtime.Compile(context.Background(), api.NewAnonymousSource("RETURN 1"))
 	if err != nil {
@@ -350,10 +360,11 @@ func TestRuntimeResourcesCloseExactlyOnce(t *testing.T) {
 func newTestRuntime(t testing.TB) *Runtime {
 	t.Helper()
 
-	runtime, err := New()
+	engine, err := ferret.New()
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("ferret.New: %v", err)
 	}
+	runtime := New(engine)
 	t.Cleanup(func() {
 		if err := runtime.Close(); err != nil {
 			t.Errorf("Close: %v", err)

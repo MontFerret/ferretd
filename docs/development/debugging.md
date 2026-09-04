@@ -66,9 +66,10 @@ releasing normal or debug Plans.
 ## DAP composition
 
 The `dap` command runs one protocol-pure server over stdin and stdout. It does
-not connect to `ferretd serve`. The adapter constructs and owns one Universal
-runtime plus in-process workspace, execution, and debug managers, and owns one
-launched workspace, execution Session, and DebugSession.
+not connect to `ferretd serve`. DAP composition constructs one native Ferret
+engine, wraps it with `internal/ferretapi`, and owns that Universal runtime plus
+in-process workspace, execution, and debug managers. It also owns one launched
+workspace, execution Session, and DebugSession.
 
 Launch follows the DAP initialization and configuration sequence. The launch
 request remains pending while breakpoints are configured. After

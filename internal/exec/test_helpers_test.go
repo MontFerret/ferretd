@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/MontFerret/api"
+	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/ferretapi"
 	localsource "github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
@@ -22,10 +23,11 @@ type executionFixture struct {
 func mustNewManager(t testing.TB, workspaces *workspace.Manager) *Manager {
 	t.Helper()
 
-	runtime, err := ferretapi.New()
+	engine, err := ferret.New()
 	if err != nil {
-		t.Fatalf("ferretapi.New: %v", err)
+		t.Fatalf("ferret.New: %v", err)
 	}
+	runtime := ferretapi.New(engine)
 
 	manager, err := New(workspaces, runtime)
 	if err != nil {
