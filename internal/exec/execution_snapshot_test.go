@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 )
 
@@ -14,7 +15,7 @@ func TestExecutionSnapshotClone(t *testing.T) {
 			WorkingDirectory:    "/runtime root",
 			WorkingDirectorySet: true,
 		},
-		Output: &RuntimeOutput{Content: []byte("one")},
+		Output: &api.Output{Content: []byte("one")},
 		Failure: &Failure{
 			RuntimeFailure: RuntimeFailure{
 				Message: "failure",

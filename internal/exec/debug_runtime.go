@@ -5,7 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/api"
+	apidebugger "github.com/MontFerret/api/debugger"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -16,18 +17,18 @@ type (
 		once   sync.Once
 	}
 
-	// DebugRuntime augments the common execution runtime with Ferret's debugger
+	// DebugRuntime augments the common execution runtime with the Universal debugger
 	// capability and owns the matching debug-Plan lease.
 	DebugRuntime struct {
 		runtime  *executionRuntime
-		debugger *ferret.DebugSession
+		debugger apidebugger.Session
 		lease    debugPlanLease
 	}
 )
 
 func newDebugRuntime(
 	runtime *executionRuntime,
-	debugger *ferret.DebugSession,
+	debugger apidebugger.Session,
 	parent *session,
 ) *DebugRuntime {
 	return &DebugRuntime{
@@ -47,10 +48,10 @@ func (r *DebugRuntime) Context() context.Context {
 	return r.runtime.ctx
 }
 
-// Debugger returns the Ferret debugger capability for debugger-specific
+// Debugger returns the Universal debugger capability for debugger-specific
 // commands. The common execution runtime retains ownership of the underlying
-// Ferret session.
-func (r *DebugRuntime) Debugger() *ferret.DebugSession {
+// debugger session.
+func (r *DebugRuntime) Debugger() apidebugger.Session {
 	return r.debugger
 }
 
@@ -64,8 +65,8 @@ func (r *DebugRuntime) Options() RuntimeOptions {
 	return r.runtime.options()
 }
 
-// MaterializeOutput copies one Ferret result into daemon-owned runtime output.
-func (r *DebugRuntime) MaterializeOutput(output *ferret.Output) *RuntimeOutput {
+// MaterializeOutput copies one Universal result into daemon-owned runtime output.
+func (r *DebugRuntime) MaterializeOutput(output *api.Output) *api.Output {
 	return r.runtime.materializeOutput(output)
 }
 
@@ -74,7 +75,7 @@ func (r *DebugRuntime) MaterializeFailure(err error) *RuntimeFailure {
 	return r.runtime.materializeFailure(err)
 }
 
-// Close cancels the common execution runtime, closes the Ferret debugger session
+// Close cancels the common execution runtime, closes the Universal debugger session
 // owned by that runtime, and releases the debug-Plan lease. Concurrent callers
 // observe the same session close result.
 func (r *DebugRuntime) Close() error {
@@ -135,9 +136,16 @@ func (m *Manager) CreateDebugRuntime(
 		runtime.cancel(errExecutionCanceled)
 		parent.releaseDebugRuntime()
 
-		return nil, err
+		return nil, errors.Join(err, closeAPIResource(debugger))
 	}
-	runtime.ferretSession = debugger
+
+	if isNilAPI(debugger) {
+		runtime.cancel(errExecutionCanceled)
+		parent.releaseDebugRuntime()
+
+		return nil, errors.New("runtime returned no debug session")
+	}
+	runtime.session = debugger
 
 	return newDebugRuntime(runtime, debugger, parent), nil
 }

@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -29,4 +31,16 @@ func assertPanics(t testing.TB, call func()) {
 	}()
 
 	call()
+}
+
+func writeWorkspaceSource(t *testing.T, root, relativePath, content string) {
+	t.Helper()
+
+	path := filepath.Join(root, filepath.FromSlash(relativePath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 }

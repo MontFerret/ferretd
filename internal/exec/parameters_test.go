@@ -42,16 +42,13 @@ func TestParametersClonePreservesNil(t *testing.T) {
 	}
 }
 
-func TestParametersPrepareConvertsOwnedCopy(t *testing.T) {
+func TestParametersCloneReturnsOwnedCopy(t *testing.T) {
 	input := Parameters{
 		"value":  7,
 		"nested": map[string]any{"items": []any{"one", "two"}},
 	}
 
-	converted, retained, err := input.prepare()
-	if err != nil {
-		t.Fatalf("prepare: %v", err)
-	}
+	retained := input.Clone()
 
 	input["value"] = 99
 	input["nested"].(map[string]any)["items"].([]any)[0] = "changed"
@@ -62,25 +59,13 @@ func TestParametersPrepareConvertsOwnedCopy(t *testing.T) {
 	if got := retained["nested"].(map[string]any)["items"].([]any)[0]; got != "one" {
 		t.Fatalf("retained nested item = %v, want one", got)
 	}
-	if _, ok := converted.Get("nested"); !ok {
-		t.Fatal("converted parameters do not contain nested")
-	}
 }
 
-func TestParametersPreparePreservesFerretAcceptedValues(t *testing.T) {
+func TestParametersClonePreservesTypedValues(t *testing.T) {
 	values := Parameters{"typedSlice": []string{"one", "two"}}
 
-	_, retained, err := values.prepare()
-	if err != nil {
-		t.Fatalf("prepare: %v", err)
-	}
+	retained := values.Clone()
 	if !reflect.DeepEqual(retained["typedSlice"], []string{"one", "two"}) {
 		t.Fatalf("retained typed slice = %#v", retained["typedSlice"])
-	}
-}
-
-func TestParametersPrepareRejectsFerretInvalidValues(t *testing.T) {
-	if _, _, err := (Parameters{"invalid": make(chan int)}).prepare(); err == nil {
-		t.Fatal("prepare accepted a channel value")
 	}
 }

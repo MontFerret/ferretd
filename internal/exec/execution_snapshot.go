@@ -1,5 +1,7 @@
 package exec
 
+import "github.com/MontFerret/api"
+
 type (
 	// FailureCategory classifies a failed execution phase.
 	FailureCategory uint8
@@ -17,7 +19,7 @@ type (
 		State      State
 		Parameters Parameters
 		Options    RuntimeOptions
-		Output     *RuntimeOutput
+		Output     *api.Output
 		Failure    *Failure
 	}
 )
@@ -25,9 +27,9 @@ type (
 const (
 	// FailureSessionCreation identifies Plan.NewSession failure.
 	FailureSessionCreation FailureCategory = iota + 1
-	// FailureRuntime identifies Ferret Session.Run failure.
+	// FailureRuntime identifies Universal Session.Run failure.
 	FailureRuntime
-	// FailureCleanup identifies Ferret Session cleanup failure.
+	// FailureCleanup identifies Universal Session cleanup failure.
 	FailureCleanup
 )
 
@@ -36,7 +38,7 @@ const (
 func (s ExecutionSnapshot) Clone() ExecutionSnapshot {
 	result := s
 	result.Parameters = s.Parameters.Clone()
-	result.Output = s.Output.Clone()
+	result.Output = cloneOutput(s.Output)
 	result.Failure = s.Failure.Clone()
 
 	return result

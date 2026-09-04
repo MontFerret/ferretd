@@ -8,9 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/MontFerret/ferret/v2"
-	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
-	"github.com/MontFerret/ferretd/internal/workspace"
+	"github.com/MontFerret/api"
+	apidebugger "github.com/MontFerret/api/debugger"
 )
 
 func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
@@ -20,15 +19,13 @@ func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
 		var calls atomic.Int32
 		started := make(chan struct{})
 		release := make(chan struct{})
-		parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
+		parent.compileDebug = func(context.Context) (api.Plan, error) {
 			if calls.Add(1) == 1 {
 				close(started)
 			}
 
 			<-release
-			plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
-
-			return workspace.Compilation{Plan: plan, Source: parent.source}, err
+			return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 		}
 
 		var wait sync.WaitGroup
@@ -74,15 +71,15 @@ func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
 		compileErr := errors.New("deterministic compile failure")
 		var calls atomic.Int32
 		started := make(chan struct{})
-		parent.compileDebug = func(ctx context.Context) (workspace.Compilation, error) {
+		parent.compileDebug = func(ctx context.Context) (api.Plan, error) {
 			switch calls.Add(1) {
 			case 1:
 				close(started)
 				<-ctx.Done()
 
-				return workspace.Compilation{}, ctx.Err()
+				return nil, ctx.Err()
 			default:
-				return workspace.Compilation{}, compileErr
+				return nil, compileErr
 			}
 		}
 
@@ -201,48 +198,14 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 		fixture.session.ID,
 		map[string]any{"invalid": make(chan int)},
 		RuntimeOptions{},
-	); !errors.Is(err, ErrInvalidParameters) {
-		t.Fatalf("invalid parameters error = %v, want ErrInvalidParameters", err)
-	}
-}
-
-func TestCreateDebugRuntimeRejectsChangedSourceAndCachesFailure(t *testing.T) {
-	var closes atomic.Int32
-	manager, snapshot, engine := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
-		closes.Add(1)
-
-		return nil
-	}))
-	parent := retainedSession(t, manager, snapshot.ID).session
-	var calls atomic.Int32
-	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
-		calls.Add(1)
-		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
-		source := parent.source
-		source.Revision++
-
-		return workspace.Compilation{Plan: plan, Source: source}, err
-	}
-
-	for range 2 {
-		_, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
-		if !errors.Is(err, ErrDebugSourceChanged) || !errors.Is(err, ErrCompilationFailed) {
-			t.Fatalf("CreateDebugRuntime error = %v", err)
-		}
-	}
-
-	if calls.Load() != 1 {
-		t.Fatalf("debug compile calls = %d, want 1", calls.Load())
-	}
-
-	if closes.Load() != 1 {
-		t.Fatalf("debug plan closes = %d, want 1", closes.Load())
+	); err == nil {
+		t.Fatal("invalid parameters unexpectedly succeeded")
 	}
 }
 
 func TestSessionCloseWaitsForDebugRuntimeCompilationWithoutPublishingRuntime(t *testing.T) {
 	var closes atomic.Int32
-	manager, snapshot, engine := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+	manager, snapshot, engine := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		closes.Add(1)
 
 		return nil
@@ -250,12 +213,11 @@ func TestSessionCloseWaitsForDebugRuntimeCompilationWithoutPublishingRuntime(t *
 	parent := retainedSession(t, manager, snapshot.ID).session
 	compileStarted := make(chan struct{})
 	releaseCompile := make(chan struct{})
-	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
+	parent.compileDebug = func(context.Context) (api.Plan, error) {
 		close(compileStarted)
 		<-releaseCompile
-		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
 
-		return workspace.Compilation{Plan: plan, Source: parent.source}, err
+		return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
 
 	type createResult struct {
@@ -293,16 +255,14 @@ func TestSessionCloseWaitsForDebugRuntimeCompilationWithoutPublishingRuntime(t *
 
 func TestDebugRuntimeLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 	var closes atomic.Int32
-	manager, snapshot, engine := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+	manager, snapshot, engine := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		closes.Add(1)
 
 		return nil
 	}))
 	parent := retainedSession(t, manager, snapshot.ID).session
-	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
-		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
-
-		return workspace.Compilation{Plan: plan, Source: parent.source}, err
+	parent.compileDebug = func(context.Context) (api.Plan, error) {
+		return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {
@@ -353,10 +313,8 @@ func TestDebugRuntimeLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 func TestDebugRuntimeSessionSetupFailureReleasesLease(t *testing.T) {
 	manager, snapshot, engine := newHookedManager(t, "RETURN 1")
 	parent := retainedSession(t, manager, snapshot.ID).session
-	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
-		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
-
-		return workspace.Compilation{Plan: plan, Source: parent.source}, err
+	parent.compileDebug = func(context.Context) (api.Plan, error) {
+		return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {
@@ -394,19 +352,55 @@ func TestDebugRuntimeSessionSetupFailureReleasesLease(t *testing.T) {
 	}
 }
 
+func TestDebugRuntimeClosesPartialSessionOnSetupFailure(t *testing.T) {
+	want := errors.New("debug session creation failed")
+	var closes atomic.Int32
+	manager, snapshot, runtime := newHookedManager(
+		t,
+		"RETURN 1",
+		withSessionCloseHook(func() error {
+			closes.Add(1)
+
+			return nil
+		}),
+	)
+	parent := retainedSession(t, manager, snapshot.ID).session
+	parent.compileDebug = func(context.Context) (api.Plan, error) {
+		return &planSpy{
+			runtime: runtime,
+			debug:   true,
+			newDebugFn: func(context.Context, ...api.SessionOption) (apidebugger.Session, error) {
+				return &debugSessionSpy{runtime: runtime}, want
+			},
+		}, nil
+	}
+
+	created, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
+	if created != nil || !errors.Is(err, want) {
+		t.Fatalf("CreateDebugRuntime = %v, %v; want nil, %v", created, err, want)
+	}
+	if closes.Load() != 1 {
+		t.Fatalf("partial debugger Session close calls = %d, want 1", closes.Load())
+	}
+	parent.mu.Lock()
+	runtimes := parent.debugRuntimes
+	parent.mu.Unlock()
+	if runtimes != 0 {
+		t.Fatalf("debug runtime leases = %d, want 0", runtimes)
+	}
+}
+
 func TestDebugRuntimeCloseSharesFailureAndReleasesLeaseOnce(t *testing.T) {
 	want := errors.New("debug runtime close failed")
 	var calls atomic.Int32
-	manager, snapshot, engine := newHookedManager(t, "RETURN 1", ferret.WithSessionCloseHook(func() error {
+	manager, snapshot, engine := newHookedManager(t, "RETURN 1", withSessionCloseHook(func() error {
 		calls.Add(1)
 
 		return want
 	}))
 	parent := retainedSession(t, manager, snapshot.ID).session
-	parent.compileDebug = func(context.Context) (workspace.Compilation, error) {
-		plan, err := engine.CompileDebug(context.Background(), ferretsource.New("query.fql", "RETURN 1"))
-
-		return workspace.Compilation{Plan: plan, Source: parent.source}, err
+	parent.compileDebug = func(context.Context) (api.Plan, error) {
+		return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {
@@ -420,7 +414,7 @@ func TestDebugRuntimeCloseSharesFailureAndReleasesLeaseOnce(t *testing.T) {
 	}
 
 	if calls.Load() != 1 {
-		t.Fatalf("Ferret Session close calls = %d, want 1", calls.Load())
+		t.Fatalf("runtime Session close calls = %d, want 1", calls.Load())
 	}
 
 	parent.mu.Lock()

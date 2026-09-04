@@ -1,22 +1,22 @@
 package debug
 
 import (
-	"github.com/MontFerret/ferret/v2"
-	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
+	apidebugger "github.com/MontFerret/api/debugger"
+	apisource "github.com/MontFerret/api/source"
 )
 
-func convertSourceLocation(value ferretsource.Location) Location {
-	return Location{File: value.File, Line: value.Line, Column: value.Column}
+func convertSourceLocation(value apisource.Location) Location {
+	return Location{File: value.SourceName, Line: value.Line, Column: value.Column}
 }
 
-func convertRangeLocation(value ferretsource.Range) Location {
+func convertRangeLocation(value apisource.Range) Location {
 	return convertSourceLocation(value.Location)
 }
 
-func convertBreakpoint(value ferret.DebugBreakpoint) Breakpoint {
+func convertBreakpoint(value apidebugger.Breakpoint) Breakpoint {
 	return Breakpoint{
 		ID:              BreakpointID(value.ID),
-		File:            value.RequestedLocation.File,
+		File:            value.RequestedLocation.SourceName,
 		RequestedLine:   value.RequestedLocation.Line,
 		RequestedColumn: value.RequestedLocation.Column,
 		Line:            value.Location.Line,
@@ -25,7 +25,7 @@ func convertBreakpoint(value ferret.DebugBreakpoint) Breakpoint {
 	}
 }
 
-func convertValue(value ferret.DebugValue) Value {
+func convertValue(value apidebugger.Value) Value {
 	return Value{
 		Type:      value.Type,
 		Display:   value.Display,
@@ -33,7 +33,7 @@ func convertValue(value ferret.DebugValue) Value {
 	}
 }
 
-func convertVariable(value ferret.DebugVariable) Variable {
+func convertVariable(value apidebugger.Variable) Variable {
 	return Variable{
 		Name:    value.Name,
 		Value:   convertValue(value.Value),
@@ -41,7 +41,7 @@ func convertVariable(value ferret.DebugVariable) Variable {
 	}
 }
 
-func convertVariables(values []ferret.DebugVariable) []Variable {
+func convertVariables(values []apidebugger.Variable) []Variable {
 	result := make([]Variable, len(values))
 	for index, value := range values {
 		result[index] = convertVariable(value)

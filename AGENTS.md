@@ -57,12 +57,16 @@ translate; they do not become alternate owners of domain behavior.
 * `internal/language` owns protocol-neutral editor overlays, snapshot
   resolution, analysis coordination, and language features.
 * `internal/workspace` owns process-local workspace identity, discovery,
-  retained source and syntax state, engines, refresh, and close coordination.
-* `internal/exec` owns compiled Sessions, the shared per-run execution runtime,
+  retained source and syntax state, refresh, and close coordination.
+* `internal/exec` owns compiled Sessions, the shared per-run execution state,
   caller parameters (`Parameters`), one-shot Executions, lazy debug Plans,
-  DebugRuntime leases, and execution lifecycle observation.
+  DebugRuntime leases, and execution lifecycle observation. It borrows one
+  composition-owned `api.Runtime` and never closes it.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
   events, and debug child cleanup.
+* `internal/ferretapi` is the provisional and sole bridge between the
+  Universal Runtime API and native Ferret runtime, Plan, Session, debugger, and
+  diagnostic types.
 * `internal/source`, `internal/diagnostic`, and `internal/lifecycle` own their
   protocol-neutral shared concepts. Do not move those semantics into adapters
   or process setup.
@@ -71,12 +75,14 @@ translate; they do not become alternate owners of domain behavior.
 * `proto/ferretd` owns versioned wire source contracts. `gen/` contains
   checked-in generated output and must not be edited manually.
 * The Ferret dependency owns language, compiler, runtime, VM, standard-library,
-  and core debugger semantics. Change those in Ferret rather than copying or
-  redefining them here.
+  and core debugger semantics. Execution and debug domain packages use the
+  Universal API; native runtime translation stays in `internal/ferretapi`.
+  Change Ferret semantics in Ferret rather than copying or redefining them here.
 
 Keep dependency direction clear: commands compose adapters and services;
-adapters depend on protocol-neutral services; domain services consume Ferret.
-Do not export internal APIs merely to share implementation across packages.
+adapters depend on protocol-neutral services; execution and debug consume the
+Universal API; native runtime translation stays in `internal/ferretapi`. Do not
+export internal APIs merely to share implementation across packages.
 
 ## Compatibility and observable behavior
 

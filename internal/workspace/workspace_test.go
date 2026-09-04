@@ -15,7 +15,6 @@ func TestStateReservesZero(t *testing.T) {
 
 func TestWorkspaceRequiresReceiver(t *testing.T) {
 	var workspace *Workspace
-	ctx := context.Background()
 	tests := []struct {
 		name string
 		call func()
@@ -28,11 +27,9 @@ func TestWorkspaceRequiresReceiver(t *testing.T) {
 		{name: "Documents", call: func() { _ = workspace.Documents() }},
 		{name: "Document", call: func() { _, _ = workspace.Document("query.fql") }},
 		{name: "Diagnostics", call: func() { _ = workspace.Diagnostics() }},
-		{name: "CompileDocument", call: func() { _, _ = workspace.CompileDocument(ctx, Document{}) }},
-		{name: "CompileDebugSnapshot", call: func() {
-			_, _ = workspace.CompileDebugSnapshot(ctx, SourceSnapshot{}, "")
+		{name: "RefreshDocument", call: func() {
+			_, _ = workspace.RefreshDocument(context.Background(), "query.fql")
 		}},
-		{name: "RefreshDocument", call: func() { _, _ = workspace.RefreshDocument(ctx, "query.fql") }},
 	}
 
 	for _, tt := range tests {

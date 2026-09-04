@@ -2,66 +2,93 @@ package diagnostic
 
 import (
 	"errors"
-	"iter"
+	"strings"
 
-	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
-	"github.com/MontFerret/ferret/v2/pkg/vm"
+	apidiagnostics "github.com/MontFerret/api/diagnostics"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
-// runtimeErrorSet matches Ferret's aggregate VM error without importing its internal concrete type.
-type runtimeErrorSet interface {
-	Errors() iter.Seq2[int, *vm.RuntimeError]
-}
-
-// FromError extracts Ferret diagnostics from a compilation or runtime error.
+// FromError extracts portable runtime diagnostics from a compilation or runtime error.
 func FromError(uri source.URI, text string, err error) []Diagnostic {
-	values := extractFerretDiagnostics(err)
-	if len(values) == 0 {
+	var values apidiagnostics.Diagnostics
+	if !errors.As(err, &values) {
 		return nil
 	}
 
-	mapper := source.NewMapper(text)
-	result := make([]Diagnostic, 0, len(values))
-	for _, value := range values {
-		result = append(result, Convert(uri, mapper, value))
+	result := make([]Diagnostic, len(values))
+	for index := range values {
+		result[index] = convertAPIDiagnostic(uri, text, values[index])
 	}
 
 	return result
 }
 
-func extractFerretDiagnostics(err error) []*ferretdiagnostics.Diagnostic {
-	var runtimeSet runtimeErrorSet
-	if errors.As(err, &runtimeSet) {
-		result := make([]*ferretdiagnostics.Diagnostic, 0)
-		for _, item := range runtimeSet.Errors() {
-			if item != nil && item.Diagnostic != nil {
-				result = append(result, item.Diagnostic)
-			}
+func convertAPIDiagnostic(uri source.URI, fallbackText string, value apidiagnostics.Diagnostic) Diagnostic {
+	text := value.Source.Content
+	if text == "" {
+		text = fallbackText
+	}
+	mapper := source.NewMapper(text)
+	result := Diagnostic{
+		URI:      uri,
+		Message:  apiDiagnosticMessage(value),
+		Severity: SeverityError,
+		Source:   "ferret",
+		Code:     value.Kind.String(),
+	}
+
+	primaryIndex := -1
+	for index := range value.Annotations {
+		if value.Annotations[index].Primary {
+			primaryIndex = index
+
+			break
+		}
+	}
+
+	if primaryIndex < 0 && len(value.Annotations) > 0 {
+		primaryIndex = 0
+	}
+
+	if primaryIndex >= 0 {
+		annotation := value.Annotations[primaryIndex]
+		result.Range = mapper.SpanToRange(source.Span{
+			Start: annotation.Range.Span.Start,
+			End:   annotation.Range.Span.End,
+		})
+	}
+
+	for index, annotation := range value.Annotations {
+		if index == primaryIndex {
+			continue
 		}
 
-		return result
-	}
-
-	var runtimeError *vm.RuntimeError
-	if errors.As(err, &runtimeError) && runtimeError != nil && runtimeError.Diagnostic != nil {
-		return []*ferretdiagnostics.Diagnostic{runtimeError.Diagnostic}
-	}
-
-	var set *ferretdiagnostics.DiagnosticSet
-	if errors.As(err, &set) && set != nil {
-		result := make([]*ferretdiagnostics.Diagnostic, 0, set.Size())
-		for _, item := range set.Errors() {
-			result = append(result, item)
+		message := annotation.Message
+		if message == "" {
+			message = "Related location"
 		}
-
-		return result
+		result.RelatedInformation = append(result.RelatedInformation, RelatedInformation{
+			URI: uri,
+			Range: mapper.SpanToRange(source.Span{
+				Start: annotation.Range.Span.Start,
+				End:   annotation.Range.Span.End,
+			}),
+			Message: message,
+		})
 	}
 
-	var single *ferretdiagnostics.Diagnostic
-	if errors.As(err, &single) && single != nil {
-		return []*ferretdiagnostics.Diagnostic{single}
+	return result
+}
+
+func apiDiagnosticMessage(value apidiagnostics.Diagnostic) string {
+	parts := []string{value.Message}
+	if value.Hint != "" {
+		parts = append(parts, "Hint: "+value.Hint)
 	}
 
-	return nil
+	if value.Note != "" {
+		parts = append(parts, "Note: "+value.Note)
+	}
+
+	return strings.Join(parts, "\n\n")
 }

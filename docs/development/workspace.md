@@ -1,8 +1,8 @@
 # Workspace Development
 
 `internal/workspace` owns concurrency-safe, process-local workspace identity,
-dynamic file discovery, retained source and syntax state, one rooted Ferret
-engine per open workspace, targeted refresh, and parent-resource cleanup.
+dynamic file discovery, retained source and syntax state, targeted refresh, and
+parent-resource cleanup. It does not own an execution runtime or compile Plans.
 
 Workspace state is shared by the daemon, execution manager, and language
 service. Editor overlays are not workspace state; see
@@ -18,20 +18,20 @@ client connections.
 
 The manager coordinates in-flight opens without holding its main lock across
 filesystem I/O or Ferret parsing. A workspace is published only after coherent
-loading and engine construction. Cancellation before publication must not leave
-a manager entry or engine behind.
+loading and watcher construction. Cancellation before publication must not
+leave a manager entry or watcher behind.
 
 Published workspaces use one ID registry whose entries explicitly transition
 from active to closing. Root lookup and normal ID lookup expose active entries
 only. A closing entry composes `internal/lifecycle.CloseOperation`, remains
-retained for concurrent `Close` or `Clear` waiters, and is removed after engine
+retained for concurrent `Close` or `Clear` waiters, and is removed after
 cleanup publishes its result. The root-coalesced open operation remains
 workspace-specific because it also owns a candidate Workspace, load result, and
 manager generation.
 
 Close is explicit and idempotent. Concurrent close callers observe one close
 operation and retained result. The manager stops the workspace watcher, runs
-registered child close hooks, and then closes the workspace engine. `Clear`
+registered child close hooks, and then clears retained workspace state. `Clear`
 invalidates in-flight opens, removes published entries, and coordinates all
 outstanding closes.
 
@@ -56,7 +56,7 @@ eligible directories used by initial discovery, reconciles file events or the
 affected subtree, and performs a root reconciliation only after watcher
 overflow or an unclassifiable error. Nested module-boundary directories remain
 watched so removing their `go.mod` can admit the subtree. The watcher stops and
-joins before workspace child and engine cleanup.
+joins before workspace child cleanup and retained-state release.
 
 ## Retained files and documents
 
@@ -67,7 +67,7 @@ values or copies rather than mutable manager-owned collections.
 
 A malformed or unreadable document does not fail an otherwise coherent
 workspace. It remains represented with diagnostics so other files are usable.
-Fatal root, discovery, or engine failures prevent publication of the entire
+Fatal root, discovery, or watcher failures prevent publication of the entire
 workspace.
 
 Retained parser state is daemon-owned and treated as read-only by visitors. The
@@ -76,7 +76,7 @@ reset when a path is deleted and recreated. The language analysis cache uses
 this identity instead of the client-visible per-file revision. The workspace
 owns syntax state, not semantic compilation Plans or runtime state.
 
-## Refresh and compilation boundary
+## Refresh and execution boundary
 
 Session creation asks the workspace to reconcile only the selected document.
 The operation rereads a retained path, defensively admits a missed eligible
@@ -85,15 +85,14 @@ availability, and revision. Unchanged contents retain their revision. Missing
 or newly ineligible paths are removed; an eligible but unreadable regular file
 remains represented with load diagnostics.
 
-After refresh, `CompileDocument` compiles the selected immutable document for a
-normal Session. `CompileDebugSnapshot` compiles the exact source snapshot and
-text retained by that Session. Existing Sessions keep the source text, revision,
-and Plan with which they were created; a later refresh does not mutate them.
+After refresh, `internal/exec` constructs an `api.Source` from the absolute
+document path and retained content, then compiles normal or debug Plans through
+its borrowed runtime. Existing Sessions keep the source text, revision, and Plan
+with which they were created; a later refresh does not mutate them.
 
-Each workspace engine uses Ferret's read-write filesystem rooted at the cleaned
-workspace directory. Root confinement and filesystem semantics remain Ferret
-embedding responsibilities; the workspace manager coordinates ownership and
-lifetime.
+The workspace root is passed to each Universal runtime Session as its baseline
+filesystem root. Runtime filesystem semantics remain runtime responsibilities;
+the workspace manager retains only root identity.
 
 ## Consumers
 
@@ -111,10 +110,10 @@ Tests should cover canonical roots, root confinement, deterministic ordering,
 directory pruning and dynamic boundaries, symlink handling, recoverable
 document failures, fatal open and watcher rollback, concurrent duplicate opens,
 cancellation, refresh revisions, watcher event reconciliation, close ordering,
-concurrent close, idempotency, and engine cleanup. Platform path behavior needs
+concurrent close, idempotency, and retained-state cleanup. Platform path behavior needs
 Windows-specific coverage when root or separator rules change.
 
 Workspace lifecycle and discovery benchmarks live with the manager. Changes to
-walking, parsing, copying, lookup, refresh, synchronization, or engine lifetime
+walking, parsing, copying, lookup, refresh, synchronization, or workspace lifetime
 should be assessed for allocation, latency, contention, and retained-resource
 impact.

@@ -1,10 +1,10 @@
 # Execution Development
 
-`internal/exec` coordinates compiled Ferret Plans and one common per-run
-execution runtime used by ordinary execution and debugging. Ferret owns
-compilation, runtime values, VM execution, and result encoding; the execution
-manager owns long-lived identity, runtime preparation, cancellation, lifecycle,
-observation, and cleanup.
+`internal/exec` coordinates compiled Universal API Plans and one common per-run
+execution state used by ordinary execution and debugging. It borrows the
+composition-owned `api.Runtime`; Ferret remains the implementation behind the
+provisional `internal/ferretapi` adapter. The execution manager owns long-lived
+identity, option preparation, cancellation, lifecycle, observation, and cleanup.
 
 The resource hierarchy is:
 
@@ -16,7 +16,7 @@ Workspace
             -> DebugRuntime -> common execution runtime + debugger capability
 ```
 
-See [workspace.md](workspace.md) for source refresh and engine ownership and
+See [workspace.md](workspace.md) for source refresh and root identity and
 [debugging.md](debugging.md) for the debug child path.
 
 ## Compiled Sessions
@@ -24,10 +24,11 @@ See [workspace.md](workspace.md) for source refresh and engine ownership and
 Creating a Session selects one eligible workspace-relative `.fql` document.
 The workspace refreshes retained contents or defensively admits a missed
 creation using the normal discovery boundaries, then compiles it with the
-workspace's rooted Ferret engine. Load, syntax, or compiler failures are
-returned as structured compilation diagnostics without publishing a Session.
+shared runtime using `api.NewSource` with the absolute source path and retained
+content. Load, syntax, or compiler failures are returned as structured
+compilation diagnostics without publishing a Session.
 
-A published Session owns one immutable normal Plan, its workspace and source
+A published Session owns one immutable normal `api.Plan`, its workspace and source
 identity, source revision, and declared parameter names. Later disk refreshes do
 not mutate existing Sessions. The same Session can create multiple isolated
 Executions.
@@ -35,8 +36,8 @@ Executions.
 The Session also coordinates lazy construction of one matching debug Plan. That
 Plan is separate because it carries debugger instrumentation. Debug consumers
 receive an `exec.DebugRuntime`, never mutable Session internals or a raw Plan.
-The DebugRuntime owns its Plan lease through the common runtime's one-time
-Ferret-session close attempt.
+The DebugRuntime owns its Plan lease through the common execution state's
+one-time Universal debugger Session close attempt.
 
 The concrete Session and Execution implementations are package-private.
 Sibling packages use `exec.Manager`, immutable snapshots, subscriptions, and
@@ -45,27 +46,33 @@ Sibling packages use `exec.Manager`, immutable snapshots, subscriptions, and
 ## Common runtime and Executions
 
 `exec.Parameters` is the named caller-facing parameter map. It recursively
-clones `map[string]any` and `[]any` containers before retained state is created;
-runtime preparation remains private to `internal/exec`. Raw maps are converted
-to `Parameters` only at gRPC and DAP boundaries.
+clones `map[string]any` and `[]any` containers before retained state is created.
+Raw maps are converted to `Parameters` only at gRPC and DAP boundaries.
 
-The package has one concrete execution-runtime implementation. It owns the
-immutable Session/Plan/source target, prepared Ferret parameters plus the
-daemon-retained copy, normalized options, a manager-owned context and
-cancellation function, one Ferret session resource, `RuntimeOutput` and
-`RuntimeFailure` materialization, and idempotent Ferret-session cleanup. Both
-normal and debug creation use the same preparation and cloning semantics.
+The package has one concrete per-run implementation. It owns the immutable
+Session/Plan/source target, cloned parameters, normalized options, a
+manager-owned context and cancellation function, one `api.Session` or Universal
+debugger Session, defensively copied `api.Output`, `RuntimeFailure`
+materialization, and idempotent session cleanup. Both normal and debug creation
+use the same preparation and cloning semantics.
 
 Runtime options also retain an optional canonical working directory. Validation
 requires a nonblank absolute path that resolves to an accessible directory and
 uses the same rooted-filesystem opening semantics as Ferret. This option is
 independent of source/workspace containment and may name a directory outside the
-workspace. An absent option preserves the workspace engine filesystem; a
-present option is passed to `ferret.WithSessionFSRoot` for the fresh runtime
-session without changing compilation or creating another Plan.
+workspace. Every fresh runtime Session receives the parent workspace root via
+`api.WithFSRoot`; an explicit normalized working directory replaces that
+baseline without changing the retained daemon option snapshot, compilation, or
+Plan identity.
+
+Parameters and output content type are applied with `api.WithParams` and
+`api.WithOutputContentType`. Runtime-specific parameter rejection therefore
+occurs when `api.Plan.NewSession` applies these options. Ordinary execution
+retains it as the existing asynchronous session-creation failure category;
+JSON/protobuf validation at public transport boundaries is unchanged.
 
 Each Execution owns that runtime plus its ordinary one-shot state, ordered
-lifecycle events, and terminal result or failure. The fresh Ferret runtime
+lifecycle events, and terminal result or failure. The fresh Universal runtime
 Session is still created only after `Start`, so session-creation failures remain
 asynchronous terminal failures. Executions do not share runtime state, queue
 work, persist results, replay, or act as a REPL.
@@ -100,7 +107,8 @@ Closing an Execution cancels active work, waits for common-runtime cleanup, ends
 watchers, and becomes idempotent. Closing a Session stops both normal and debug
 runtime creation, closes every child Execution and DebugSession, waits for
 DebugRuntime leases, and then closes its Plans. Closing a workspace invokes the
-execution manager's registered close hook before the workspace engine closes.
+execution manager's registered close hook before retained workspace state is
+cleared.
 
 The manager orchestrates two package-local registries rather than owning all
 resource maps under one lock. The Session registry owns active-versus-closing
@@ -124,7 +132,8 @@ a later caller can still observe completion.
 
 The manager itself has a terminal closed state. New resources are rejected after
 close, and daemon shutdown closes execution resources before clearing
-workspaces.
+workspaces. The manager borrows its runtime and never closes it; daemon and DAP
+composition close their one runtime exactly once after managers and workspaces.
 
 ## gRPC and public client projection
 

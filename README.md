@@ -11,6 +11,12 @@ language server, and a single-session Debug Adapter Protocol (DAP) server over
 stdio. The Ferret VM, compiler, runtime, debugger semantics, and language
 semantics remain owned by the main Ferret project.
 
+Execution uses the
+[Universal Runtime API](https://github.com/MontFerret/api). Each daemon or DAP
+service graph owns one shared runtime, while execution Sessions own reusable
+plans and per-run runtime sessions. The current native Ferret integration is a
+provisional adapter isolated in `internal/ferretapi`.
+
 ## Build
 
 Requires Go 1.26.1 or newer.
@@ -118,10 +124,10 @@ watcher, err := c.Executions().WatchExecution(ctx, execution.ID)
 running, err := c.Executions().RunExecution(ctx, execution.ID)
 ```
 
-`WorkingDirectory` is optional. When omitted, the Ferret runtime session uses
-the workspace-rooted filesystem associated with the compiled Session. When
-supplied, it must resolve to an existing absolute local directory; it may be
-outside the workspace and is retained canonically in Execution snapshots.
+`WorkingDirectory` is optional. When omitted, the Universal runtime session uses
+the parent workspace root. When supplied, it must resolve to an existing
+absolute local directory; it may be outside the workspace and is retained
+canonically in Execution snapshots.
 
 For the opt-in TCP transport, parse the endpoint from the `ferretd.ready` event
 and pass the same token explicitly:
@@ -152,15 +158,15 @@ not close its workspaces, and `Close` is explicit and idempotent. The current
 workspace RPC continues to expose identity and lifecycle operations rather than
 documents or parser internals.
 
-Each open workspace owns a Ferret engine with a read-write filesystem rooted at
-the workspace directory. `CreateSession` refreshes and compiles the latest saved
-contents of one eligible workspace-relative `.fql` document into an immutable
-reusable plan. A missed creation notification is recovered during this refresh;
-excluded or escaping paths remain rejected. Existing Sessions keep their
-original source revision and normal and lazy debug Plans. Each `Execution` owns
-isolated JSON-shaped parameter bindings and a fresh, one-shot Ferret runtime
-session. Its optional working directory changes only that runtime session's
-rooted filesystem; compilation and source containment remain workspace-owned.
+Each daemon service graph owns one Universal runtime. `CreateSession` refreshes
+the latest saved contents of one eligible workspace-relative `.fql` document
+and compiles it into an immutable reusable plan. A missed creation notification
+is recovered during this refresh; excluded or escaping paths remain rejected.
+Existing Sessions keep their original source revision and normal and lazy debug
+Plans. Each `Execution` owns isolated JSON-shaped parameter bindings and a fresh,
+one-shot runtime session. Its filesystem starts at the workspace root; an
+optional working directory changes only that runtime session's root. Source
+containment and retained state remain workspace-owned.
 `RunExecution` returns the `RUNNING` snapshot immediately; execution then
 continues independently of the triggering RPC context. Clients can observe the
 latest lifecycle event and subsequent events with `WatchExecution`, cancel an

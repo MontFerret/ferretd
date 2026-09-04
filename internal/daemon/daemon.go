@@ -11,7 +11,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/MontFerret/api"
+
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/ferretapi"
 	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
 	"github.com/MontFerret/ferretd/internal/transport"
 	"github.com/MontFerret/ferretd/internal/workspace"
@@ -22,6 +25,7 @@ type Daemon struct {
 	workspaces *workspace.Manager
 	executions *exec.Manager
 	grpc       *grpcadapter.Server
+	runtime    api.Runtime
 
 	endpoint transport.Endpoint
 	version  string
@@ -43,15 +47,27 @@ func New(options Options) (*Daemon, error) {
 		return nil, err
 	}
 
+	runtime, err := ferretapi.New()
+	if err != nil {
+		return nil, fmt.Errorf("create runtime: %w", err)
+	}
+
+	return newDaemon(options, runtime)
+}
+
+func newDaemon(options Options, runtime api.Runtime) (*Daemon, error) {
 	instanceID, err := uuid.NewRandom()
 	if err != nil {
-		return nil, fmt.Errorf("generate daemon instance ID: %w", err)
+		return nil, errors.Join(
+			fmt.Errorf("generate daemon instance ID: %w", err),
+			runtime.Close(),
+		)
 	}
 
 	workspaceManager := workspace.New()
-	executionManager, err := exec.New(workspaceManager)
+	executionManager, err := exec.New(workspaceManager, runtime)
 	if err != nil {
-		cleanupErr := workspaceManager.Clear(context.Background())
+		cleanupErr := errors.Join(workspaceManager.Clear(context.Background()), runtime.Close())
 
 		return nil, errors.Join(fmt.Errorf("create execution manager: %w", err), cleanupErr)
 	}
@@ -59,6 +75,7 @@ func New(options Options) (*Daemon, error) {
 	result := &Daemon{
 		workspaces: workspaceManager,
 		executions: executionManager,
+		runtime:    runtime,
 		endpoint:   options.Endpoint,
 		version:    options.Version,
 		logger:     *options.Logger,
@@ -77,7 +94,11 @@ func New(options Options) (*Daemon, error) {
 
 	if err != nil {
 		ctx := context.Background()
-		cleanupErr := errors.Join(result.executions.Close(ctx), result.workspaces.Clear(ctx))
+		cleanupErr := errors.Join(
+			result.executions.Close(ctx),
+			result.workspaces.Clear(ctx),
+			result.runtime.Close(),
+		)
 
 		return nil, errors.Join(fmt.Errorf("create gRPC server: %w", err), cleanupErr)
 	}
@@ -104,7 +125,14 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	listener, err := transport.Listen(d.endpoint)
 	if err != nil {
-		d.finishStartupFailure()
+		d.mu.Lock()
+		if d.state != stateStopping {
+			d.state = stateStopping
+		}
+		stopDone := d.stopDone
+		d.mu.Unlock()
+		d.startCleanup(nil, false)
+		<-stopDone
 
 		return fmt.Errorf("listen for daemon connections: %w", err)
 	}
@@ -115,10 +143,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	if d.state == stateStopping {
 		d.mu.Unlock()
 
-		closeErr := listener.Close()
-		executionErr := d.executions.Close(context.Background())
-		workspaceErr := d.workspaces.Clear(context.Background())
-		d.finishStop(errors.Join(executionErr, workspaceErr, closeErr))
+		d.startCleanup(listener, false)
 
 		return nil
 	}
@@ -162,13 +187,12 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	switch d.state {
 	case stateNew:
 		d.state = stateStopping
+		stopDone := d.stopDone
 		d.mu.Unlock()
 
-		executionErr := d.executions.Close(ctx)
-		workspaceErr := d.workspaces.Clear(ctx)
-		d.finishStop(errors.Join(executionErr, workspaceErr))
+		d.startCleanup(nil, false)
 
-		return d.stopResult()
+		return d.waitForStop(ctx, stopDone)
 	case stateStarting:
 		d.state = stateStopping
 		stopDone := d.stopDone
@@ -178,16 +202,12 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	case stateRunning:
 		d.state = stateStopping
 		listener := d.listener
+		stopDone := d.stopDone
 		d.mu.Unlock()
 
-		d.grpc.SetNotServing()
-		executionErr := d.executions.Close(ctx)
-		workspaceErr := d.workspaces.Clear(ctx)
-		stopErr := d.grpc.Stop(ctx)
-		closeErr := listener.Close()
-		d.finishStop(errors.Join(executionErr, workspaceErr, stopErr, closeErr))
+		d.startCleanup(listener, true)
 
-		return d.stopResult()
+		return d.waitForStop(ctx, stopDone)
 	case stateStopping:
 		stopDone := d.stopDone
 		d.mu.Unlock()
@@ -211,12 +231,26 @@ func (d *Daemon) requestShutdown() {
 	})
 }
 
-func (d *Daemon) finishStartupFailure() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+func (d *Daemon) startCleanup(listener net.Listener, serving bool) {
+	go func() {
+		if serving {
+			d.grpc.SetNotServing()
+		}
 
-	d.state = stateStopped
-	close(d.stopDone)
+		ctx := context.Background()
+		executionErr := d.executions.Close(ctx)
+		workspaceErr := d.workspaces.Clear(ctx)
+		var grpcErr error
+		if serving {
+			grpcErr = d.grpc.Stop(ctx)
+		}
+		var listenerErr error
+		if listener != nil {
+			listenerErr = listener.Close()
+		}
+		runtimeErr := d.runtime.Close()
+		d.finishStop(errors.Join(executionErr, workspaceErr, grpcErr, listenerErr, runtimeErr))
+	}()
 }
 
 func (d *Daemon) finishStop(err error) {

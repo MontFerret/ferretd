@@ -1,7 +1,5 @@
 package exec
 
-import ferretruntime "github.com/MontFerret/ferret/v2/pkg/runtime"
-
 // Parameters is the caller-facing parameter set retained by normal and debug
 // execution. Clone recursively isolates map[string]any and []any containers;
 // all other values retain their existing Go semantics.
@@ -19,16 +17,6 @@ func (p Parameters) Clone() Parameters {
 	}
 
 	return result
-}
-
-func (p Parameters) prepare() (ferretruntime.Params, Parameters, error) {
-	retained := p.Clone()
-	converted, err := ferretruntime.NewParamsFrom(map[string]any(retained))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return converted, retained, nil
 }
 
 func (p Parameters) cloneValue(value any) any {

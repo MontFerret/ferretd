@@ -3,11 +3,10 @@ package exec
 import (
 	"context"
 	"errors"
-	"fmt"
+	"io"
 	"sync"
 
-	"github.com/MontFerret/ferret/v2"
-	ferretruntime "github.com/MontFerret/ferret/v2/pkg/runtime"
+	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -17,13 +16,13 @@ type (
 		sessionID SessionID
 		source    workspace.SourceSnapshot
 		text      string
-		plan      *ferret.Plan
+		fsRoot    string
+		plan      api.Plan
 	}
 
 	runtimeInput struct {
-		ferretParameters ferretruntime.Params
-		parameters       Parameters
-		options          RuntimeOptions
+		parameters Parameters
+		options    RuntimeOptions
 	}
 
 	// executionRuntime owns the daemon-level state and resources shared by
@@ -33,41 +32,29 @@ type (
 		target runtimeTarget
 		input  runtimeInput
 
-		ctx           context.Context
-		cancel        context.CancelCauseFunc
-		ferretSession ferretSession
-		closeOnce     sync.Once
-		closeErr      error
-	}
-
-	// ferretSession is the common owned-resource contract implemented by
-	// Ferret's ordinary and debugger sessions.
-	ferretSession interface {
-		Close() error
+		ctx       context.Context
+		cancel    context.CancelCauseFunc
+		session   io.Closer
+		closeOnce sync.Once
+		closeErr  error
 	}
 
 	runtimeRunResult struct {
-		output   *RuntimeOutput
+		output   *api.Output
 		err      error
 		category FailureCategory
 	}
 )
 
 func newRuntimeInput(parameters Parameters, options RuntimeOptions) (runtimeInput, error) {
-	ferretParameters, retained, err := parameters.prepare()
-	if err != nil {
-		return runtimeInput{}, fmt.Errorf("%w: %v", ErrInvalidParameters, err)
-	}
-
 	normalizedOptions, err := options.normalized()
 	if err != nil {
 		return runtimeInput{}, err
 	}
 
 	return runtimeInput{
-		ferretParameters: ferretParameters,
-		parameters:       retained,
-		options:          normalizedOptions,
+		parameters: parameters.Clone(),
+		options:    normalizedOptions,
 	}, nil
 }
 
@@ -85,14 +72,28 @@ func newExecutionRuntime(target runtimeTarget, input runtimeInput) *executionRun
 func (r *executionRuntime) run() runtimeRunResult {
 	session, err := r.target.plan.NewSession(r.ctx, r.sessionOptions()...)
 	if err != nil {
-		return runtimeRunResult{err: err, category: FailureSessionCreation}
+		return runtimeRunResult{
+			err:      errors.Join(err, closeAPIResource(session)),
+			category: FailureSessionCreation,
+		}
 	}
-	r.ferretSession = session
+
+	if isNilAPI(session) {
+		return runtimeRunResult{
+			err:      errors.New("runtime returned no session"),
+			category: FailureSessionCreation,
+		}
+	}
+	r.session = session
 
 	output, runErr := session.Run(r.ctx)
 	closeErr := r.closeSession()
+	var retainedOutput *api.Output
+	if output.ContentType != "" || output.Content != nil {
+		retainedOutput = r.materializeOutput(&output)
+	}
 	result := runtimeRunResult{
-		output:   r.materializeOutput(output),
+		output:   retainedOutput,
 		err:      errors.Join(runErr, closeErr),
 		category: FailureRuntime,
 	}
@@ -104,23 +105,25 @@ func (r *executionRuntime) run() runtimeRunResult {
 	return result
 }
 
-func (r *executionRuntime) sessionOptions() []ferret.SessionOption {
-	options := []ferret.SessionOption{ferret.WithSessionRuntimeParams(r.input.ferretParameters)}
-	if r.input.options.OutputContentType != "" {
-		options = append(options, ferret.WithOutputContentType(r.input.options.OutputContentType))
+func (r *executionRuntime) sessionOptions() []api.SessionOption {
+	options := []api.SessionOption{
+		api.WithParams(map[string]any(r.input.parameters.Clone())),
+		api.WithOutputContentType(r.input.options.OutputContentType),
 	}
 
+	fsRoot := r.target.fsRoot
 	if r.input.options.WorkingDirectorySet {
-		options = append(options, ferret.WithSessionFSRoot(r.input.options.WorkingDirectory))
+		fsRoot = r.input.options.WorkingDirectory
 	}
+	options = append(options, api.WithFSRoot(fsRoot))
 
 	return options
 }
 
 func (r *executionRuntime) closeSession() error {
 	r.closeOnce.Do(func() {
-		if r.ferretSession != nil {
-			r.closeErr = r.ferretSession.Close()
+		if r.session != nil {
+			r.closeErr = r.session.Close()
 		}
 	})
 
@@ -138,12 +141,12 @@ func (r *executionRuntime) materializeFailure(err error) *RuntimeFailure {
 	}
 }
 
-func (r *executionRuntime) materializeOutput(output *ferret.Output) *RuntimeOutput {
+func (r *executionRuntime) materializeOutput(output *api.Output) *api.Output {
 	if output == nil {
 		return nil
 	}
 
-	return &RuntimeOutput{
+	return &api.Output{
 		ContentType: output.ContentType,
 		Content:     append([]byte(nil), output.Content...),
 	}

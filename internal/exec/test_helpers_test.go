@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MontFerret/ferret/v2"
-	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
+	"github.com/MontFerret/api"
+	"github.com/MontFerret/ferretd/internal/ferretapi"
 	localsource "github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -22,10 +22,20 @@ type executionFixture struct {
 func mustNewManager(t testing.TB, workspaces *workspace.Manager) *Manager {
 	t.Helper()
 
-	manager, err := New(workspaces)
+	runtime, err := ferretapi.New()
 	if err != nil {
+		t.Fatalf("ferretapi.New: %v", err)
+	}
+
+	manager, err := New(workspaces, runtime)
+	if err != nil {
+		_ = runtime.Close()
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = manager.Close(context.Background())
+		_ = runtime.Close()
+	})
 
 	return manager
 }
@@ -76,17 +86,13 @@ func newExecutionFixture(t *testing.T, query string) executionFixture {
 func newHookedManager(
 	t *testing.T,
 	query string,
-	options ...ferret.Option,
-) (*Manager, SessionSnapshot, *ferret.Engine) {
+	options ...runtimeSpyOption,
+) (*Manager, SessionSnapshot, *runtimeSpy) {
 	t.Helper()
 
-	engine, err := ferret.New(options...)
+	runtime := newRuntimeSpy(options...)
+	plan, err := runtime.Compile(context.Background(), api.NewSource("/query.fql", query))
 	if err != nil {
-		t.Fatalf("ferret.New: %v", err)
-	}
-	plan, err := engine.Compile(context.Background(), ferretsource.New("query.fql", query))
-	if err != nil {
-		_ = engine.Close()
 		t.Fatalf("Compile: %v", err)
 	}
 
@@ -99,15 +105,18 @@ func newHookedManager(
 	}
 	session := newSession(
 		SessionID("session"),
-		workspace.Compilation{Plan: plan, Source: snapshot},
+		snapshot,
+		plan,
 		query,
-		func(ctx context.Context) (workspace.Compilation, error) {
-			debugPlan, compileErr := engine.CompileDebug(ctx, ferretsource.New("query.fql", query))
-
-			return workspace.Compilation{Plan: debugPlan, Source: snapshot}, compileErr
+		"/",
+		func(ctx context.Context) (api.Plan, error) {
+			return runtime.CompileDebug(ctx, api.NewSource("/query.fql", query))
 		},
 	)
-	manager := mustNewManager(t, workspace.New())
+	manager, err := New(workspace.New(), runtime)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	creation, err := manager.sessions.beginCreate(workspaceID)
 	if err != nil {
 		t.Fatalf("begin Session creation: %v", err)
@@ -118,10 +127,10 @@ func newHookedManager(
 	manager.sessions.finishCreate(creation)
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
-		_ = engine.Close()
+		_ = runtime.Close()
 	})
 
-	return manager, session.snapshot(), engine
+	return manager, session.snapshot(), runtime
 }
 
 func retainedSession(t testing.TB, manager *Manager, id SessionID) *sessionEntry {

@@ -22,6 +22,12 @@ func TestNew(t *testing.T) {
 	if d.workspaces == nil || d.executions == nil || d.grpc == nil {
 		t.Fatal("New did not construct all service boundaries")
 	}
+	if d.runtime == nil {
+		t.Fatal("New did not construct the composition runtime")
+	}
+	if err := d.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
 }
 
 func TestStartReturnsOnCancellationAndStopCleansUp(t *testing.T) {

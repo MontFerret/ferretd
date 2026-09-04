@@ -10,17 +10,34 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/api"
+	apidebugger "github.com/MontFerret/api/debugger"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-func TestNewRequiresWorkspaceManager(t *testing.T) {
-	manager, err := New(nil)
-	if manager != nil {
-		t.Fatal("New returned a manager for a nil workspace dependency")
+func TestNewRequiresDependencies(t *testing.T) {
+	runtime := newRuntimeSpy()
+	tests := []struct {
+		name       string
+		workspaces *workspace.Manager
+		runtime    api.Runtime
+		want       error
+	}{
+		{name: "workspace manager", runtime: runtime, want: errNilWorkspaceManager},
+		{name: "runtime", workspaces: workspace.New(), want: errNilRuntime},
+		{name: "typed nil runtime", workspaces: workspace.New(), runtime: (*runtimeSpy)(nil), want: errNilRuntime},
 	}
-	if !errors.Is(err, errNilWorkspaceManager) {
-		t.Fatalf("New error = %v, want %v", err, errNilWorkspaceManager)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager, err := New(test.workspaces, test.runtime)
+			if manager != nil {
+				t.Fatal("New returned a manager with a missing dependency")
+			}
+			if !errors.Is(err, test.want) {
+				t.Fatalf("New error = %v, want %v", err, test.want)
+			}
+		})
 	}
 }
 
@@ -32,7 +49,8 @@ func TestManagerDoesNotOwnWorkspaceManager(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = workspaces.Clear(context.Background()) })
 
-	manager, err := New(workspaces)
+	runtime := newRuntimeSpy()
+	manager, err := New(workspaces, runtime)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -45,6 +63,141 @@ func TestManagerDoesNotOwnWorkspaceManager(t *testing.T) {
 	}
 	if _, err := workspaces.Get(context.Background(), opened.ID()); err != nil {
 		t.Fatalf("workspace after execution manager Close: %v", err)
+	}
+	if runtime.closeCalls.Load() != 0 {
+		t.Fatalf("runtime close calls = %d, want 0", runtime.closeCalls.Load())
+	}
+}
+
+func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "query.fql")
+	if err := os.WriteFile(sourcePath, []byte("RETURN @value"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	workspaces := workspace.New()
+	opened, err := workspaces.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	runtime := newRuntimeSpy()
+	manager, err := New(workspaces, runtime)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = manager.Close(context.Background())
+		_ = workspaces.Clear(context.Background())
+	})
+
+	snapshot, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	compiled, debugCompiled := runtime.sources()
+	if len(compiled) != 1 || compiled[0].Name != sourcePath || compiled[0].Content != "RETURN @value" {
+		t.Fatalf("compiled sources = %+v", compiled)
+	}
+	if len(debugCompiled) != 0 {
+		t.Fatalf("debug sources before debug creation = %+v", debugCompiled)
+	}
+
+	created, err := manager.CreateExecution(
+		context.Background(),
+		snapshot.ID,
+		Parameters{"value": 7},
+		RuntimeOptions{OutputContentType: "application/json"},
+	)
+	if err != nil {
+		t.Fatalf("CreateExecution: %v", err)
+	}
+	terminal, _ := runAndObserve(t, manager, created.ID)
+	if terminal.State != StateCompleted || terminal.Output == nil || string(terminal.Output.Content) != "7" {
+		t.Fatalf("terminal = %+v", terminal)
+	}
+
+	plan := retainedSession(t, manager, snapshot.ID).session.plan.(*planSpy)
+	plan.mu.Lock()
+	options := plan.lastOptions
+	plan.mu.Unlock()
+	if options.params["value"] != 7 || options.contentType != "application/json" || options.fsRoot != root {
+		t.Fatalf("session options = %+v, want parameters, content type, and workspace root", options)
+	}
+
+	override := t.TempDir()
+	canonicalOverride, err := filepath.EvalSymlinks(override)
+	if err != nil {
+		t.Fatalf("EvalSymlinks override: %v", err)
+	}
+	created, err = manager.CreateExecution(
+		context.Background(),
+		snapshot.ID,
+		Parameters{"value": 8},
+		RuntimeOptions{WorkingDirectory: override, WorkingDirectorySet: true},
+	)
+	if err != nil {
+		t.Fatalf("CreateExecution override: %v", err)
+	}
+	if terminal, _ = runAndObserve(t, manager, created.ID); terminal.State != StateCompleted {
+		t.Fatalf("override terminal = %+v", terminal)
+	}
+	plan.mu.Lock()
+	overrideOptions := plan.lastOptions
+	plan.mu.Unlock()
+	if overrideOptions.fsRoot != canonicalOverride {
+		t.Fatalf("override FS root = %q, want %q", overrideOptions.fsRoot, canonicalOverride)
+	}
+
+	debugRuntime, err := manager.CreateDebugRuntime(
+		context.Background(),
+		snapshot.ID,
+		nil,
+		RuntimeOptions{},
+	)
+	if err != nil {
+		t.Fatalf("CreateDebugRuntime: %v", err)
+	}
+	if err := debugRuntime.Close(); err != nil {
+		t.Fatalf("DebugRuntime.Close: %v", err)
+	}
+	compiled, debugCompiled = runtime.sources()
+	if len(compiled) != 1 || len(debugCompiled) != 1 || debugCompiled[0] != compiled[0] {
+		t.Fatalf("compile sources = normal %+v, debug %+v", compiled, debugCompiled)
+	}
+}
+
+func TestManagerClosesPlanReturnedWithCompileFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "query.fql"), []byte("RETURN 1"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	workspaces := workspace.New()
+	opened, err := workspaces.Open(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	runtime := newRuntimeSpy()
+	failedPlan := &planSpy{runtime: runtime}
+	want := errors.New("compile failed")
+	runtime.compilePlan = failedPlan
+	runtime.compileErr = want
+	manager, err := New(workspaces, runtime)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = workspaces.Clear(context.Background()) })
+
+	_, err = manager.CreateSession(context.Background(), opened.ID(), "query.fql")
+	var compilation *CompilationError
+	if !errors.Is(err, want) || !errors.As(err, &compilation) {
+		t.Fatalf("CreateSession error = %v, want CompilationError preserving cause", err)
+	}
+	failedPlan.mu.Lock()
+	closed := failedPlan.closed
+	failedPlan.mu.Unlock()
+	if !closed {
+		t.Fatal("plan returned with compile failure was not closed")
 	}
 }
 
@@ -343,7 +496,7 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Continue: %v", err)
 	}
-	if event.Reason != ferret.DebugReasonCompleted || event.Output == nil || string(event.Output.Content) != "1" {
+	if event.Reason != apidebugger.ReasonCompleted || event.Output == nil || string(event.Output.Content) != "1" {
 		t.Fatalf("debug completion = %+v, want first Session output 1", event)
 	}
 }
@@ -376,7 +529,7 @@ func TestOldSessionLazilyCompilesDebugPlanAfterSourceRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if event.Reason != ferret.DebugReasonEntry {
+	if event.Reason != apidebugger.ReasonEntry {
 		t.Fatalf("entry event = %+v", event)
 	}
 }
@@ -422,7 +575,7 @@ func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing
 
 func TestCloseSessionRunsPlanCloseOnceAndIsIdempotent(t *testing.T) {
 	var closes int
-	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+	manager, session, _ := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		closes++
 
 		return nil
@@ -453,7 +606,7 @@ func TestCloseSessionRequiresContext(t *testing.T) {
 func TestSessionCloseCallerTimeoutDoesNotStopCleanup(t *testing.T) {
 	closeStarted := make(chan struct{})
 	releaseClose := make(chan struct{})
-	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+	manager, session, _ := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		close(closeStarted)
 		<-releaseClose
 

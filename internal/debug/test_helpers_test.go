@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -21,10 +22,20 @@ type debugFixture struct {
 func mustNewExecutionManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
 	t.Helper()
 
-	manager, err := exec.New(workspaces)
+	runtime, err := ferretapi.New()
 	if err != nil {
+		t.Fatalf("ferretapi.New: %v", err)
+	}
+
+	manager, err := exec.New(workspaces, runtime)
+	if err != nil {
+		_ = runtime.Close()
 		t.Fatalf("exec.New: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = manager.Close(context.Background())
+		_ = runtime.Close()
+	})
 
 	return manager
 }

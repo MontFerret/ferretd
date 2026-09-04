@@ -1,6 +1,7 @@
 package debug
 
 import (
+	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/exec"
 )
 
@@ -14,7 +15,7 @@ type SessionSnapshot struct {
 	HitBreakpointIDs []BreakpointID
 	Parameters       exec.Parameters
 	Options          exec.RuntimeOptions
-	Output           *exec.RuntimeOutput
+	Output           *api.Output
 	Failure          *exec.RuntimeFailure
 }
 
@@ -24,7 +25,12 @@ func (s SessionSnapshot) Clone() SessionSnapshot {
 	result := s
 	result.HitBreakpointIDs = append([]BreakpointID(nil), s.HitBreakpointIDs...)
 	result.Parameters = s.Parameters.Clone()
-	result.Output = s.Output.Clone()
+	if s.Output != nil {
+		result.Output = &api.Output{
+			ContentType: s.Output.ContentType,
+			Content:     append([]byte(nil), s.Output.Content...),
+		}
+	}
 	result.Failure = s.Failure.Clone()
 
 	return result

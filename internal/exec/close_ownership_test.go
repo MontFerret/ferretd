@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -76,7 +75,7 @@ func TestCloseWorkspaceJoinsClosingSessionCleanup(t *testing.T) {
 	}
 	t.Cleanup(release)
 
-	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+	manager, session, _ := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		close(closeStarted)
 		<-releaseClose
 
@@ -113,7 +112,7 @@ func TestManagerCloseJoinsCommittedWorkspaceClose(t *testing.T) {
 	}
 	t.Cleanup(release)
 
-	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+	manager, session, _ := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		close(closeStarted)
 		<-releaseClose
 
@@ -141,7 +140,7 @@ func TestManagerCloseJoinsCommittedWorkspaceClose(t *testing.T) {
 
 func TestParentRetainedSessionPreservesCompletedCloseResult(t *testing.T) {
 	want := errors.New("plan close failed")
-	manager, snapshot, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+	manager, snapshot, _ := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		return want
 	}))
 
@@ -278,7 +277,7 @@ func TestConcurrentCloseSessionSharesFailureAndOneOwner(t *testing.T) {
 	}
 	t.Cleanup(release)
 
-	manager, session, _ := newHookedManager(t, "RETURN 1", ferret.WithPlanCloseHook(func() error {
+	manager, session, _ := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		closeCalls.Add(1)
 		closeStartOnce.Do(func() { close(closeStarted) })
 		<-releaseClose
@@ -338,19 +337,19 @@ func newCloseOwnershipFixtureWithRuntimeCloseError(
 	manager, session, _ := newHookedManager(
 		t,
 		"RETURN WAITFOR FALSE TIMEOUT 30s EVERY 10ms",
-		ferret.WithBeforeRunHook(func(ctx context.Context) (context.Context, error) {
+		withBeforeRunHook(func(ctx context.Context) (context.Context, error) {
 			fixture.runStartOnce.Do(func() { close(fixture.runStarted) })
 
 			return ctx, nil
 		}),
-		ferret.WithSessionCloseHook(func() error {
+		withSessionCloseHook(func() error {
 			fixture.runtimeCloseCalls.Add(1)
 			fixture.runtimeCloseStartOnce.Do(func() { close(fixture.runtimeCloseStarted) })
 			<-fixture.releaseRuntimeClose
 
 			return runtimeCloseErr
 		}),
-		ferret.WithPlanCloseHook(func() error {
+		withPlanCloseHook(func() error {
 			fixture.planCloseCalls.Add(1)
 			if !fixture.execution.close.Finished() {
 				fixture.planClosedTooEarly.Store(true)

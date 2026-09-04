@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"runtime"
 	"testing"
 )
@@ -16,5 +17,10 @@ func BenchmarkNew(b *testing.B) {
 		}
 
 		runtime.KeepAlive(daemon)
+		b.StopTimer()
+		if err := daemon.Stop(context.Background()); err != nil {
+			b.Fatal(err)
+		}
+		b.StartTimer()
 	}
 }
