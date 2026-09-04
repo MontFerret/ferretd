@@ -51,6 +51,7 @@ func fromProtoExecution(value *executionv1.Execution) (Execution, error) {
 
 	if value.Options != nil {
 		result.Options.OutputContentType = value.Options.OutputContentType
+		result.Options.WorkingDirectory = value.Options.GetWorkingDirectory()
 	}
 
 	if value.Output != nil {

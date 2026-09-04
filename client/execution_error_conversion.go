@@ -145,6 +145,9 @@ func resourceClassification(
 		condition == executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_PARAMETERS:
 		return ErrInvalidExecutionParameters
 	case resource == executionv1.ResourceKind_RESOURCE_KIND_EXECUTION &&
+		condition == executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_OPTIONS:
+		return ErrInvalidExecutionOptions
+	case resource == executionv1.ResourceKind_RESOURCE_KIND_EXECUTION &&
 		condition == executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED:
 		return ErrExecutionServiceClosed
 	case resource == executionv1.ResourceKind_RESOURCE_KIND_WATCHER &&

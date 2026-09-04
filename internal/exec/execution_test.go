@@ -3,6 +3,8 @@ package exec
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -94,6 +96,166 @@ func TestConcurrentExecutionsFromOneSessionAreIsolated(t *testing.T) {
 			t.Fatalf("result[%d] = %+v", i, result)
 		}
 	}
+}
+
+func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
+	t.Run("absent uses workspace", func(t *testing.T) {
+		fixture := newExecutionFixture(t, `RETURN TO_STRING(IO::FS::READ("value.txt"))`)
+		if err := os.WriteFile(filepath.Join(fixture.workspace.Root(), "value.txt"), []byte("workspace"), 0o600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		created, err := fixture.manager.CreateExecution(
+			context.Background(),
+			fixture.session.ID,
+			nil,
+			RuntimeOptions{},
+		)
+		if err != nil {
+			t.Fatalf("CreateExecution: %v", err)
+		}
+		if created.Options.WorkingDirectory != "" {
+			t.Fatalf("WorkingDirectory = %q, want absent", created.Options.WorkingDirectory)
+		}
+
+		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
+		if terminal.State != StateCompleted || terminal.Output == nil ||
+			string(terminal.Output.Content) != `"workspace"` {
+			t.Fatalf("terminal = %+v, want workspace output", terminal)
+		}
+	})
+
+	t.Run("override outside workspace", func(t *testing.T) {
+		fixture := newExecutionFixture(t, `RETURN TO_STRING(IO::FS::READ("value.txt"))`)
+		runtimeRoot := filepath.Join(t.TempDir(), "runtime root ü")
+		if err := os.Mkdir(runtimeRoot, 0o700); err != nil {
+			t.Fatalf("Mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(runtimeRoot, "value.txt"), []byte("runtime"), 0o600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+		canonicalRuntimeRoot, err := filepath.EvalSymlinks(runtimeRoot)
+		if err != nil {
+			t.Fatalf("EvalSymlinks: %v", err)
+		}
+
+		created, err := fixture.manager.CreateExecution(
+			context.Background(),
+			fixture.session.ID,
+			nil,
+			RuntimeOptions{WorkingDirectory: runtimeRoot},
+		)
+		if err != nil {
+			t.Fatalf("CreateExecution: %v", err)
+		}
+		if created.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
+			t.Fatalf("WorkingDirectory = %q, want %q", created.Options.WorkingDirectory, canonicalRuntimeRoot)
+		}
+
+		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
+		if terminal.State != StateCompleted || terminal.Output == nil ||
+			string(terminal.Output.Content) != `"runtime"` {
+			t.Fatalf("terminal = %+v, want runtime output", terminal)
+		}
+	})
+
+	t.Run("writes stay under override", func(t *testing.T) {
+		fixture := newExecutionFixture(t, `RETURN IO::FS::WRITE("created.txt", TO_BINARY("session"))`)
+		runtimeRoot := t.TempDir()
+		created, err := fixture.manager.CreateExecution(
+			context.Background(),
+			fixture.session.ID,
+			nil,
+			RuntimeOptions{WorkingDirectory: runtimeRoot},
+		)
+		if err != nil {
+			t.Fatalf("CreateExecution: %v", err)
+		}
+
+		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
+		if terminal.State != StateCompleted {
+			t.Fatalf("terminal = %+v, want completed", terminal)
+		}
+		content, err := os.ReadFile(filepath.Join(runtimeRoot, "created.txt"))
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if string(content) != "session" {
+			t.Fatalf("created content = %q, want session", content)
+		}
+		if _, err := os.Stat(filepath.Join(fixture.workspace.Root(), "created.txt")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("workspace created file stat error = %v, want not-exist", err)
+		}
+	})
+}
+
+func TestConcurrentExecutionsUseIndependentWorkingDirectories(t *testing.T) {
+	fixture := newExecutionFixture(t, `RETURN TO_STRING(IO::FS::READ("value.txt"))`)
+	roots := []string{t.TempDir(), t.TempDir()}
+	for index, root := range roots {
+		if err := os.WriteFile(
+			filepath.Join(root, "value.txt"),
+			[]byte(strconv.Itoa(index+1)),
+			0o600,
+		); err != nil {
+			t.Fatalf("WriteFile(%d): %v", index, err)
+		}
+	}
+
+	created := make([]ExecutionSnapshot, len(roots))
+	for index, root := range roots {
+		var err error
+		created[index], err = fixture.manager.CreateExecution(
+			context.Background(),
+			fixture.session.ID,
+			nil,
+			RuntimeOptions{WorkingDirectory: root},
+		)
+		if err != nil {
+			t.Fatalf("CreateExecution(%d): %v", index, err)
+		}
+	}
+
+	var wait sync.WaitGroup
+	results := make([]ExecutionSnapshot, len(created))
+	for index := range created {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			results[index], _ = runAndObserve(t, fixture.manager, created[index].ID)
+		}()
+	}
+	wait.Wait()
+
+	for index, result := range results {
+		want := `"` + strconv.Itoa(index+1) + `"`
+		if result.State != StateCompleted || result.Output == nil || string(result.Output.Content) != want {
+			t.Fatalf("result[%d] = %+v, want %s", index, result, want)
+		}
+	}
+}
+
+func TestWorkingDirectoryRemovedBeforeRunFailsSessionCreation(t *testing.T) {
+	fixture := newExecutionFixture(t, "RETURN 1")
+	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
+	if err := os.Mkdir(runtimeRoot, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	created, err := fixture.manager.CreateExecution(
+		context.Background(),
+		fixture.session.ID,
+		nil,
+		RuntimeOptions{WorkingDirectory: runtimeRoot},
+	)
+	if err != nil {
+		t.Fatalf("CreateExecution: %v", err)
+	}
+	if err := os.Remove(runtimeRoot); err != nil {
+		t.Fatalf("Remove working directory: %v", err)
+	}
+
+	terminal, _ := runAndObserve(t, fixture.manager, created.ID)
+	assertFailure(t, terminal, FailureSessionCreation, false)
 }
 
 func TestRepeatedExecutionsDoNotRecompileSessionPlan(t *testing.T) {
@@ -248,7 +410,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{},
+			RuntimeOptions{WorkingDirectory: t.TempDir()},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -501,6 +663,14 @@ func TestInvalidParametersAndUnknownCloseContracts(t *testing.T) {
 		RuntimeOptions{},
 	); !errors.Is(err, ErrInvalidParameters) {
 		t.Fatalf("CreateExecution error = %v, want ErrInvalidParameters", err)
+	}
+	if _, err := fixture.manager.CreateExecution(
+		context.Background(),
+		fixture.session.ID,
+		nil,
+		RuntimeOptions{WorkingDirectory: filepath.Join(t.TempDir(), "missing")},
+	); !errors.Is(err, ErrInvalidExecutionOptions) {
+		t.Fatalf("CreateExecution error = %v, want ErrInvalidExecutionOptions", err)
 	}
 	if err := fixture.manager.CloseExecution(context.Background(), "missing"); err != nil {
 		t.Fatalf("CloseExecution missing: %v", err)

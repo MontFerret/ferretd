@@ -20,7 +20,7 @@ type Document struct {
 	revision    Revision
 	generation  Generation
 	loaded      bool
-	source      *ferretsource.Source
+	source      ferretsource.Source
 	syntax      *parser.Parser
 	diagnostics []*ferretdiagnostics.Diagnostic
 }
@@ -113,20 +113,12 @@ func (d Document) Loaded() bool {
 
 // Content returns the retained source contents.
 func (d Document) Content() string {
-	if d.source == nil {
-		return ""
-	}
-
 	return d.source.Content()
 }
 
 // Source returns a copy of the retained Ferret source.
-func (d Document) Source() *ferretsource.Source {
-	if d.source == nil {
-		return nil
-	}
-
-	return ferretsource.New(d.source.Name(), d.source.Content())
+func (d Document) Source() ferretsource.Source {
+	return d.source
 }
 
 // HasSyntax reports whether the document retains a Ferret parse tree.

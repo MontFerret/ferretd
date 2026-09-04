@@ -123,7 +123,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		}
 	}
 	for _, diagnostic := range opened.Diagnostics() {
-		if diagnostic.Source != nil && diagnostic.Source.Name() == filepath.Join(root, "invalid.fql") {
+		if !diagnostic.Source.Empty() && diagnostic.Source.Name() == filepath.Join(root, "invalid.fql") {
 			t.Fatal("removed source diagnostics remain retained")
 		}
 	}

@@ -26,6 +26,8 @@ var (
 	ErrExecutionTerminal = errors.New("execution already terminal")
 	// ErrInvalidParameters reports parameter values Ferret cannot bind.
 	ErrInvalidParameters = errors.New("invalid execution parameters")
+	// ErrInvalidExecutionOptions reports invocation settings rejected before execution creation.
+	ErrInvalidExecutionOptions = errors.New("invalid execution options")
 	// ErrWatcherLagged reports a watcher that exceeded its bounded event buffer.
 	ErrWatcherLagged = errors.New("execution watcher lagged")
 	// ErrCompilationFailed classifies Ferret compiler diagnostics.

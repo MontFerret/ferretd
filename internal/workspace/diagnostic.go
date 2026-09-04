@@ -36,7 +36,7 @@ func cloneDiagnostic(value *ferretdiagnostics.Diagnostic) *ferretdiagnostics.Dia
 	result := *value
 	result.Spans = append([]ferretdiagnostics.ErrorSpan(nil), value.Spans...)
 
-	if value.Source != nil {
+	if !value.Source.Empty() {
 		result.Source = ferretsource.New(value.Source.Name(), value.Source.Content())
 	}
 

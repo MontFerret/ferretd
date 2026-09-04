@@ -30,7 +30,11 @@ func (s *Service) Format(ctx context.Context, uri source.URI, tabSize uint32) (*
 	}
 
 	var output bytes.Buffer
-	instance := formatter.New(formatter.WithTabWidth(uint64(tabSize)))
+	instance, err := formatter.New(formatter.WithTabWidth(uint64(tabSize)))
+	if err != nil {
+		return nil, fmt.Errorf("create formatter: %w", err)
+	}
+
 	err = instance.Format(&output, ferretsource.New(snapshot.path, snapshot.text))
 	if err != nil {
 		if formatterSourceError(err) {

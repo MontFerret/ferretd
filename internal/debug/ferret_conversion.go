@@ -1,19 +1,26 @@
 package debug
 
-import "github.com/MontFerret/ferret/v2"
+import (
+	"github.com/MontFerret/ferret/v2"
+	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
+)
 
-func convertLocation(value ferret.DebugLocation) Location {
+func convertSourceLocation(value ferretsource.Location) Location {
 	return Location{File: value.File, Line: value.Line, Column: value.Column}
+}
+
+func convertRangeLocation(value ferretsource.Range) Location {
+	return convertSourceLocation(value.Location)
 }
 
 func convertBreakpoint(value ferret.DebugBreakpoint) Breakpoint {
 	return Breakpoint{
 		ID:              BreakpointID(value.ID),
-		File:            value.File,
-		RequestedLine:   value.RequestedLine,
-		RequestedColumn: value.RequestedColumn,
-		Line:            value.Line,
-		Column:          value.Column,
+		File:            value.RequestedLocation.File,
+		RequestedLine:   value.RequestedLocation.Line,
+		RequestedColumn: value.RequestedLocation.Column,
+		Line:            value.Location.Line,
+		Column:          value.Location.Column,
 		Verified:        value.Bound,
 	}
 }

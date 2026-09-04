@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -124,6 +125,7 @@ func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
 
 func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN @value")
+	workingDirectory := t.TempDir()
 	input := map[string]any{
 		"value":  7,
 		"nested": map[string]any{"items": []any{"one", "two"}},
@@ -132,11 +134,12 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 		context.Background(),
 		fixture.session.ID,
 		input,
-		RuntimeOptions{OutputContentType: " \t\n"},
+		RuntimeOptions{OutputContentType: " \t\n", WorkingDirectory: workingDirectory},
 	)
 	if err != nil {
 		t.Fatalf("CreateDebugRuntime: %v", err)
 	}
+	t.Cleanup(func() { _ = runtime.Close() })
 
 	input["value"] = 99
 	input["nested"].(map[string]any)["items"].([]any)[0] = "caller"
@@ -150,6 +153,17 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 	}
 	if runtime.Options().OutputContentType != defaultOutputContentType {
 		t.Fatalf("OutputContentType = %q, want %q", runtime.Options().OutputContentType, defaultOutputContentType)
+	}
+	canonicalWorkingDirectory, err := filepath.EvalSymlinks(workingDirectory)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if runtime.Options().WorkingDirectory != filepath.Clean(canonicalWorkingDirectory) {
+		t.Fatalf(
+			"WorkingDirectory = %q, want %q",
+			runtime.Options().WorkingDirectory,
+			canonicalWorkingDirectory,
+		)
 	}
 
 	if _, err := runtime.Debugger().Start(runtime.Context()); err != nil {

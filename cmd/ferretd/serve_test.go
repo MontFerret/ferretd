@@ -97,7 +97,7 @@ func TestServeEndToEnd(t *testing.T) {
 	}
 
 	if info.Version != "test-version" || info.InstanceID == "" ||
-		info.APIVersion != (client.APIVersion{Major: 1, Minor: 1}) {
+		info.APIVersion != (client.APIVersion{Major: 1, Minor: 2}) {
 		t.Fatalf("server info = %#v", info)
 	}
 

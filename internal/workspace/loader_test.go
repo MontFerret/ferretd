@@ -108,7 +108,7 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	if len(diagnostics) == 0 || diagnostics[0].Kind.String() != "SyntaxError" {
 		t.Fatalf("invalid diagnostics = %#v, want syntax error", diagnostics)
 	}
-	if diagnostics[0].Source == nil || diagnostics[0].Source.Name() != invalid.File().Path {
+	if diagnostics[0].Source.Empty() || diagnostics[0].Source.Name() != invalid.File().Path {
 		t.Fatalf("diagnostic source = %#v, want %q", diagnostics[0].Source, invalid.File().Path)
 	}
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "montferret/core",
-  "version": "2.0.0-alpha.50",
+  "version": "2.0.0-alpha.53",
   "namespaces": [
     {
       "name": "",
@@ -6102,6 +6102,145 @@
       "name": "t",
       "functions": [
         {
+          "name": "approx",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Actual numeric value."
+                },
+                {
+                  "name": "expected",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Expected numeric value."
+                },
+                {
+                  "name": "tolerance",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Maximum non-negative difference."
+                }
+              ],
+              "description": "Tests whether two numeric values are within an inclusive tolerance.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Actual numeric value."
+                },
+                {
+                  "name": "expected",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Expected numeric value."
+                },
+                {
+                  "name": "tolerance",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Maximum non-negative difference."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether two numeric values are within an inclusive tolerance.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
           "name": "array",
           "signatures": [
             {
@@ -6119,9 +6258,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6147,9 +6286,94 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "between",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "value",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "min",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Inclusive minimum boundary."
+                },
+                {
+                  "name": "max",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Inclusive maximum boundary."
+                }
+              ],
+              "description": "Tests whether a value is within inclusive minimum and maximum boundaries.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "value",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "min",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Inclusive minimum boundary."
+                },
+                {
+                  "name": "max",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Inclusive maximum boundary."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether a value is within inclusive minimum and maximum boundaries.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6172,9 +6396,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6200,9 +6424,165 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "bool",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                }
+              ],
+              "description": "Tests whether the value has the Boolean type.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether the value has the Boolean type.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "contains",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "String"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Array"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Object"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Iterable"
+                      }
+                    ]
+                  },
+                  "description": "Haystack value."
+                },
+                {
+                  "name": "expected",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Expected value."
+                }
+              ],
+              "description": "Tests whether the actual container contains the expected value.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "String"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Array"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Object"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Iterable"
+                      }
+                    ]
+                  },
+                  "description": "Haystack value."
+                },
+                {
+                  "name": "expected",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Expected value."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether the actual container contains the expected value.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6225,9 +6605,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6253,9 +6633,62 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "duration",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                }
+              ],
+              "description": "Tests whether the value has the Duration type.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether the value has the Duration type.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6299,9 +6732,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6348,9 +6781,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6381,9 +6814,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6417,9 +6850,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6433,7 +6866,7 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
                 "description": "No success value is produced because this assertion always fails."
               }
@@ -6453,7 +6886,7 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
                 "description": "No success value is produced because this assertion always fails."
               }
@@ -6478,9 +6911,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6506,9 +6939,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6531,9 +6964,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6559,9 +6992,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6592,9 +7025,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6628,9 +7061,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6661,9 +7094,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6697,20 +7130,28 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
         },
         {
-          "name": "include",
+          "name": "has",
           "signatures": [
             {
               "parameters": [
                 {
-                  "name": "actual",
+                  "name": "object",
+                  "type": {
+                    "kind": "named",
+                    "name": "Map"
+                  },
+                  "description": "Object or map to inspect."
+                },
+                {
+                  "name": "keys",
                   "type": {
                     "kind": "union",
                     "types": [
@@ -6719,43 +7160,38 @@
                         "name": "String"
                       },
                       {
-                        "kind": "named",
-                        "name": "Array"
-                      },
-                      {
-                        "kind": "named",
-                        "name": "Object"
-                      },
-                      {
-                        "kind": "named",
-                        "name": "Iterable"
+                        "kind": "list",
+                        "element": {
+                          "kind": "named",
+                          "name": "String"
+                        }
                       }
                     ]
                   },
-                  "description": "Haystack value."
-                },
-                {
-                  "name": "expected",
-                  "type": {
-                    "kind": "named",
-                    "name": "Any"
-                  },
-                  "description": "Expected value."
+                  "description": "Property name or property names to require."
                 }
               ],
-              "description": "Tests whether the actual container includes the expected value.",
+              "description": "Tests whether a map has one property or all properties in a list.",
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
               "parameters": [
                 {
-                  "name": "actual",
+                  "name": "object",
+                  "type": {
+                    "kind": "named",
+                    "name": "Map"
+                  },
+                  "description": "Object or map to inspect."
+                },
+                {
+                  "name": "keys",
                   "type": {
                     "kind": "union",
                     "types": [
@@ -6764,28 +7200,15 @@
                         "name": "String"
                       },
                       {
-                        "kind": "named",
-                        "name": "Array"
-                      },
-                      {
-                        "kind": "named",
-                        "name": "Object"
-                      },
-                      {
-                        "kind": "named",
-                        "name": "Iterable"
+                        "kind": "list",
+                        "element": {
+                          "kind": "named",
+                          "name": "String"
+                        }
                       }
                     ]
                   },
-                  "description": "Haystack value."
-                },
-                {
-                  "name": "expected",
-                  "type": {
-                    "kind": "named",
-                    "name": "Any"
-                  },
-                  "description": "Expected value."
+                  "description": "Property name or property names to require."
                 },
                 {
                   "name": "message",
@@ -6796,13 +7219,13 @@
                   "description": "Message to display on error."
                 }
               ],
-              "description": "Tests whether the actual container includes the expected value.",
+              "description": "Tests whether a map has one property or all properties in a list.",
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6825,9 +7248,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6853,9 +7276,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6886,9 +7309,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6922,9 +7345,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -6955,9 +7378,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -6991,9 +7414,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7024,9 +7447,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7060,9 +7483,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7093,9 +7516,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7129,9 +7552,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7154,9 +7577,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7182,9 +7605,62 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "number",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                }
+              ],
+              "description": "Tests whether the value belongs to the numeric family.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether the value belongs to the numeric family.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7207,9 +7683,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7235,9 +7711,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7260,9 +7736,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7288,9 +7764,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7313,9 +7789,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7341,9 +7817,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7353,6 +7829,145 @@
     {
       "name": "t::not",
       "functions": [
+        {
+          "name": "approx",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Actual numeric value."
+                },
+                {
+                  "name": "expected",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Expected numeric value."
+                },
+                {
+                  "name": "tolerance",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Maximum non-negative difference."
+                }
+              ],
+              "description": "Tests whether two numeric values are within an inclusive tolerance.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Actual numeric value."
+                },
+                {
+                  "name": "expected",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Expected numeric value."
+                },
+                {
+                  "name": "tolerance",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "Int"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  "description": "Maximum non-negative difference."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether two numeric values are within an inclusive tolerance.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
         {
           "name": "array",
           "signatures": [
@@ -7371,9 +7986,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7399,9 +8014,94 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "between",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "value",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "min",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Inclusive minimum boundary."
+                },
+                {
+                  "name": "max",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Inclusive maximum boundary."
+                }
+              ],
+              "description": "Tests whether a value is within inclusive minimum and maximum boundaries.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "value",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "min",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Inclusive minimum boundary."
+                },
+                {
+                  "name": "max",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Inclusive maximum boundary."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether a value is within inclusive minimum and maximum boundaries.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7424,9 +8124,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7452,9 +8152,165 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "bool",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                }
+              ],
+              "description": "Tests whether the value has the Boolean type.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether the value has the Boolean type.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "contains",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "String"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Array"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Object"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Iterable"
+                      }
+                    ]
+                  },
+                  "description": "Haystack value."
+                },
+                {
+                  "name": "expected",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Expected value."
+                }
+              ],
+              "description": "Tests whether the actual container contains the expected value.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "named",
+                        "name": "String"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Array"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Object"
+                      },
+                      {
+                        "kind": "named",
+                        "name": "Iterable"
+                      }
+                    ]
+                  },
+                  "description": "Haystack value."
+                },
+                {
+                  "name": "expected",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Expected value."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether the actual container contains the expected value.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7477,9 +8333,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7505,9 +8361,62 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "duration",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                }
+              ],
+              "description": "Tests whether the value has the Duration type.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether the value has the Duration type.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7551,9 +8460,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7600,9 +8509,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7633,9 +8542,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7669,9 +8578,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7694,9 +8603,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7722,9 +8631,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7747,9 +8656,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7775,9 +8684,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7808,9 +8717,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7844,9 +8753,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -7877,9 +8786,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -7913,20 +8822,28 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
         },
         {
-          "name": "include",
+          "name": "has",
           "signatures": [
             {
               "parameters": [
                 {
-                  "name": "actual",
+                  "name": "object",
+                  "type": {
+                    "kind": "named",
+                    "name": "Map"
+                  },
+                  "description": "Object or map to inspect."
+                },
+                {
+                  "name": "keys",
                   "type": {
                     "kind": "union",
                     "types": [
@@ -7935,43 +8852,38 @@
                         "name": "String"
                       },
                       {
-                        "kind": "named",
-                        "name": "Array"
-                      },
-                      {
-                        "kind": "named",
-                        "name": "Object"
-                      },
-                      {
-                        "kind": "named",
-                        "name": "Iterable"
+                        "kind": "list",
+                        "element": {
+                          "kind": "named",
+                          "name": "String"
+                        }
                       }
                     ]
                   },
-                  "description": "Haystack value."
-                },
-                {
-                  "name": "expected",
-                  "type": {
-                    "kind": "named",
-                    "name": "Any"
-                  },
-                  "description": "Expected value."
+                  "description": "Property name or property names to require."
                 }
               ],
-              "description": "Tests whether the actual container includes the expected value.",
+              "description": "Tests whether a map has one property or all properties in a list.",
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
               "parameters": [
                 {
-                  "name": "actual",
+                  "name": "object",
+                  "type": {
+                    "kind": "named",
+                    "name": "Map"
+                  },
+                  "description": "Object or map to inspect."
+                },
+                {
+                  "name": "keys",
                   "type": {
                     "kind": "union",
                     "types": [
@@ -7980,28 +8892,15 @@
                         "name": "String"
                       },
                       {
-                        "kind": "named",
-                        "name": "Array"
-                      },
-                      {
-                        "kind": "named",
-                        "name": "Object"
-                      },
-                      {
-                        "kind": "named",
-                        "name": "Iterable"
+                        "kind": "list",
+                        "element": {
+                          "kind": "named",
+                          "name": "String"
+                        }
                       }
                     ]
                   },
-                  "description": "Haystack value."
-                },
-                {
-                  "name": "expected",
-                  "type": {
-                    "kind": "named",
-                    "name": "Any"
-                  },
-                  "description": "Expected value."
+                  "description": "Property name or property names to require."
                 },
                 {
                   "name": "message",
@@ -8012,13 +8911,13 @@
                   "description": "Message to display on error."
                 }
               ],
-              "description": "Tests whether the actual container includes the expected value.",
+              "description": "Tests whether a map has one property or all properties in a list.",
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8041,9 +8940,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8069,9 +8968,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8102,9 +9001,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8138,9 +9037,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8171,9 +9070,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8207,9 +9106,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8240,9 +9139,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8276,9 +9175,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8309,9 +9208,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8345,9 +9244,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8370,9 +9269,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8398,9 +9297,62 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            }
+          ]
+        },
+        {
+          "name": "number",
+          "signatures": [
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                }
+              ],
+              "description": "Tests whether the value belongs to the numeric family.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
+              }
+            },
+            {
+              "parameters": [
+                {
+                  "name": "actual",
+                  "type": {
+                    "kind": "named",
+                    "name": "Any"
+                  },
+                  "description": "Value to test."
+                },
+                {
+                  "name": "message",
+                  "type": {
+                    "kind": "named",
+                    "name": "String"
+                  },
+                  "description": "Message to display on error."
+                }
+              ],
+              "description": "Tests whether the value belongs to the numeric family.",
+              "return": {
+                "type": {
+                  "kind": "named",
+                  "name": "None"
+                },
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8423,9 +9375,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8451,9 +9403,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8476,9 +9428,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8504,9 +9456,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]
@@ -8529,9 +9481,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             },
             {
@@ -8557,9 +9509,9 @@
               "return": {
                 "type": {
                   "kind": "named",
-                  "name": "Boolean"
+                  "name": "None"
                 },
-                "description": "True when the configured assertion succeeds; otherwise an assertion error is returned."
+                "description": "No value is produced when the configured assertion succeeds."
               }
             }
           ]

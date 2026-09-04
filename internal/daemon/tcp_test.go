@@ -119,7 +119,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Version != "test-version" || info.APIVersion != (client.APIVersion{Major: 1, Minor: 1}) {
+	if info.Version != "test-version" || info.APIVersion != (client.APIVersion{Major: 1, Minor: 2}) {
 		t.Fatalf("Info = %#v", info)
 	}
 

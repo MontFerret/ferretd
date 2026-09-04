@@ -78,6 +78,13 @@ func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_STATE,
 		},
 		{
+			name:      "invalid execution options",
+			err:       exec.ErrInvalidExecutionOptions,
+			code:      codes.InvalidArgument,
+			resource:  executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
+			condition: executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_OPTIONS,
+		},
+		{
 			name:      "execution service closed",
 			err:       exec.ErrClosed,
 			code:      codes.FailedPrecondition,

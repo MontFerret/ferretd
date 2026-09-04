@@ -42,6 +42,8 @@ func toExecutionStatusError(err error) error {
 		return resourceStatusError(codes.NotFound, err, executionv1.ResourceKind_RESOURCE_KIND_EXECUTION, executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND)
 	case errors.Is(err, exec.ErrInvalidParameters):
 		return resourceStatusError(codes.InvalidArgument, err, executionv1.ResourceKind_RESOURCE_KIND_EXECUTION, executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_PARAMETERS)
+	case errors.Is(err, exec.ErrInvalidExecutionOptions):
+		return resourceStatusError(codes.InvalidArgument, err, executionv1.ResourceKind_RESOURCE_KIND_EXECUTION, executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_OPTIONS)
 	case errors.Is(err, workspace.ErrDocumentUnavailable):
 		return resourceStatusError(codes.FailedPrecondition, err, executionv1.ResourceKind_RESOURCE_KIND_SOURCE, executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED)
 	case errors.Is(err, workspace.ErrClosed):

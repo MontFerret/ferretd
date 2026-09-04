@@ -68,12 +68,19 @@ func (c *ExecutionClient) CreateExecution(
 		return Execution{}, fmt.Errorf("%w: %v", ErrInvalidExecutionParameters, err)
 	}
 
+	options := &executionv1.ExecutionOptions{
+		OutputContentType: request.Options.OutputContentType,
+	}
+
+	if request.Options.WorkingDirectory != "" {
+		workingDirectory := request.Options.WorkingDirectory
+		options.WorkingDirectory = &workingDirectory
+	}
+
 	response, err := c.client.CreateExecution(ctx, &executionv1.CreateExecutionRequest{
 		SessionId:  &executionv1.SessionId{Value: string(request.SessionID)},
 		Parameters: parameters,
-		Options: &executionv1.ExecutionOptions{
-			OutputContentType: request.Options.OutputContentType,
-		},
+		Options:    options,
 	})
 	if err != nil {
 		return Execution{}, mapCreateExecutionError(ctx, err)

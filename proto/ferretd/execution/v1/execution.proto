@@ -51,6 +51,7 @@ enum ExecutionState {
 
 message ExecutionOptions {
   string output_content_type = 1;
+  optional string working_directory = 2;
 }
 
 message Output {
@@ -133,6 +134,7 @@ enum ResourceCondition {
   RESOURCE_CONDITION_INVALID_STATE = 3;
   RESOURCE_CONDITION_INVALID_PARAMETERS = 4;
   RESOURCE_CONDITION_LAGGED = 5;
+  RESOURCE_CONDITION_INVALID_OPTIONS = 6;
 }
 
 message ResourceErrorDetail {

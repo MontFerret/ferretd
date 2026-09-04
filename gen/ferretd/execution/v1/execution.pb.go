@@ -246,6 +246,7 @@ const (
 	ResourceCondition_RESOURCE_CONDITION_INVALID_STATE      ResourceCondition = 3
 	ResourceCondition_RESOURCE_CONDITION_INVALID_PARAMETERS ResourceCondition = 4
 	ResourceCondition_RESOURCE_CONDITION_LAGGED             ResourceCondition = 5
+	ResourceCondition_RESOURCE_CONDITION_INVALID_OPTIONS    ResourceCondition = 6
 )
 
 // Enum value maps for ResourceCondition.
@@ -257,6 +258,7 @@ var (
 		3: "RESOURCE_CONDITION_INVALID_STATE",
 		4: "RESOURCE_CONDITION_INVALID_PARAMETERS",
 		5: "RESOURCE_CONDITION_LAGGED",
+		6: "RESOURCE_CONDITION_INVALID_OPTIONS",
 	}
 	ResourceCondition_value = map[string]int32{
 		"RESOURCE_CONDITION_UNSPECIFIED":        0,
@@ -265,6 +267,7 @@ var (
 		"RESOURCE_CONDITION_INVALID_STATE":      3,
 		"RESOURCE_CONDITION_INVALID_PARAMETERS": 4,
 		"RESOURCE_CONDITION_LAGGED":             5,
+		"RESOURCE_CONDITION_INVALID_OPTIONS":    6,
 	}
 )
 
@@ -514,6 +517,7 @@ func (x *Session) GetParameters() []string {
 type ExecutionOptions struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	OutputContentType string                 `protobuf:"bytes,1,opt,name=output_content_type,json=outputContentType,proto3" json:"output_content_type,omitempty"`
+	WorkingDirectory  *string                `protobuf:"bytes,2,opt,name=working_directory,json=workingDirectory,proto3,oneof" json:"working_directory,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -551,6 +555,13 @@ func (*ExecutionOptions) Descriptor() ([]byte, []int) {
 func (x *ExecutionOptions) GetOutputContentType() string {
 	if x != nil {
 		return x.OutputContentType
+	}
+	return ""
+}
+
+func (x *ExecutionOptions) GetWorkingDirectory() string {
+	if x != nil && x.WorkingDirectory != nil {
+		return *x.WorkingDirectory
 	}
 	return ""
 }
@@ -2260,9 +2271,11 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	"\x06source\x18\x02 \x01(\v2$.ferretd.execution.v1.SourceSnapshotR\x06source\x12\x1e\n" +
 	"\n" +
 	"parameters\x18\x03 \x03(\tR\n" +
-	"parameters\"B\n" +
+	"parameters\"\x8a\x01\n" +
 	"\x10ExecutionOptions\x12.\n" +
-	"\x13output_content_type\x18\x01 \x01(\tR\x11outputContentType\"?\n" +
+	"\x13output_content_type\x18\x01 \x01(\tR\x11outputContentType\x120\n" +
+	"\x11working_directory\x18\x02 \x01(\tH\x00R\x10workingDirectory\x88\x01\x01B\x14\n" +
+	"\x12_working_directory\"?\n" +
 	"\x06Output\x12!\n" +
 	"\fcontent_type\x18\x01 \x01(\tR\vcontentType\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\"<\n" +
@@ -2384,14 +2397,15 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	"\x14RESOURCE_KIND_SOURCE\x10\x02\x12\x19\n" +
 	"\x15RESOURCE_KIND_SESSION\x10\x03\x12\x1b\n" +
 	"\x17RESOURCE_KIND_EXECUTION\x10\x04\x12\x19\n" +
-	"\x15RESOURCE_KIND_WATCHER\x10\x05*\xe8\x01\n" +
+	"\x15RESOURCE_KIND_WATCHER\x10\x05*\x90\x02\n" +
 	"\x11ResourceCondition\x12\"\n" +
 	"\x1eRESOURCE_CONDITION_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cRESOURCE_CONDITION_NOT_FOUND\x10\x01\x12\x1d\n" +
 	"\x19RESOURCE_CONDITION_CLOSED\x10\x02\x12$\n" +
 	" RESOURCE_CONDITION_INVALID_STATE\x10\x03\x12)\n" +
 	"%RESOURCE_CONDITION_INVALID_PARAMETERS\x10\x04\x12\x1d\n" +
-	"\x19RESOURCE_CONDITION_LAGGED\x10\x052\xce\a\n" +
+	"\x19RESOURCE_CONDITION_LAGGED\x10\x05\x12&\n" +
+	"\"RESOURCE_CONDITION_INVALID_OPTIONS\x10\x062\xce\a\n" +
 	"\x10ExecutionService\x12h\n" +
 	"\rCreateSession\x12*.ferretd.execution.v1.CreateSessionRequest\x1a+.ferretd.execution.v1.CreateSessionResponse\x12_\n" +
 	"\n" +
@@ -2545,6 +2559,7 @@ func file_ferretd_execution_v1_execution_proto_init() {
 	if File_ferretd_execution_v1_execution_proto != nil {
 		return
 	}
+	file_ferretd_execution_v1_execution_proto_msgTypes[4].OneofWrappers = []any{}
 	file_ferretd_execution_v1_execution_proto_msgTypes[19].OneofWrappers = []any{
 		(*WatchExecutionResponse_Created)(nil),
 		(*WatchExecutionResponse_Started)(nil),

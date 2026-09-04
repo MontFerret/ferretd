@@ -36,14 +36,21 @@ func toProtoExecution(value exec.ExecutionSnapshot) (*executionv1.Execution, err
 		return nil, fmt.Errorf("encode execution parameters: %w", err)
 	}
 
+	options := &executionv1.ExecutionOptions{
+		OutputContentType: value.Options.OutputContentType,
+	}
+
+	if value.Options.WorkingDirectory != "" {
+		workingDirectory := value.Options.WorkingDirectory
+		options.WorkingDirectory = &workingDirectory
+	}
+
 	result := &executionv1.Execution{
 		Id:         &executionv1.ExecutionId{Value: value.ID.String()},
 		SessionId:  &executionv1.SessionId{Value: value.Session.String()},
 		State:      toProtoExecutionState(value.State),
 		Parameters: parameters,
-		Options: &executionv1.ExecutionOptions{
-			OutputContentType: value.Options.OutputContentType,
-		},
+		Options:    options,
 	}
 
 	if value.Output != nil {
