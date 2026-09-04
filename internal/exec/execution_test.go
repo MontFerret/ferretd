@@ -114,8 +114,8 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
-		if created.Options.WorkingDirectory != "" {
-			t.Fatalf("WorkingDirectory = %q, want absent", created.Options.WorkingDirectory)
+		if created.Options.WorkingDirectory != nil {
+			t.Fatalf("WorkingDirectory = %v, want absent", created.Options.WorkingDirectory)
 		}
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
@@ -143,13 +143,14 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{WorkingDirectory: runtimeRoot},
+			RuntimeOptions{WorkingDirectory: workingDirectoryPointer(runtimeRoot)},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
-		if created.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
-			t.Fatalf("WorkingDirectory = %q, want %q", created.Options.WorkingDirectory, canonicalRuntimeRoot)
+		if created.Options.WorkingDirectory == nil ||
+			*created.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
+			t.Fatalf("WorkingDirectory = %v, want %q", created.Options.WorkingDirectory, canonicalRuntimeRoot)
 		}
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
@@ -166,7 +167,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{WorkingDirectory: runtimeRoot},
+			RuntimeOptions{WorkingDirectory: workingDirectoryPointer(runtimeRoot)},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -209,7 +210,7 @@ func TestConcurrentExecutionsUseIndependentWorkingDirectories(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{WorkingDirectory: root},
+			RuntimeOptions{WorkingDirectory: workingDirectoryPointer(root)},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution(%d): %v", index, err)
@@ -245,7 +246,7 @@ func TestWorkingDirectoryRemovedBeforeRunFailsSessionCreation(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		RuntimeOptions{WorkingDirectory: runtimeRoot},
+		RuntimeOptions{WorkingDirectory: workingDirectoryPointer(runtimeRoot)},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -410,7 +411,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{WorkingDirectory: t.TempDir()},
+			RuntimeOptions{WorkingDirectory: workingDirectoryPointer(t.TempDir())},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -668,7 +669,7 @@ func TestInvalidParametersAndUnknownCloseContracts(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		RuntimeOptions{WorkingDirectory: filepath.Join(t.TempDir(), "missing")},
+		RuntimeOptions{WorkingDirectory: workingDirectoryPointer(filepath.Join(t.TempDir(), "missing"))},
 	); !errors.Is(err, ErrInvalidExecutionOptions) {
 		t.Fatalf("CreateExecution error = %v, want ErrInvalidExecutionOptions", err)
 	}

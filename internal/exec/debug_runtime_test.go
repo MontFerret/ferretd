@@ -134,7 +134,10 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 		context.Background(),
 		fixture.session.ID,
 		input,
-		RuntimeOptions{OutputContentType: " \t\n", WorkingDirectory: workingDirectory},
+		RuntimeOptions{
+			OutputContentType: " \t\n",
+			WorkingDirectory:  workingDirectoryPointer(workingDirectory),
+		},
 	)
 	if err != nil {
 		t.Fatalf("CreateDebugRuntime: %v", err)
@@ -151,17 +154,19 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 		retained["nested"].(map[string]any)["items"].([]any)[1] != "two" {
 		t.Fatalf("runtime parameters = %#v, want immutable prepared values", retained)
 	}
-	if runtime.Options().OutputContentType != defaultOutputContentType {
-		t.Fatalf("OutputContentType = %q, want %q", runtime.Options().OutputContentType, defaultOutputContentType)
+	options := runtime.Options()
+	if options.OutputContentType != defaultOutputContentType {
+		t.Fatalf("OutputContentType = %q, want %q", options.OutputContentType, defaultOutputContentType)
 	}
 	canonicalWorkingDirectory, err := filepath.EvalSymlinks(workingDirectory)
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
-	if runtime.Options().WorkingDirectory != filepath.Clean(canonicalWorkingDirectory) {
+	if options.WorkingDirectory == nil ||
+		*options.WorkingDirectory != filepath.Clean(canonicalWorkingDirectory) {
 		t.Fatalf(
-			"WorkingDirectory = %q, want %q",
-			runtime.Options().WorkingDirectory,
+			"WorkingDirectory = %v, want %q",
+			options.WorkingDirectory,
 			canonicalWorkingDirectory,
 		)
 	}

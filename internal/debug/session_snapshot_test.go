@@ -9,9 +9,11 @@ import (
 )
 
 func TestSessionSnapshotClone(t *testing.T) {
+	workingDirectory := "/runtime root"
 	value := SessionSnapshot{
 		HitBreakpointIDs: []BreakpointID{1},
 		Parameters:       map[string]any{"nested": []any{map[string]any{"key": "value"}}},
+		Options:          exec.RuntimeOptions{WorkingDirectory: &workingDirectory},
 		Output:           &exec.RuntimeOutput{Content: []byte("one")},
 		Failure: &exec.RuntimeFailure{
 			Message: "failure",
@@ -26,6 +28,7 @@ func TestSessionSnapshotClone(t *testing.T) {
 	cloned := value.Clone()
 	cloned.HitBreakpointIDs[0] = 2
 	cloned.Parameters["nested"].([]any)[0].(map[string]any)["key"] = "changed"
+	*cloned.Options.WorkingDirectory = "/changed root"
 	cloned.Output.Content[0] = 't'
 	cloned.Failure.Message = "changed"
 	cloned.Failure.Diagnostics[0].Message = "changed"
@@ -33,6 +36,7 @@ func TestSessionSnapshotClone(t *testing.T) {
 
 	if value.HitBreakpointIDs[0] != 1 ||
 		value.Parameters["nested"].([]any)[0].(map[string]any)["key"] != "value" ||
+		*value.Options.WorkingDirectory != "/runtime root" ||
 		string(value.Output.Content) != "one" || value.Failure.Message != "failure" ||
 		value.Failure.Diagnostics[0].Message != "diagnostic" ||
 		value.Failure.Diagnostics[0].RelatedInformation[0].Message != "related" {

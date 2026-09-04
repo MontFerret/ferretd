@@ -110,6 +110,7 @@ execution, err := c.Executions().CreateExecution(ctx, client.CreateExecutionRequ
 	SessionID:  session.ID,
 	Parameters: map[string]any{"url": "https://example.com"},
 	Options: client.ExecutionOptions{
+		// runtimeRoot is an existing absolute directory and may be outside projectRoot.
 		WorkingDirectory: runtimeRoot,
 	},
 })

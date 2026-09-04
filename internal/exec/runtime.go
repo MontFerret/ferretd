@@ -110,8 +110,8 @@ func (r *executionRuntime) sessionOptions() []ferret.SessionOption {
 		options = append(options, ferret.WithOutputContentType(r.input.options.OutputContentType))
 	}
 
-	if r.input.options.WorkingDirectory != "" {
-		options = append(options, ferret.WithSessionFSRoot(r.input.options.WorkingDirectory))
+	if r.input.options.WorkingDirectory != nil {
+		options = append(options, ferret.WithSessionFSRoot(*r.input.options.WorkingDirectory))
 	}
 
 	return options
@@ -154,5 +154,5 @@ func (r *executionRuntime) parameters() Parameters {
 }
 
 func (r *executionRuntime) options() RuntimeOptions {
-	return r.input.options
+	return r.input.options.Clone()
 }

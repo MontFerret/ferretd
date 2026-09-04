@@ -33,14 +33,29 @@ func TestRuntimeOptionsNormalized(t *testing.T) {
 	}
 }
 
+func workingDirectoryPointer(value string) *string {
+	return &value
+}
+
+func TestRuntimeOptionsClone(t *testing.T) {
+	workingDirectory := "/runtime root"
+	original := RuntimeOptions{WorkingDirectory: &workingDirectory}
+	cloned := original.Clone()
+	*cloned.WorkingDirectory = "/changed root"
+
+	if got := *original.WorkingDirectory; got != workingDirectory {
+		t.Fatalf("original WorkingDirectory = %q, want %q", got, workingDirectory)
+	}
+}
+
 func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 	t.Run("absent", func(t *testing.T) {
 		got, err := (RuntimeOptions{}).normalized()
 		if err != nil {
 			t.Fatalf("normalized: %v", err)
 		}
-		if got.WorkingDirectory != "" {
-			t.Fatalf("WorkingDirectory = %q, want absent", got.WorkingDirectory)
+		if got.WorkingDirectory != nil {
+			t.Fatalf("WorkingDirectory = %v, want absent", got.WorkingDirectory)
 		}
 	})
 
@@ -50,16 +65,21 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 			t.Fatalf("Mkdir: %v", err)
 		}
 
-		got, err := (RuntimeOptions{WorkingDirectory: "  " + root + "  "}).normalized()
+		configured := "  " + root + "  "
+		input := RuntimeOptions{WorkingDirectory: &configured}
+		got, err := input.normalized()
 		if err != nil {
 			t.Fatalf("normalized: %v", err)
+		}
+		if got.WorkingDirectory == input.WorkingDirectory {
+			t.Fatal("normalized retained the caller's working-directory pointer")
 		}
 		canonical, err := filepath.EvalSymlinks(root)
 		if err != nil {
 			t.Fatalf("EvalSymlinks: %v", err)
 		}
-		if got.WorkingDirectory != filepath.Clean(canonical) {
-			t.Fatalf("WorkingDirectory = %q, want %q", got.WorkingDirectory, canonical)
+		if got.WorkingDirectory == nil || *got.WorkingDirectory != filepath.Clean(canonical) {
+			t.Fatalf("WorkingDirectory = %v, want %q", got.WorkingDirectory, canonical)
 		}
 	})
 
@@ -70,7 +90,7 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 			t.Skipf("create directory symlink: %v", err)
 		}
 
-		got, err := (RuntimeOptions{WorkingDirectory: link}).normalized()
+		got, err := (RuntimeOptions{WorkingDirectory: workingDirectoryPointer(link)}).normalized()
 		if err != nil {
 			t.Fatalf("normalized: %v", err)
 		}
@@ -78,8 +98,8 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EvalSymlinks: %v", err)
 		}
-		if got.WorkingDirectory != filepath.Clean(canonical) {
-			t.Fatalf("WorkingDirectory = %q, want %q", got.WorkingDirectory, canonical)
+		if got.WorkingDirectory == nil || *got.WorkingDirectory != filepath.Clean(canonical) {
+			t.Fatalf("WorkingDirectory = %v, want %q", got.WorkingDirectory, canonical)
 		}
 	})
 
@@ -92,6 +112,7 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 		path      string
 		wantCause error
 	}{
+		{name: "empty", path: ""},
 		{name: "blank", path: " \t\n "},
 		{name: "relative", path: "runtime"},
 		{name: "missing", path: filepath.Join(t.TempDir(), "missing"), wantCause: os.ErrNotExist},
@@ -100,7 +121,7 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := (RuntimeOptions{WorkingDirectory: test.path}).normalized()
+			_, err := (RuntimeOptions{WorkingDirectory: workingDirectoryPointer(test.path)}).normalized()
 			if !errors.Is(err, ErrInvalidExecutionOptions) {
 				t.Fatalf("normalized error = %v, want ErrInvalidExecutionOptions", err)
 			}
@@ -118,7 +139,7 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 
-			_, err := (RuntimeOptions{WorkingDirectory: root}).normalized()
+			_, err := (RuntimeOptions{WorkingDirectory: workingDirectoryPointer(root)}).normalized()
 			if err == nil {
 				t.Skip("current user can open a mode-000 directory")
 			}

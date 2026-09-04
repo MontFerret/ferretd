@@ -12,6 +12,47 @@ import (
 	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 )
 
+func TestExecutionOptionsProtoRoundTrip(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       ExecutionOptions
+		wantPresent bool
+	}{
+		{name: "zero"},
+		{
+			name:  "output content type",
+			value: ExecutionOptions{OutputContentType: "application/msgpack"},
+		},
+		{
+			name:        "working directory",
+			value:       ExecutionOptions{WorkingDirectory: "/runtime root"},
+			wantPresent: true,
+		},
+		{
+			name:        "blank working directory",
+			value:       ExecutionOptions{WorkingDirectory: " \t\n "},
+			wantPresent: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encoded := toProtoExecutionOptions(test.value)
+			if present := encoded.WorkingDirectory != nil; present != test.wantPresent {
+				t.Fatalf("working_directory presence = %t, want %t", present, test.wantPresent)
+			}
+
+			if got := fromProtoExecutionOptions(encoded); got != test.value {
+				t.Fatalf("round trip = %+v, want %+v", got, test.value)
+			}
+		})
+	}
+
+	if got := fromProtoExecutionOptions(nil); got != (ExecutionOptions{}) {
+		t.Fatalf("nil options = %+v, want zero options", got)
+	}
+}
+
 func TestCreateExecutionWorkingDirectoryPresenceAndSnapshot(t *testing.T) {
 	tests := []struct {
 		name             string

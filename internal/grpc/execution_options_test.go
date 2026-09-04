@@ -2,7 +2,6 @@ package grpc
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -13,16 +12,24 @@ import (
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-func TestRuntimeOptionsFromProtoPreservesWorkingDirectoryPresence(t *testing.T) {
+func TestExecutionOptionsProtoRoundTrip(t *testing.T) {
+	blank := " \t\n "
 	workingDirectory := "/runtime root"
 	tests := []struct {
 		name            string
 		value           *executionv1.ExecutionOptions
 		wantDirectory   string
+		wantPresent     bool
 		wantContentType string
 	}{
 		{name: "options omitted"},
 		{name: "field omitted", value: &executionv1.ExecutionOptions{}},
+		{
+			name:          "blank field present",
+			value:         &executionv1.ExecutionOptions{WorkingDirectory: &blank},
+			wantDirectory: blank,
+			wantPresent:   true,
+		},
 		{
 			name: "field present",
 			value: &executionv1.ExecutionOptions{
@@ -30,34 +37,60 @@ func TestRuntimeOptionsFromProtoPreservesWorkingDirectoryPresence(t *testing.T) 
 				WorkingDirectory:  &workingDirectory,
 			},
 			wantDirectory:   workingDirectory,
+			wantPresent:     true,
 			wantContentType: "application/msgpack",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := runtimeOptionsFromProto(test.value)
-			if err != nil {
-				t.Fatalf("runtimeOptionsFromProto: %v", err)
+			decoded := fromProtoExecutionOptions(test.value)
+			if present := decoded.WorkingDirectory != nil; present != test.wantPresent {
+				t.Fatalf("decoded working directory presence = %t, want %t", present, test.wantPresent)
 			}
-			if got.WorkingDirectory != test.wantDirectory {
-				t.Fatalf("WorkingDirectory = %q, want %q", got.WorkingDirectory, test.wantDirectory)
+			if decoded.WorkingDirectory != nil && *decoded.WorkingDirectory != test.wantDirectory {
+				t.Fatalf("decoded WorkingDirectory = %q, want %q", *decoded.WorkingDirectory, test.wantDirectory)
 			}
-			if got.OutputContentType != test.wantContentType {
-				t.Fatalf("OutputContentType = %q, want %q", got.OutputContentType, test.wantContentType)
+			if decoded.OutputContentType != test.wantContentType {
+				t.Fatalf("decoded OutputContentType = %q, want %q", decoded.OutputContentType, test.wantContentType)
+			}
+
+			encoded := toProtoExecutionOptions(decoded)
+			if present := encoded.WorkingDirectory != nil; present != test.wantPresent {
+				t.Fatalf("encoded working directory presence = %t, want %t", present, test.wantPresent)
+			}
+			if encoded.GetWorkingDirectory() != test.wantDirectory {
+				t.Fatalf("encoded WorkingDirectory = %q, want %q", encoded.GetWorkingDirectory(), test.wantDirectory)
+			}
+			if encoded.OutputContentType != test.wantContentType {
+				t.Fatalf("encoded OutputContentType = %q, want %q", encoded.OutputContentType, test.wantContentType)
 			}
 		})
 	}
 }
 
-func TestRuntimeOptionsFromProtoRejectsPresentBlankWorkingDirectory(t *testing.T) {
-	for _, value := range []string{"", " \t\n "} {
-		t.Run(value, func(t *testing.T) {
-			_, err := runtimeOptionsFromProto(&executionv1.ExecutionOptions{WorkingDirectory: &value})
-			if !errors.Is(err, exec.ErrInvalidExecutionOptions) {
-				t.Fatalf("runtimeOptionsFromProto error = %v, want ErrInvalidExecutionOptions", err)
-			}
-		})
+func TestExecutionOptionsProtoConversionCopiesWorkingDirectory(t *testing.T) {
+	workingDirectory := "/runtime root"
+	wantWorkingDirectory := workingDirectory
+	protoOptions := &executionv1.ExecutionOptions{WorkingDirectory: &workingDirectory}
+	decoded := fromProtoExecutionOptions(protoOptions)
+	*protoOptions.WorkingDirectory = "/changed proto root"
+	if decoded.WorkingDirectory == nil || *decoded.WorkingDirectory != wantWorkingDirectory {
+		t.Fatalf(
+			"decoded WorkingDirectory = %v, want independent copy %q",
+			decoded.WorkingDirectory,
+			wantWorkingDirectory,
+		)
+	}
+
+	encoded := toProtoExecutionOptions(decoded)
+	*decoded.WorkingDirectory = "/changed runtime root"
+	if encoded.GetWorkingDirectory() != wantWorkingDirectory {
+		t.Fatalf(
+			"encoded WorkingDirectory = %q, want independent copy %q",
+			encoded.GetWorkingDirectory(),
+			wantWorkingDirectory,
+		)
 	}
 }
 
@@ -103,12 +136,17 @@ func TestProtoExecutionWorkingDirectoryPresence(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			var workingDirectory *string
+			if test.wantPresent {
+				workingDirectory = &test.workingDirectory
+			}
+
 			encoded, err := toProtoExecution(exec.ExecutionSnapshot{
 				ID:      "execution",
 				Session: "session",
 				State:   exec.StateCreated,
 				Options: exec.RuntimeOptions{
-					WorkingDirectory: test.workingDirectory,
+					WorkingDirectory: workingDirectory,
 				},
 			})
 			if err != nil {
