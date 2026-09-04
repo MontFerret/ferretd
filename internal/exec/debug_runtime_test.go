@@ -135,8 +135,9 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 		fixture.session.ID,
 		input,
 		RuntimeOptions{
-			OutputContentType: " \t\n",
-			WorkingDirectory:  workingDirectoryPointer(workingDirectory),
+			OutputContentType:   " \t\n",
+			WorkingDirectory:    workingDirectory,
+			WorkingDirectorySet: true,
 		},
 	)
 	if err != nil {
@@ -162,11 +163,12 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
-	if options.WorkingDirectory == nil ||
-		*options.WorkingDirectory != filepath.Clean(canonicalWorkingDirectory) {
+	if !options.WorkingDirectorySet ||
+		options.WorkingDirectory != filepath.Clean(canonicalWorkingDirectory) {
 		t.Fatalf(
-			"WorkingDirectory = %v, want %q",
+			"working directory = %q, set = %t, want %q set",
 			options.WorkingDirectory,
+			options.WorkingDirectorySet,
 			canonicalWorkingDirectory,
 		)
 	}

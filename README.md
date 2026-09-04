@@ -186,7 +186,7 @@ parameters, expressions, or evaluated values. See
 
 ## Current Status
 
-The daemon exposes API v1.2 `DaemonService`, `WorkspaceService`, and
+The daemon exposes API v1.1 `DaemonService`, `WorkspaceService`, and
 `ExecutionService` contracts over permission-restricted native local transports
 or authenticated ephemeral IPv4 loopback TCP, plus the standard gRPC health
 service. The checked-in Go code under `gen/` is generated from `proto/` with

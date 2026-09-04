@@ -24,7 +24,6 @@ func (s SessionSnapshot) Clone() SessionSnapshot {
 	result := s
 	result.HitBreakpointIDs = append([]BreakpointID(nil), s.HitBreakpointIDs...)
 	result.Parameters = s.Parameters.Clone()
-	result.Options = s.Options.Clone()
 	result.Output = s.Output.Clone()
 	result.Failure = s.Failure.Clone()
 

@@ -134,9 +134,3 @@ func TestCreateExecutionMapsInvalidOptionsClassification(t *testing.T) {
 		t.Fatalf("mapCreateExecutionError = %v, did not want ErrInvalidExecutionParameters", mapped)
 	}
 }
-
-func TestSupportedClientAdvertisesAPI12(t *testing.T) {
-	if currentAPIVersion != (APIVersion{Major: 1, Minor: 2}) {
-		t.Fatalf("current API version = %+v, want 1.2", currentAPIVersion)
-	}
-}

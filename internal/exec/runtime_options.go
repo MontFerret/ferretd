@@ -10,20 +10,12 @@ import (
 const defaultOutputContentType = "application/json"
 
 // RuntimeOptions contains per-run Ferret settings shared by ordinary and
-// debugger execution.
+// debugger execution. WorkingDirectorySet distinguishes an absent filesystem
+// root override from an explicitly supplied value.
 type RuntimeOptions struct {
-	OutputContentType string
-	WorkingDirectory  *string
-}
-
-// Clone returns an independent copy of the runtime options.
-func (o RuntimeOptions) Clone() RuntimeOptions {
-	if o.WorkingDirectory != nil {
-		workingDirectory := *o.WorkingDirectory
-		o.WorkingDirectory = &workingDirectory
-	}
-
-	return o
+	OutputContentType   string
+	WorkingDirectory    string
+	WorkingDirectorySet bool
 }
 
 func (o RuntimeOptions) normalized() (RuntimeOptions, error) {
@@ -32,11 +24,13 @@ func (o RuntimeOptions) normalized() (RuntimeOptions, error) {
 		o.OutputContentType = defaultOutputContentType
 	}
 
-	if o.WorkingDirectory == nil {
+	if !o.WorkingDirectorySet {
+		o.WorkingDirectory = ""
+
 		return o, nil
 	}
 
-	workingDirectory := strings.TrimSpace(*o.WorkingDirectory)
+	workingDirectory := strings.TrimSpace(o.WorkingDirectory)
 	if workingDirectory == "" {
 		return RuntimeOptions{}, fmt.Errorf("%w: working directory must not be blank", ErrInvalidExecutionOptions)
 	}
@@ -60,7 +54,7 @@ func (o RuntimeOptions) normalized() (RuntimeOptions, error) {
 		return RuntimeOptions{}, fmt.Errorf("%w: close working directory validation handle: %w", ErrInvalidExecutionOptions, err)
 	}
 
-	o.WorkingDirectory = &canonical
+	o.WorkingDirectory = canonical
 
 	return o, nil
 }

@@ -10,8 +10,8 @@ func toProtoExecutionOptions(value exec.RuntimeOptions) *executionv1.ExecutionOp
 		OutputContentType: value.OutputContentType,
 	}
 
-	if value.WorkingDirectory != nil {
-		workingDirectory := *value.WorkingDirectory
+	if value.WorkingDirectorySet {
+		workingDirectory := value.WorkingDirectory
 		result.WorkingDirectory = &workingDirectory
 	}
 
@@ -28,8 +28,8 @@ func fromProtoExecutionOptions(value *executionv1.ExecutionOptions) exec.Runtime
 	}
 
 	if value.WorkingDirectory != nil {
-		workingDirectory := *value.WorkingDirectory
-		result.WorkingDirectory = &workingDirectory
+		result.WorkingDirectory = value.GetWorkingDirectory()
+		result.WorkingDirectorySet = true
 	}
 
 	return result

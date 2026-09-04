@@ -99,23 +99,28 @@ func TestConcurrentExecutionsFromOneSessionAreIsolated(t *testing.T) {
 }
 
 func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
-	t.Run("absent uses workspace", func(t *testing.T) {
+	t.Run("unset uses workspace", func(t *testing.T) {
 		fixture := newExecutionFixture(t, `RETURN TO_STRING(IO::FS::READ("value.txt"))`)
 		if err := os.WriteFile(filepath.Join(fixture.workspace.Root(), "value.txt"), []byte("workspace"), 0o600); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
+		unusedRoot := t.TempDir()
 
 		created, err := fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{},
+			RuntimeOptions{WorkingDirectory: unusedRoot},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
-		if created.Options.WorkingDirectory != nil {
-			t.Fatalf("WorkingDirectory = %v, want absent", created.Options.WorkingDirectory)
+		if created.Options.WorkingDirectorySet || created.Options.WorkingDirectory != "" {
+			t.Fatalf(
+				"working directory = %q, set = %t, want absent",
+				created.Options.WorkingDirectory,
+				created.Options.WorkingDirectorySet,
+			)
 		}
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
@@ -143,14 +148,19 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{WorkingDirectory: workingDirectoryPointer(runtimeRoot)},
+			RuntimeOptions{WorkingDirectory: runtimeRoot, WorkingDirectorySet: true},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
-		if created.Options.WorkingDirectory == nil ||
-			*created.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
-			t.Fatalf("WorkingDirectory = %v, want %q", created.Options.WorkingDirectory, canonicalRuntimeRoot)
+		if !created.Options.WorkingDirectorySet ||
+			created.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
+			t.Fatalf(
+				"working directory = %q, set = %t, want %q set",
+				created.Options.WorkingDirectory,
+				created.Options.WorkingDirectorySet,
+				canonicalRuntimeRoot,
+			)
 		}
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
@@ -167,7 +177,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{WorkingDirectory: workingDirectoryPointer(runtimeRoot)},
+			RuntimeOptions{WorkingDirectory: runtimeRoot, WorkingDirectorySet: true},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -210,7 +220,7 @@ func TestConcurrentExecutionsUseIndependentWorkingDirectories(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{WorkingDirectory: workingDirectoryPointer(root)},
+			RuntimeOptions{WorkingDirectory: root, WorkingDirectorySet: true},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution(%d): %v", index, err)
@@ -246,7 +256,7 @@ func TestWorkingDirectoryRemovedBeforeRunFailsSessionCreation(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		RuntimeOptions{WorkingDirectory: workingDirectoryPointer(runtimeRoot)},
+		RuntimeOptions{WorkingDirectory: runtimeRoot, WorkingDirectorySet: true},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -411,7 +421,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 			context.Background(),
 			fixture.session.ID,
 			nil,
-			RuntimeOptions{WorkingDirectory: workingDirectoryPointer(t.TempDir())},
+			RuntimeOptions{WorkingDirectory: t.TempDir(), WorkingDirectorySet: true},
 		)
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -669,7 +679,10 @@ func TestInvalidParametersAndUnknownCloseContracts(t *testing.T) {
 		context.Background(),
 		fixture.session.ID,
 		nil,
-		RuntimeOptions{WorkingDirectory: workingDirectoryPointer(filepath.Join(t.TempDir(), "missing"))},
+		RuntimeOptions{
+			WorkingDirectory:    filepath.Join(t.TempDir(), "missing"),
+			WorkingDirectorySet: true,
+		},
 	); !errors.Is(err, ErrInvalidExecutionOptions) {
 		t.Fatalf("CreateExecution error = %v, want ErrInvalidExecutionOptions", err)
 	}
