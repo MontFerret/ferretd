@@ -94,6 +94,7 @@ func newRuntimeFunction(functions *runtime.Functions, name, identity string) fun
 
 func (c *FunctionCatalog) lookup(name string) (functionSymbol, bool) {
 	identity := runtime.NormalizeRegisteredName(name)
+
 	index, ok := c.byName[identity]
 	if !ok {
 		return functionSymbol{}, false

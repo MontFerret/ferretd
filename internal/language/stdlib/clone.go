@@ -23,6 +23,7 @@ func cloneAPISignatures(values []api.Signature) []api.Signature {
 	result := make([]api.Signature, len(values))
 	for index, value := range values {
 		value.Parameters = cloneAPIParameters(value.Parameters)
+
 		value.Throws = append([]api.Throw(nil), value.Throws...)
 		if value.Return != nil {
 			returnValue := *value.Return
@@ -56,6 +57,7 @@ func cloneAPIType(value *api.Type) *api.Type {
 	for index := range value.Types {
 		result.Types[index] = *cloneAPIType(&value.Types[index])
 	}
+
 	result.Element = cloneAPIType(value.Element)
 
 	return &result

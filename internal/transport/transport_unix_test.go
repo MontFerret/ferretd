@@ -38,6 +38,7 @@ func TestParseEndpoint(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseEndpoint: %v", err)
 			}
+
 			if got := endpoint.String(); got != tt.want {
 				t.Fatalf("endpoint = %q, want %q", got, tt.want)
 			}
@@ -67,6 +68,7 @@ func TestDefaultEndpointIgnoresRelativeXDGRuntimeDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultEndpoint: %v", err)
 	}
+
 	if !filepath.IsAbs(endpoint.Address) {
 		t.Fatalf("endpoint address = %q, want absolute cache fallback", endpoint.Address)
 	}
@@ -81,6 +83,7 @@ func TestNamedPipeEndpointString(t *testing.T) {
 
 func TestListenDialAndCleanup(t *testing.T) {
 	endpoint := Endpoint{Network: NetworkUnix, Address: filepath.Join(shortTempDir(t), "ferret", "ferretd.sock")}
+
 	listener, err := Listen(endpoint)
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
@@ -90,6 +93,7 @@ func TestListenDialAndCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat endpoint: %v", err)
 	}
+
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("socket mode = %#o, want 0600", got)
 	}
@@ -98,6 +102,7 @@ func TestListenDialAndCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat endpoint directory: %v", err)
 	}
+
 	if got := directoryInfo.Mode().Perm(); got != 0o700 {
 		t.Fatalf("endpoint directory mode = %#o, want 0700", got)
 	}
@@ -115,6 +120,7 @@ func TestListenDialAndCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
+
 	_ = connection.Close()
 
 	serverConnection := <-accepted
@@ -125,6 +131,7 @@ func TestListenDialAndCleanup(t *testing.T) {
 	if err := listener.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+
 	if err := listener.Close(); err != nil {
 		t.Fatalf("second Close: %v", err)
 	}
@@ -137,10 +144,12 @@ func TestListenDialAndCleanup(t *testing.T) {
 func TestListenRefusesActiveOrNonSocketEndpoint(t *testing.T) {
 	t.Run("active", func(t *testing.T) {
 		endpoint := Endpoint{Network: NetworkUnix, Address: filepath.Join(shortTempDir(t), "ferretd.sock")}
+
 		listener, err := Listen(endpoint)
 		if err != nil {
 			t.Fatalf("first Listen: %v", err)
 		}
+
 		t.Cleanup(func() { _ = listener.Close() })
 
 		_, err = Listen(endpoint)
@@ -164,11 +173,14 @@ func TestListenRefusesActiveOrNonSocketEndpoint(t *testing.T) {
 
 func TestListenReclaimsStaleSocket(t *testing.T) {
 	endpoint := Endpoint{Network: NetworkUnix, Address: filepath.Join(shortTempDir(t), "ferretd.sock")}
+
 	stale, err := net.ListenUnix("unix", &net.UnixAddr{Name: endpoint.Address, Net: "unix"})
 	if err != nil {
 		t.Fatalf("create stale socket: %v", err)
 	}
+
 	stale.SetUnlinkOnClose(false)
+
 	if err := stale.Close(); err != nil {
 		t.Fatalf("close stale socket: %v", err)
 	}
@@ -177,6 +189,7 @@ func TestListenReclaimsStaleSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
+
 	if err := listener.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -189,6 +202,7 @@ func shortTempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
+
 	t.Cleanup(func() { _ = os.RemoveAll(directory) })
 
 	return directory

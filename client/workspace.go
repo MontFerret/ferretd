@@ -21,6 +21,7 @@ func (c *WorkspaceClient) Open(ctx context.Context, root string) (Workspace, err
 
 	absolute, err := filepath.Abs(root)
 	if err != nil {
+		//nolint:errorlint // Preserve the public root-validation error without filesystem error identities.
 		return Workspace{}, fmt.Errorf("%w: resolve absolute root: %v", ErrInvalidWorkspaceRoot, err)
 	}
 

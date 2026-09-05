@@ -34,6 +34,7 @@ func mustNewExecutionManager(
 		_ = runtime.Close()
 		t.Fatalf("exec.New: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = runtime.Close()
@@ -119,17 +120,21 @@ func newDebugFixture(t *testing.T, query string) debugFixture {
 	}
 
 	workspaces := workspace.New()
+
 	opened, err := workspaces.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("workspace Open: %v", err)
 	}
+
 	runtime := newRuntimeSpy()
 	executions := mustNewExecutionManager(t, workspaces, runtime)
 	manager := mustNewManager(t, executions)
+
 	session, err := executions.CreateSession(context.Background(), opened.ID(), "query.fql")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = executions.Close(context.Background())

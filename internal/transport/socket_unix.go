@@ -33,6 +33,7 @@ func ensureSocketPathAvailable(path string) error {
 	}
 
 	if !errors.Is(dialErr, syscall.ECONNREFUSED) && !errors.Is(dialErr, os.ErrNotExist) {
+		//nolint:errorlint // Preserve endpoint contention as the sole error classification.
 		return fmt.Errorf("%w: inspect existing socket: %v", ErrEndpointInUse, dialErr)
 	}
 

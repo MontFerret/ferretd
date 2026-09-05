@@ -69,6 +69,7 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 
 		return s.sendFailure(request.GetRequest(), errors.New("launch requires one successful initialize"))
 	}
+
 	s.stateMu.Unlock()
 
 	var arguments launchArguments
@@ -234,6 +235,7 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 			errors.New("configurationDone requires one successful launch"),
 		)
 	}
+
 	debugID := s.owned.debug
 	s.stateMu.Unlock()
 
@@ -417,9 +419,11 @@ func (s *Server) sendUnverifiedBreakpoints(
 	message string,
 ) error {
 	sourceValue := request.Arguments.Source
+
 	if clientPath, err := s.clientPath(path); err == nil {
 		sourceValue.Path = clientPath
 	}
+
 	if sourceValue.Name == "" {
 		sourceValue.Name = filepath.Base(path)
 	}
@@ -457,6 +461,7 @@ func (s *Server) bindBreakpointID(
 	defer s.breakpointMu.Unlock()
 
 	key := breakpointKey{sourceName: sourceName, position: requested}
+
 	stableID := s.stableBreakpoints[key]
 	if stableID == 0 {
 		stableID = s.nextBreakpointID
@@ -584,9 +589,11 @@ func (s *Server) handleResume(
 
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
+
 	if err := resume(debugID); err != nil {
 		return s.sendFailure(request, err, threadFields)
 	}
+
 	s.invalidateHandles(request.Command)
 
 	return s.sendResponse(request, func(base protocol.ProtocolMessage) protocol.Message {
@@ -738,6 +745,7 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 
 	stale := status == handleStale
 	result := make([]protocol.Scope, 0)
+
 	if !stale {
 		scopes, err := s.debugs.Scopes(ctx, debugID, frame)
 		if err != nil {
@@ -774,6 +782,7 @@ func (s *Server) handleScopes(ctx context.Context, request *protocol.ScopesReque
 	}, func(event *zerolog.Event) {
 		frameFields(event)
 		event.Int("scopes", len(result))
+
 		if stale {
 			event.Bool("stale", true)
 		}
@@ -807,12 +816,14 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 	}
 
 	variables, status := s.handles.ScopeVariables(request.Arguments.VariablesReference)
+
 	stale := status == handleStale
 	if status == handleInvalid {
 		reference, referenceStatus := s.handles.VariableReference(request.Arguments.VariablesReference)
 		switch referenceStatus {
 		case handleCurrent:
 			var err error
+
 			variables, err = s.debugs.Variables(ctx, debugID, reference)
 			if err != nil {
 				return s.sendFailure(
@@ -848,6 +859,7 @@ func (s *Server) handleVariables(ctx context.Context, request *protocol.Variable
 	}, func(event *zerolog.Event) {
 		variableFields(event)
 		event.Int("variables", len(result))
+
 		if stale {
 			event.Bool("stale", true)
 		}
@@ -877,13 +889,16 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 	}
 
 	frame := 0
+
 	if request.Arguments.FrameId != 0 {
 		var status handleStatus
+
 		frame, status = s.handles.FrameIndex(request.Arguments.FrameId)
 		if status == handleStale &&
 			(request.Arguments.Context == "hover" || request.Arguments.Context == "watch") {
 			return s.sendEmptyEvaluateResponse(request.GetRequest(), evaluateFields, false, true)
 		}
+
 		if status != handleCurrent {
 			return s.sendFailure(
 				request.GetRequest(),
@@ -897,6 +912,7 @@ func (s *Server) handleEvaluate(ctx context.Context, request *protocol.EvaluateR
 	if err != nil {
 		diagnosticErr := err
 		diagnosticFields := logEnricher(evaluateFields)
+
 		if strings.TrimSpace(request.Arguments.Expression) != "" {
 			diagnosticErr = errors.New("debug evaluation failed")
 			diagnosticFields = func(event *zerolog.Event) {
@@ -942,9 +958,11 @@ func (s *Server) sendEmptyEvaluateResponse(
 		}
 	}, func(event *zerolog.Event) {
 		evaluateFields(event)
+
 		if empty {
 			event.Bool("empty", true)
 		}
+
 		if stale {
 			event.Bool("stale", true)
 		}
@@ -969,6 +987,7 @@ func (s *Server) handleTerminate(ctx context.Context, request *protocol.Terminat
 
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
+
 	if err := s.failPendingLaunch(errors.New("launch terminated before configurationDone")); err != nil {
 		return err
 	}
@@ -976,6 +995,7 @@ func (s *Server) handleTerminate(ctx context.Context, request *protocol.Terminat
 	if _, err := s.debugs.TerminateSession(ctx, debugID); err != nil {
 		return s.sendFailure(request.GetRequest(), err, restartFields)
 	}
+
 	s.invalidateHandles("terminate")
 
 	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {

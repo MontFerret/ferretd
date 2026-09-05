@@ -1,3 +1,4 @@
+// Package main synchronizes and validates the embedded Standard Library API Reference.
 package main
 
 import (
@@ -24,6 +25,7 @@ func run(ctx context.Context, args []string) error {
 
 	flags := flag.NewFlagSet("stdlibref "+args[0], flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
+
 	output := flags.String("output", defaultOutput, "embedded Standard Library API Reference path")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err

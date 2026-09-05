@@ -25,6 +25,7 @@ func completionContextAt(text string, tokens []compiler.SyntaxToken, offset int)
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
 			break
 		}
+
 		start -= size
 	}
 
@@ -42,6 +43,7 @@ func completionContextAt(text string, tokens []compiler.SyntaxToken, offset int)
 		if token.Span.End > offset {
 			break
 		}
+
 		previous = token
 	}
 
@@ -84,6 +86,7 @@ func namespacePrefixAt(text string, offset int) string {
 	}
 
 	fragment := text[start:offset]
+
 	separator := strings.LastIndex(fragment, runtime.NamespaceSeparator)
 	if separator < 0 {
 		return ""
@@ -127,6 +130,7 @@ func sortedCompletionItems(items map[string]CompletionItem) []CompletionItem {
 		}
 
 		leftPriority := completionKindPriority(result[i].Kind)
+
 		rightPriority := completionKindPriority(result[j].Kind)
 		if leftPriority != rightPriority {
 			return leftPriority < rightPriority

@@ -51,6 +51,7 @@ func New(service *language.Service) (*Server, error) {
 
 func (s *Server) initialize(glspContext *glsp.Context, params *protocol.InitializeParams) (any, error) {
 	ctx := s.operationContext(glspContext)
+
 	roots, err := initializationRoots(params)
 	if err != nil {
 		return nil, err

@@ -38,6 +38,7 @@ func TestNewRequiresDependencies(t *testing.T) {
 			if service != nil {
 				t.Fatal("New returned a service with a nil dependency")
 			}
+
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("New error = %v, want %v", err, tt.want)
 			}
@@ -48,13 +49,16 @@ func TestNewRequiresDependencies(t *testing.T) {
 func TestNewUsesSuppliedDependencies(t *testing.T) {
 	workspaces := workspace.New()
 	catalog := newTestRuntimeCatalog(t, runtime.NewFunctions())
+
 	service, err := New(workspaces, catalog, Options{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+
 	if service.workspaces != workspaces {
 		t.Fatal("New did not retain the supplied workspace manager")
 	}
+
 	if service.functions != catalog {
 		t.Fatal("New did not retain the supplied function catalog")
 	}
@@ -65,9 +69,11 @@ func TestNewDefaultFunctionCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDefaultFunctionCatalog: %v", err)
 	}
+
 	if len(warnings) != 0 {
 		t.Fatalf("NewDefaultFunctionCatalog warnings = %+v", warnings)
 	}
+
 	if len(functions.ordered) == 0 {
 		t.Fatal("NewDefaultFunctionCatalog returned an empty catalog")
 	}
@@ -86,11 +92,13 @@ func TestDocumentLifecycle(t *testing.T) {
 	if !ok {
 		t.Fatal("overlay lookup returned false")
 	}
+
 	if document.Version != 1 || document.Text != "RETURN 1" {
 		t.Fatalf("overlay = %#v", document)
 	}
 
 	document.Text = "mutated"
+
 	stored, _ := service.overlay(ctx, uri)
 	if stored.Text != "RETURN 1" {
 		t.Fatalf("stored document was mutated through returned copy: %#v", stored)
@@ -99,6 +107,7 @@ func TestDocumentLifecycle(t *testing.T) {
 	if err := service.ChangeDocument(ctx, uri, 2, []TextChange{{Text: "RETURN 2"}, {Text: "RETURN 3"}}); err != nil {
 		t.Fatalf("ChangeDocument: %v", err)
 	}
+
 	changed, _ := service.overlay(ctx, uri)
 	if changed.Version != 2 || changed.Text != "RETURN 3" {
 		t.Fatalf("changed document = %#v", changed)
@@ -107,6 +116,7 @@ func TestDocumentLifecycle(t *testing.T) {
 	if err := service.OpenDocument(ctx, uri, 7, "RETURN 7"); err != nil {
 		t.Fatalf("replace OpenDocument: %v", err)
 	}
+
 	replaced, _ := service.overlay(ctx, uri)
 	if replaced.Version != 7 || replaced.Text != "RETURN 7" {
 		t.Fatalf("replaced document = %#v", replaced)
@@ -115,9 +125,11 @@ func TestDocumentLifecycle(t *testing.T) {
 	if err := service.CloseDocument(ctx, uri); err != nil {
 		t.Fatalf("CloseDocument: %v", err)
 	}
+
 	if err := service.CloseDocument(ctx, uri); err != nil {
 		t.Fatalf("second CloseDocument: %v", err)
 	}
+
 	if _, ok := service.overlay(ctx, uri); ok {
 		t.Fatal("closed document remains stored")
 	}
@@ -131,12 +143,15 @@ func TestChangeDocumentErrors(t *testing.T) {
 	if err := service.ChangeDocument(ctx, uri, 1, []TextChange{{Text: "RETURN 1"}}); !errors.Is(err, ErrDocumentNotOpen) {
 		t.Fatalf("ChangeDocument missing error = %v", err)
 	}
+
 	if err := service.OpenDocument(ctx, uri, 2, "RETURN 2"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
 	}
+
 	if err := service.ChangeDocument(ctx, uri, 2, []TextChange{{Text: "RETURN 3"}}); !errors.Is(err, ErrStaleDocumentVersion) {
 		t.Fatalf("ChangeDocument stale error = %v", err)
 	}
+
 	if err := service.ChangeDocument(ctx, uri, 3, nil); !errors.Is(err, ErrNoTextChanges) {
 		t.Fatalf("ChangeDocument empty error = %v", err)
 	}
@@ -161,5 +176,6 @@ func documentURI(t testing.TB, name string) source.URI {
 	if err != nil {
 		t.Fatalf("URIFromPath: %v", err)
 	}
+
 	return uri
 }

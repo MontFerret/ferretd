@@ -22,6 +22,7 @@ func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
 		"value":  7,
 		"nested": map[string]any{"items": []any{"one", "two"}},
 	}
+
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
 		fixture.session.ID,
@@ -31,9 +32,11 @@ func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
+
 	if created.State != StateCreated || created.Options.OutputContentType != "application/json" {
 		t.Fatalf("created = %+v", created)
 	}
+
 	if _, err := uuid.Parse(string(created.ID)); err != nil {
 		t.Fatalf("Execution ID is not a UUID: %v", err)
 	}
@@ -41,10 +44,12 @@ func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
 	input["value"] = 99
 	input["nested"].(map[string]any)["items"].([]any)[0] = "mutated"
 	created.Parameters["value"] = 100
+
 	stored, err := fixture.manager.GetExecution(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("GetExecution: %v", err)
 	}
+
 	if stored.Parameters["value"] != 7 ||
 		stored.Parameters["nested"].(map[string]any)["items"].([]any)[0] != "one" {
 		t.Fatalf("stored parameters = %#v, want immutable copy", stored.Parameters)
@@ -55,7 +60,9 @@ func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
 		terminal.Output.ContentType != "application/json" || string(terminal.Output.Content) != "7" {
 		t.Fatalf("terminal = %+v", terminal)
 	}
+
 	assertLifecycleEvents(t, events, created.ID, []EventKind{EventCreated, EventStarted, EventCompleted})
+
 	if _, err := fixture.manager.RunExecution(context.Background(), created.ID); !errors.Is(err, ErrExecutionTerminal) {
 		t.Fatalf("second RunExecution error = %v, want ErrExecutionTerminal", err)
 	}
@@ -68,6 +75,7 @@ func TestConcurrentExecutionsFromOneSessionAreIsolated(t *testing.T) {
 	created := make([]ExecutionSnapshot, len(values))
 	for i, value := range values {
 		var err error
+
 		created[i], err = fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
@@ -89,6 +97,7 @@ func TestConcurrentExecutionsFromOneSessionAreIsolated(t *testing.T) {
 			results[i], _ = runAndObserve(t, fixture.manager, created[i].ID)
 		}()
 	}
+
 	wait.Wait()
 
 	for i, result := range results {
@@ -119,11 +128,13 @@ func TestRepeatedExecutionsDoNotRecompileSessionPlan(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
+
 		terminal, _ := runAndObserve(t, manager, created.ID)
 		if terminal.State != StateCompleted {
 			t.Fatalf("terminal = %+v", terminal)
 		}
 	}
+
 	if got := compilations.Load(); got != 1 {
 		t.Fatalf("compilations = %d, want exactly the Session compilation", got)
 	}
@@ -151,11 +162,14 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
+
 		terminal, _ := runAndObserve(t, manager, created.ID)
 		assertFailure(t, terminal, FailureSessionCreation, false)
+
 		if !strings.Contains(terminal.Failure.Message, want.Error()) {
 			t.Fatalf("failure = %+v, want %v", terminal.Failure, want)
 		}
+
 		if closes.Load() != 1 {
 			t.Fatalf("partial Session close calls = %d, want 1", closes.Load())
 		}
@@ -163,6 +177,7 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 
 	t.Run("session creation", func(t *testing.T) {
 		manager, session, _ := newHookedManager(t, "RETURN 1")
+
 		created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -182,6 +197,7 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 		manager, session, _ := newHookedManager(t, "RETURN 1", withSessionCloseHook(func() error {
 			return want
 		}))
+
 		created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
@@ -189,6 +205,7 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 
 		terminal, _ := runAndObserve(t, manager, created.ID)
 		assertFailure(t, terminal, FailureCleanup, true)
+
 		if string(terminal.Output.Content) != "1" {
 			t.Fatalf("partial output = %q, want 1", terminal.Output.Content)
 		}
@@ -198,6 +215,7 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 	t.Run("before run", func(t *testing.T) {
 		fixture := newExecutionFixture(t, "RETURN 1")
+
 		created, err := fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
@@ -212,9 +230,11 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CancelExecution: %v", err)
 		}
+
 		if cancelled.State != StateCancelled {
 			t.Fatalf("state = %v, want cancelled", cancelled.State)
 		}
+
 		if _, err := fixture.manager.RunExecution(context.Background(), created.ID); !errors.Is(err, ErrExecutionTerminal) {
 			t.Fatalf("RunExecution error = %v, want terminal", err)
 		}
@@ -223,6 +243,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 	t.Run("during run", func(t *testing.T) {
 		fixture := newExecutionFixture(t, "RETURN 1")
 		fixture.runtime.run = canceledOutput
+
 		created, err := fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
@@ -232,14 +253,17 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
+
 		subscription, err := fixture.manager.WatchExecution(context.Background(), created.ID)
 		if err != nil {
 			t.Fatalf("WatchExecution: %v", err)
 		}
 		defer subscription.Cancel()
+
 		if _, err := fixture.manager.RunExecution(context.Background(), created.ID); err != nil {
 			t.Fatalf("RunExecution: %v", err)
 		}
+
 		started := <-subscription.Events
 		if started.Kind != EventStarted {
 			t.Fatalf("event = %+v, want started", started)
@@ -253,11 +277,14 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 				_, _ = fixture.manager.CancelExecution(context.Background(), created.ID)
 			}()
 		}
+
 		wait.Wait()
+
 		terminal := <-subscription.Events
 		if terminal.Kind != EventCancelled || terminal.Snapshot.State != StateCancelled {
 			t.Fatalf("terminal event = %+v, want cancelled", terminal)
 		}
+
 		if _, ok := <-subscription.Events; ok {
 			t.Fatal("received more than one terminal event")
 		}
@@ -267,6 +294,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
 	fixture.runtime.run = canceledOutput
+
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
 		fixture.session.ID,
@@ -276,19 +304,23 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
+
 	subscription, err := fixture.manager.WatchExecution(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("WatchExecution: %v", err)
 	}
 	defer subscription.Cancel()
+
 	if _, err := fixture.manager.RunExecution(context.Background(), created.ID); err != nil {
 		t.Fatalf("RunExecution: %v", err)
 	}
+
 	if started := <-subscription.Events; started.Kind != EventStarted {
 		t.Fatalf("event = %+v, want started", started)
 	}
 
 	writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 2")
+
 	refreshed, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
@@ -297,6 +329,7 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+
 	if refreshed.Source.Revision <= fixture.session.Source.Revision {
 		t.Fatalf("refreshed source revision = %d, want greater than %d",
 			refreshed.Source.Revision, fixture.session.Source.Revision)
@@ -306,6 +339,7 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetExecution: %v", err)
 	}
+
 	if active.State != StateRunning {
 		t.Fatalf("original execution state = %v, want running", active.State)
 	}
@@ -313,6 +347,7 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	if _, err := fixture.manager.CancelExecution(context.Background(), created.ID); err != nil {
 		t.Fatalf("CancelExecution: %v", err)
 	}
+
 	if terminal := <-subscription.Events; terminal.Kind != EventCancelled {
 		t.Fatalf("terminal event = %+v, want cancelled", terminal)
 	}
@@ -321,6 +356,7 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 func TestCancellationRacingSuccessNeverOverwritesTerminalState(t *testing.T) {
 	for range 20 {
 		fixture := newExecutionFixture(t, "RETURN 1")
+
 		created, err := fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
@@ -330,27 +366,34 @@ func TestCancellationRacingSuccessNeverOverwritesTerminalState(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
+
 		subscription, err := fixture.manager.WatchExecution(context.Background(), created.ID)
 		if err != nil {
 			t.Fatalf("WatchExecution: %v", err)
 		}
+
 		if _, err := fixture.manager.RunExecution(context.Background(), created.ID); err != nil {
 			t.Fatalf("RunExecution: %v", err)
 		}
+
 		_, _ = fixture.manager.CancelExecution(context.Background(), created.ID)
 
 		var terminal Event
 		for event := range subscription.Events {
 			terminal = event
 		}
+
 		subscription.Cancel()
+
 		if terminal.Kind != EventCompleted && terminal.Kind != EventCancelled {
 			t.Fatalf("terminal event = %+v", terminal)
 		}
+
 		after, err := fixture.manager.CancelExecution(context.Background(), created.ID)
 		if err != nil {
 			t.Fatalf("Cancel after terminal: %v", err)
 		}
+
 		if after.State != terminal.Snapshot.State {
 			t.Fatalf("state overwritten: terminal=%v after=%v", terminal.Snapshot.State, after.State)
 		}
@@ -360,6 +403,7 @@ func TestCancellationRacingSuccessNeverOverwritesTerminalState(t *testing.T) {
 func TestSessionAndWorkspaceCloseCascadeExecutions(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
 	fixture.runtime.run = canceledOutput
+
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
 		fixture.session.ID,
@@ -369,14 +413,17 @@ func TestSessionAndWorkspaceCloseCascadeExecutions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
+
 	subscription, err := fixture.manager.WatchExecution(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("WatchExecution: %v", err)
 	}
 	defer subscription.Cancel()
+
 	if _, err := fixture.manager.RunExecution(context.Background(), created.ID); err != nil {
 		t.Fatalf("RunExecution: %v", err)
 	}
+
 	if event := <-subscription.Events; event.Kind != EventStarted {
 		t.Fatalf("event = %+v, want started", event)
 	}
@@ -384,13 +431,16 @@ func TestSessionAndWorkspaceCloseCascadeExecutions(t *testing.T) {
 	if err := fixture.workspaces.Close(context.Background(), fixture.workspace.ID()); err != nil {
 		t.Fatalf("workspace Close: %v", err)
 	}
+
 	terminal := <-subscription.Events
 	if terminal.Kind != EventCancelled {
 		t.Fatalf("terminal = %+v, want cancelled", terminal)
 	}
+
 	if _, err := fixture.manager.GetSession(context.Background(), fixture.session.ID); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("GetSession error = %v", err)
 	}
+
 	if _, err := fixture.manager.GetExecution(context.Background(), created.ID); !errors.Is(err, ErrExecutionNotFound) {
 		t.Fatalf("GetExecution error = %v", err)
 	}
@@ -399,6 +449,7 @@ func TestSessionAndWorkspaceCloseCascadeExecutions(t *testing.T) {
 func TestCloseExecutionCancelsRunningAndEndsWatch(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
 	fixture.runtime.run = canceledOutput
+
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
 		fixture.session.ID,
@@ -408,14 +459,17 @@ func TestCloseExecutionCancelsRunningAndEndsWatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
+
 	subscription, err := fixture.manager.WatchExecution(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("WatchExecution: %v", err)
 	}
 	defer subscription.Cancel()
+
 	if _, err := fixture.manager.RunExecution(context.Background(), created.ID); err != nil {
 		t.Fatalf("RunExecution: %v", err)
 	}
+
 	if event := <-subscription.Events; event.Kind != EventStarted {
 		t.Fatalf("event = %+v, want started", event)
 	}
@@ -423,12 +477,15 @@ func TestCloseExecutionCancelsRunningAndEndsWatch(t *testing.T) {
 	if err := fixture.manager.CloseExecution(context.Background(), created.ID); err != nil {
 		t.Fatalf("CloseExecution: %v", err)
 	}
+
 	if terminal := <-subscription.Events; terminal.Kind != EventCancelled {
 		t.Fatalf("terminal = %+v, want cancelled", terminal)
 	}
+
 	if _, ok := <-subscription.Events; ok {
 		t.Fatal("watch remained open after CloseExecution")
 	}
+
 	if _, err := fixture.manager.GetExecution(context.Background(), created.ID); !errors.Is(err, ErrExecutionNotFound) {
 		t.Fatalf("GetExecution error = %v, want ErrExecutionNotFound", err)
 	}
@@ -437,6 +494,7 @@ func TestCloseExecutionCancelsRunningAndEndsWatch(t *testing.T) {
 func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
 	fixture.runtime.run = canceledOutput
+
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
 		fixture.session.ID,
@@ -446,14 +504,17 @@ func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
+
 	subscription, err := fixture.manager.WatchExecution(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("WatchExecution: %v", err)
 	}
 	defer subscription.Cancel()
+
 	if _, err := fixture.manager.RunExecution(context.Background(), created.ID); err != nil {
 		t.Fatalf("RunExecution: %v", err)
 	}
+
 	if event := <-subscription.Events; event.Kind != EventStarted {
 		t.Fatalf("event = %+v, want started", event)
 	}
@@ -461,9 +522,11 @@ func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 	if err := fixture.manager.Close(context.Background()); err != nil {
 		t.Fatalf("Manager.Close: %v", err)
 	}
+
 	if terminal := <-subscription.Events; terminal.Kind != EventCancelled {
 		t.Fatalf("terminal = %+v, want cancelled", terminal)
 	}
+
 	if _, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
@@ -489,6 +552,7 @@ func TestInvalidParametersAndUnknownCloseContracts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
+
 	terminal, _ := runAndObserve(t, fixture.manager, created.ID)
 	assertFailure(t, terminal, FailureSessionCreation, false)
 
@@ -502,9 +566,11 @@ func TestInvalidParametersAndUnknownCloseContracts(t *testing.T) {
 	); !errors.Is(err, ErrInvalidExecutionOptions) {
 		t.Fatalf("CreateExecution error = %v, want ErrInvalidExecutionOptions", err)
 	}
+
 	if err := fixture.manager.CloseExecution(context.Background(), "missing"); err != nil {
 		t.Fatalf("CloseExecution missing: %v", err)
 	}
+
 	if err := fixture.manager.CloseSession(context.Background(), "missing"); err != nil {
 		t.Fatalf("CloseSession missing: %v", err)
 	}
@@ -516,6 +582,7 @@ func assertLifecycleEvents(t *testing.T, events []Event, id ExecutionID, want []
 	if len(events) != len(want) {
 		t.Fatalf("events = %+v, want kinds %+v", events, want)
 	}
+
 	for i, event := range events {
 		if event.Execution != id || event.Snapshot.ID != id || event.Sequence != uint64(i+1) ||
 			event.Kind != want[i] {
@@ -531,6 +598,7 @@ func assertFailure(t *testing.T, terminal ExecutionSnapshot, category FailureCat
 		terminal.Failure.Message == "" {
 		t.Fatalf("terminal = %+v, want failed category %v", terminal, category)
 	}
+
 	if (terminal.Output != nil) != wantOutput {
 		t.Fatalf("output = %+v, want present %t", terminal.Output, wantOutput)
 	}

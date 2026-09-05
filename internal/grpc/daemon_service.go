@@ -47,6 +47,7 @@ func (s *daemonService) GetInfo(
 
 	if request.ClientApi.Major != apiMajor {
 		result := status.New(codes.FailedPrecondition, "incompatible daemon API major version")
+
 		withDetails, err := result.WithDetails(&daemonv1.ApiCompatibilityError{
 			ClientApi: request.ClientApi,
 			ServerApi: s.apiVersion(),

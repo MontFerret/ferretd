@@ -42,7 +42,6 @@ func (s *executionService) CreateSession(
 		workspace.ID(request.WorkspaceId.Value),
 		request.RelativePath,
 	)
-
 	if err != nil {
 		return nil, toExecutionStatusError(err)
 	}
@@ -94,6 +93,7 @@ func (s *executionService) CreateExecution(
 	}
 
 	parameters := map[string]any{}
+
 	if request.Parameters != nil {
 		parameters = request.Parameters.AsMap()
 	}

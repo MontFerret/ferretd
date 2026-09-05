@@ -14,11 +14,13 @@ func Dial(ctx context.Context, endpoint Endpoint) (net.Conn, error) {
 
 	var connection net.Conn
 	var err error
+
 	if endpoint.Network == NetworkTCP {
 		connection, err = dialTCP(ctx, endpoint)
 	} else {
 		connection, err = dialLocal(ctx, endpoint)
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", endpoint.String(), err)
 	}

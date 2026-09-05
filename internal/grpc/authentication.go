@@ -24,7 +24,7 @@ func newBearerAuthentication(token string) *bearerAuthentication {
 func (a *bearerAuthentication) interceptUnary(
 	ctx context.Context,
 	request any,
-	info *grpcgo.UnaryServerInfo,
+	_ *grpcgo.UnaryServerInfo,
 	handler grpcgo.UnaryHandler,
 ) (any, error) {
 	if err := a.authenticate(ctx); err != nil {
@@ -37,7 +37,7 @@ func (a *bearerAuthentication) interceptUnary(
 func (a *bearerAuthentication) interceptStream(
 	service any,
 	stream grpcgo.ServerStream,
-	info *grpcgo.StreamServerInfo,
+	_ *grpcgo.StreamServerInfo,
 	handler grpcgo.StreamHandler,
 ) error {
 	if err := a.authenticate(stream.Context()); err != nil {

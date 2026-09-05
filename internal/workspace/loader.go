@@ -60,6 +60,7 @@ func loadWorkspaceFS(
 	observers ...directoryObserver,
 ) (workspaceContent, error) {
 	var observeDirectory directoryObserver
+
 	if len(observers) != 0 {
 		observeDirectory = observers[0]
 	}
@@ -114,6 +115,7 @@ func loadWorkspaceSubtree(
 	}
 
 	closeErr := root.Close()
+
 	if loadErr != nil {
 		if closeErr != nil {
 			return workspaceContent{}, errors.Join(loadErr, fmt.Errorf("close workspace root: %w", closeErr))
@@ -139,7 +141,7 @@ func errorOnlyMatches(err error, target error) bool {
 		return false
 	}
 
-	switch current := err.(type) {
+	switch current := err.(type) { //nolint:errorlint // Inspect immediate unwrap branches to reject mixed joined errors.
 	case interface{ Unwrap() []error }:
 		unwrapped := current.Unwrap()
 		if len(unwrapped) == 0 {
@@ -193,6 +195,7 @@ func loadWorkspaceTreeFS(
 		}
 
 		document := newDocument(file, string(bytes))
+
 		if err := ctx.Err(); err != nil {
 			return workspaceContent{}, err
 		}
@@ -213,6 +216,7 @@ func validateWorkspaceDirectory(root *os.Root, relativePath string) (bool, error
 		}
 
 		current = path.Join(current, component)
+
 		info, err := root.Lstat(current)
 		if err != nil {
 			if workspacePathMissing(root.FS(), current, err) {
@@ -281,6 +285,7 @@ func discoverFiles(
 				return err
 			}
 		}
+
 		directories = append(directories, path.Clean(relativePath))
 
 		if !selectedRoot && containsGoModule(entries) {
@@ -324,6 +329,7 @@ func discoverFiles(
 
 			canonical := path.Clean(child)
 			absolute := filepath.Join(rootPath, filepath.FromSlash(canonical))
+
 			uri, err := localsource.URIFromPath(absolute)
 			if err != nil {
 				return fmt.Errorf("resolve source URI for %q: %w", canonical, err)
@@ -340,6 +346,7 @@ func discoverFiles(
 	}
 
 	canonicalStart := path.Clean(start)
+
 	selectedRoot := canonicalStart == "."
 	if !selectedRoot && isExcludedDirectory(path.Base(canonicalStart)) {
 		return nil, nil, nil

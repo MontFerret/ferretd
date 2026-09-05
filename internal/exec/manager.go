@@ -125,6 +125,7 @@ func (m *Manager) prepareSession(
 	}
 
 	apiSource := api.NewSource(file.Path, text)
+
 	plan, err := m.runtime.Compile(ctx, apiSource)
 	if err != nil {
 		if plan != nil {

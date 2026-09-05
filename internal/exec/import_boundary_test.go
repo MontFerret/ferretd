@@ -24,6 +24,7 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 	}
 
 	root := filepath.Join("..", "..")
+
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -45,6 +46,7 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 		if err != nil {
 			return err
 		}
+
 		relative = filepath.ToSlash(relative)
 		directory := filepath.ToSlash(filepath.Dir(relative))
 		testFile := strings.HasSuffix(relative, "_test.go")

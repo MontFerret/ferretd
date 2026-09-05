@@ -22,6 +22,7 @@ func TestFunctionCatalogPreservesRegistryMetadata(t *testing.T) {
 	library.Namespace("CuStOm").Function().Var().Add("DoThing", func(context.Context, ...runtime.Value) (runtime.Value, error) {
 		return runtime.None, nil
 	})
+
 	functions, err := library.Build()
 	if err != nil {
 		t.Fatal(err)
@@ -31,6 +32,7 @@ func TestFunctionCatalogPreservesRegistryMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(catalog.ordered) != 2 {
 		t.Fatalf("ordered functions = %+v", catalog.ordered)
 	}

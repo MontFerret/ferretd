@@ -20,6 +20,7 @@ import (
 func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 	workspaces := workspace.New()
+
 	server, err := New(
 		workspaces,
 		mustNewExecutionManager(t, workspaces),
@@ -31,6 +32,7 @@ func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+
 	server.SetServing()
 
 	serveDone := make(chan error, 1)
@@ -48,11 +50,13 @@ func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
+
 	t.Cleanup(func() { _ = connection.Close() })
 
 	client := healthv1.NewHealthClient(connection)
 	for _, authorization := range []string{"", "Bearer wrong-token"} {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+
 		if authorization != "" {
 			ctx = metadata.AppendToOutgoingContext(ctx, authorizationMetadataKey, authorization)
 		}
@@ -66,9 +70,11 @@ func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 		if watchErr == nil {
 			_, watchErr = watch.Recv()
 		}
+
 		if status.Code(watchErr) != codes.Unauthenticated {
 			t.Fatalf("Watch authorization %q error = %v, want Unauthenticated", authorization, watchErr)
 		}
+
 		cancel()
 	}
 
@@ -80,6 +86,7 @@ func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticated Check: %v", err)
 	}
+
 	if response.Status != healthv1.HealthCheckResponse_SERVING {
 		t.Fatalf("health status = %v, want SERVING", response.Status)
 	}
@@ -88,20 +95,25 @@ func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticated Watch: %v", err)
 	}
+
 	response, err = watch.Recv()
 	if err != nil {
 		t.Fatalf("authenticated Watch Recv: %v", err)
 	}
+
 	if response.Status != healthv1.HealthCheckResponse_SERVING {
 		t.Fatalf("watched health status = %v, want SERVING", response.Status)
 	}
+
 	cancel()
 
 	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
 	defer cancelStop()
+
 	if err := server.Stop(stopCtx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
+
 	if err := <-serveDone; err != nil && !IsStoppedError(err) {
 		t.Fatalf("Serve error = %v, want normal stop", err)
 	}

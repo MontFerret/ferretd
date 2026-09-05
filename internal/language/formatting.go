@@ -30,6 +30,7 @@ func (s *Service) Format(ctx context.Context, uri source.URI, tabSize uint32) (*
 	}
 
 	var output bytes.Buffer
+
 	instance, err := formatter.New(formatter.WithTabWidth(uint64(tabSize)))
 	if err != nil {
 		return nil, fmt.Errorf("create formatter: %w", err)
@@ -50,6 +51,7 @@ func (s *Service) Format(ctx context.Context, uri source.URI, tabSize uint32) (*
 	}
 
 	mapper := source.NewMapper(snapshot.text)
+
 	return &FormattingResult{
 		Range: source.Range{
 			Start: source.Position{},

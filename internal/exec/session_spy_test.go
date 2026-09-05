@@ -20,6 +20,7 @@ var _ api.Session = (*sessionSpy)(nil)
 func (s *sessionSpy) Run(ctx context.Context) (api.Output, error) {
 	if s.runtime.beforeRun != nil {
 		var err error
+
 		ctx, err = s.runtime.beforeRun(ctx)
 		if err != nil {
 			return api.Output{}, err

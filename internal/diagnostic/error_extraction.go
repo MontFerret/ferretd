@@ -28,6 +28,7 @@ func convertAPIDiagnostic(uri source.URI, fallbackText string, value apidiagnost
 	if text == "" {
 		text = fallbackText
 	}
+
 	mapper := source.NewMapper(text)
 	result := Diagnostic{
 		URI:      uri,
@@ -64,6 +65,7 @@ func convertAPIDiagnostic(uri source.URI, fallbackText string, value apidiagnost
 		if message == "" {
 			message = "Related location"
 		}
+
 		result.RelatedInformation = append(result.RelatedInformation, RelatedInformation{
 			URI:     uri,
 			Range:   mapper.SpanToRange(annotation.Range.Span),

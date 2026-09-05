@@ -43,6 +43,7 @@ func (o RuntimeOptions) normalized() (RuntimeOptions, error) {
 	}
 
 	canonical = filepath.Clean(canonical)
+
 	root, err := os.OpenRoot(canonical)
 	if err != nil {
 		return RuntimeOptions{}, fmt.Errorf("%w: open working directory: %w", ErrInvalidExecutionOptions, err)

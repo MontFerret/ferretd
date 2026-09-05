@@ -49,6 +49,7 @@ func TestNewRequiresDomainServices(t *testing.T) {
 			if server != nil {
 				t.Fatal("New returned a server with a nil domain dependency")
 			}
+
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("New error = %v, want %v", err, tt.want)
 			}
@@ -75,6 +76,7 @@ func TestServerHealthTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
+
 	t.Cleanup(func() { _ = connection.Close() })
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -98,6 +100,7 @@ func TestServerHealthTransitions(t *testing.T) {
 	if err := server.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
+
 	if err := <-done; err != nil && !IsStoppedError(err) {
 		t.Fatalf("Serve error = %v, want normal stop", err)
 	}
@@ -123,6 +126,7 @@ func TestServerStopForcesAfterDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
+
 	t.Cleanup(func() { _ = connection.Close() })
 
 	watch, err := healthv1.NewHealthClient(connection).Watch(
@@ -132,6 +136,7 @@ func TestServerStopForcesAfterDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Watch: %v", err)
 	}
+
 	if _, err := watch.Recv(); err != nil {
 		t.Fatalf("initial Watch response: %v", err)
 	}
@@ -142,6 +147,7 @@ func TestServerStopForcesAfterDeadline(t *testing.T) {
 	if err := server.Stop(stopCtx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Stop error = %v, want context.DeadlineExceeded", err)
 	}
+
 	if err := <-done; err != nil && !IsStoppedError(err) {
 		t.Fatalf("Serve error = %v, want normal stop", err)
 	}
@@ -149,7 +155,7 @@ func TestServerStopForcesAfterDeadline(t *testing.T) {
 
 func assertHealthStatus(
 	t *testing.T,
-	ctx context.Context,
+	ctx context.Context, //nolint:revive // Keep testing.T first in this test helper.
 	client healthv1.HealthClient,
 	services []string,
 	want healthv1.HealthCheckResponse_ServingStatus,
@@ -161,6 +167,7 @@ func assertHealthStatus(
 		if err != nil {
 			t.Fatalf("Check(%q): %v", service, err)
 		}
+
 		if response.Status != want {
 			t.Fatalf("health(%q) = %v, want %v", service, response.Status, want)
 		}

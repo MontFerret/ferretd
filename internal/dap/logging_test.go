@@ -21,14 +21,17 @@ import (
 func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 	root := t.TempDir()
 	program := writeDAPProgram(t, root, "RETURN 1")
+
 	other := filepath.Join(root, "other.fql")
 	if err := os.WriteFile(other, []byte("RETURN 2"), 0o600); err != nil {
 		t.Fatalf("write other program: %v", err)
 	}
+
 	programCanonical, err := filepath.EvalSymlinks(program)
 	if err != nil {
 		t.Fatalf("canonicalize program: %v", err)
 	}
+
 	otherCanonical, err := filepath.EvalSymlinks(other)
 	if err != nil {
 		t.Fatalf("canonicalize other program: %v", err)
@@ -48,6 +51,7 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 			Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
 		},
 	})
+
 	response, ok := client.read().(*protocol.SetBreakpointsResponse)
 	if !ok || !response.Success || len(response.Body.Breakpoints) != 1 || response.Body.Breakpoints[0].Verified {
 		t.Fatalf("unowned setBreakpoints response = %#v", response)
@@ -62,6 +66,7 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 			Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
 		},
 	})
+
 	response, ok = client.read().(*protocol.SetBreakpointsResponse)
 	if !ok || !response.Success || len(response.Body.Breakpoints) != 1 || response.Body.Breakpoints[0].Verified {
 		t.Fatalf("unavailable setBreakpoints response = %#v", response)
@@ -69,12 +74,15 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
 	}
+
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
 		t.Fatalf("stopped event = %#v", stopped)
 	}
@@ -94,10 +102,12 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 			FrameId: 37,
 		},
 	})
+
 	if response, ok := client.read().(*protocol.EvaluateResponse); !ok || !response.Success ||
 		response.Body.Result != "" || response.Body.VariablesReference != 0 {
 		t.Fatalf("empty evaluate response = %#v", response)
 	}
+
 	client.disconnect()
 
 	records := decodeDiagnostics(t, diagnostics.Bytes())
@@ -116,6 +126,7 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 			t.Fatalf("created diagnostic %s = %#v", key, created[key])
 		}
 	}
+
 	requireDiagnostic(t, records, diagnosticRecord{
 		"level": "info", "message": "DAP configuration completed",
 	})
@@ -131,6 +142,7 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 		"launch_program_canonical": programCanonical,
 		"count":                    1,
 	})
+
 	unavailable := requireDiagnostic(t, records, diagnosticRecord{
 		"level":                    "warn",
 		"message":                  "DAP breakpoint source is unavailable",
@@ -142,6 +154,7 @@ func TestDAPInfoDiagnosticsLogFailuresWithoutDebugTraffic(t *testing.T) {
 	if value, ok := unavailable["error"].(string); !ok || value == "" {
 		t.Fatalf("unavailable diagnostic error = %#v", unavailable["error"])
 	}
+
 	requireDiagnostic(t, records, diagnosticRecord{
 		"level": "warn", "message": "DAP request failed", "command": "scopes", "frame_id": 37,
 	})
@@ -186,20 +199,25 @@ RETURN @`+parameterKey)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	launch := client.request("launch")
 	client.send(&protocol.LaunchRequest{Request: launch, Arguments: arguments})
+
 	if _, ok := client.read().(*protocol.InitializedEvent); !ok {
 		t.Fatal("expected initialized event")
 	}
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
 	}
+
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
 		t.Fatalf("stopped event = %#v", stopped)
 	}
@@ -213,6 +231,7 @@ RETURN @`+parameterKey)
 			Context:    "watch",
 		},
 	})
+
 	response, ok := client.read().(*protocol.EvaluateResponse)
 	if !ok || !response.Success {
 		t.Fatalf("evaluate response = %#v", response)
@@ -226,6 +245,7 @@ RETURN @`+parameterKey)
 			Context:    "watch",
 		},
 	})
+
 	failure, ok := client.read().(*protocol.ErrorResponse)
 	if !ok || failure.Success || !strings.Contains(failure.Message, failureSecret) {
 		t.Fatalf("failed evaluate response = %#v", failure)
@@ -239,6 +259,7 @@ RETURN @`+parameterKey)
 			FrameId: 37,
 		},
 	})
+
 	emptyResponse, ok := client.read().(*protocol.EvaluateResponse)
 	if !ok || !emptyResponse.Success || emptyResponse.Body.Result != "" ||
 		emptyResponse.Body.VariablesReference != 0 {
@@ -250,19 +271,24 @@ RETURN @`+parameterKey)
 		Request:   continueRequest,
 		Arguments: protocol.ContinueArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.ContinueResponse); !ok || !response.Success {
 		t.Fatalf("continue response = %#v", response)
 	}
+
 	if output, ok := client.read().(*protocol.OutputEvent); !ok ||
 		output.Body.Category != "stdout" || !strings.Contains(output.Body.Output, parameterSecret) {
 		t.Fatalf("output event = %#v", output)
 	}
+
 	if exited, ok := client.read().(*protocol.ExitedEvent); !ok || exited.Body.ExitCode != 0 {
 		t.Fatalf("exited event = %#v", exited)
 	}
+
 	if _, ok := client.read().(*protocol.TerminatedEvent); !ok {
 		t.Fatal("expected terminated event")
 	}
+
 	client.disconnect()
 
 	records := decodeDiagnostics(t, diagnostics.Bytes())
@@ -294,6 +320,7 @@ RETURN @`+parameterKey)
 	// event's post-write trace runs. Sequence fields retain the logical order.
 	slices.Sort(gotTrace)
 	slices.Sort(wantTrace)
+
 	if !reflect.DeepEqual(gotTrace, wantTrace) {
 		t.Fatalf("trace signatures = %#v, want %#v", gotTrace, wantTrace)
 	}
@@ -311,12 +338,14 @@ RETURN @`+parameterKey)
 		"message": "DAP request", "command": "evaluate", "context": "watch", "frame_id": 0,
 		"expression_length": len(expression),
 	})
+
 	failureRecord := requireDiagnostic(t, records, diagnosticRecord{
 		"message": "DAP request failed", "command": "evaluate", "error": "debug evaluation failed",
 	})
 	if errorType, ok := failureRecord["error_type"].(string); !ok || errorType == "" {
 		t.Fatalf("evaluation failure error_type = %#v", failureRecord["error_type"])
 	}
+
 	requireDiagnostic(t, records, diagnosticRecord{
 		"message":           "DAP request",
 		"command":           "evaluate",
@@ -356,6 +385,7 @@ RETURN @`+parameterKey)
 func TestDAPDebugLoggingPreservesProtocolOutput(t *testing.T) {
 	input := func() []byte {
 		var stream bytes.Buffer
+
 		initialize := protocol.Request{
 			ProtocolMessage: protocol.ProtocolMessage{Seq: 1, Type: "request"},
 			Command:         "initialize",
@@ -387,10 +417,12 @@ func TestDAPDebugLoggingPreservesProtocolOutput(t *testing.T) {
 		t.Helper()
 
 		var output bytes.Buffer
+
 		server, err := New(bytes.NewReader(input), &output, options)
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
+
 		if err := server.Run(context.Background()); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -401,10 +433,12 @@ func TestDAPDebugLoggingPreservesProtocolOutput(t *testing.T) {
 	want := run(Options{})
 	var diagnostics bytes.Buffer
 	logger := newCaptureLogger(&diagnostics, zerolog.DebugLevel)
+
 	got := run(Options{Logger: logger})
 	if !bytes.Equal(got, want) {
 		t.Fatalf("debug protocol output differs:\n got %q\nwant %q", got, want)
 	}
+
 	if bytes.Contains(got, []byte("DAP request")) || bytes.Contains(got, []byte("component=dap")) {
 		t.Fatalf("protocol output contains diagnostics: %q", got)
 	}
@@ -415,12 +449,14 @@ func TestDAPDebugLoggingPreservesProtocolOutput(t *testing.T) {
 	} else if response, ok := message.(*protocol.InitializeResponse); !ok || !response.Success {
 		t.Fatalf("initialize response = %#v", message)
 	}
+
 	if message, err := protocol.ReadProtocolMessage(reader); err != nil {
 		t.Fatalf("read disconnect response: %v", err)
 	} else if response, ok := message.(*protocol.DisconnectResponse); !ok || !response.Success {
 		t.Fatalf("disconnect response = %#v", message)
 	}
-	if _, err := protocol.ReadProtocolMessage(reader); err != io.EOF {
+
+	if _, err := protocol.ReadProtocolMessage(reader); err != io.EOF { //nolint:errorlint // Require exact EOF for an exhausted protocol stream.
 		t.Fatalf("protocol output trailing read error = %v, want EOF", err)
 	}
 }
@@ -446,6 +482,7 @@ func decodeDiagnostics(t *testing.T, data []byte) []diagnosticRecord {
 
 		records = append(records, record)
 	}
+
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("scan diagnostics: %v", err)
 	}

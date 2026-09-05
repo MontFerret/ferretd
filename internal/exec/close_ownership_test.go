@@ -149,6 +149,7 @@ func TestParentRetainedSessionPreservesCompletedCloseResult(t *testing.T) {
 	if err := manager.CloseSession(context.Background(), snapshot.ID); !errors.Is(err, want) {
 		t.Fatalf("CloseSession error = %v, want %v", err, want)
 	}
+
 	if err := manager.closeSession(context.Background(), snapshot.ID, retained); !errors.Is(err, want) {
 		t.Fatalf("retained Session close error = %v, want %v", err, want)
 	}
@@ -177,6 +178,7 @@ func TestCloseExecutionCallerCancellationRetainsSessionOwnership(t *testing.T) {
 
 	fixture.releaseClose()
 	waitForResult(t, sessionClose, "Session close")
+
 	if err := fixture.manager.CloseExecution(context.Background(), fixture.executionID); err != nil {
 		t.Fatalf("wait for committed Execution close: %v", err)
 	}
@@ -252,8 +254,10 @@ func TestConcurrentCloseExecutionRetainsCleanupFailureForParent(t *testing.T) {
 	for range waiters {
 		waitForExpectedError(t, waiterResults, "concurrent Execution close", want)
 	}
+
 	waitForExpectedError(t, sessionResult, "parent Session close", want)
 	assertCloseCounts(t, fixture)
+
 	if state := fixture.execution.snapshot().State; state != StateCancelled {
 		t.Fatalf("Execution state after failed cleanup = %v, want cancelled", state)
 	}
@@ -305,9 +309,11 @@ func TestConcurrentCloseSessionSharesFailureAndOneOwner(t *testing.T) {
 			t.Fatalf("CloseSession error = %v, want %v", err, want)
 		}
 	}
+
 	if got := closeCalls.Load(); got != 1 {
 		t.Fatalf("Plan close calls = %d, want 1", got)
 	}
+
 	if err := manager.CloseSession(context.Background(), session.ID); err != nil {
 		t.Fatalf("late idempotent CloseSession: %v", err)
 	}
@@ -352,6 +358,7 @@ func newCloseOwnershipFixtureWithRuntimeCloseError(
 		}),
 		withPlanCloseHook(func() error {
 			fixture.planCloseCalls.Add(1)
+
 			if !fixture.execution.close.Finished() {
 				fixture.planClosedTooEarly.Store(true)
 			}
@@ -361,6 +368,7 @@ func newCloseOwnershipFixtureWithRuntimeCloseError(
 			return nil
 		}),
 	)
+
 	created, err := manager.CreateExecution(context.Background(), session.ID, nil, RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
@@ -408,11 +416,14 @@ func assertExecutionOwnership(t *testing.T, manager *Manager, execution *executi
 	manager.executions.mu.RLock()
 	group := manager.executions.bySession[execution.runtime.target.sessionID]
 	var entry *executionEntry
+
 	if group != nil {
 		entry = group.entries[execution.id]
 	}
+
 	owned := entry != nil && entry.execution == execution
 	manager.executions.mu.RUnlock()
+
 	if owned != want {
 		t.Fatalf("Session owns Execution = %t, want %t", owned, want)
 	}
@@ -430,12 +441,15 @@ func assertWorkspaceGroupOwnership(
 	manager.sessions.mu.RLock()
 	group := manager.sessions.groups[workspaceID]
 	var owned bool
+
 	if group != nil {
 		group.mu.Lock()
 		owned = group.sessions[sessionID] != nil
 		group.mu.Unlock()
 	}
+
 	manager.sessions.mu.RUnlock()
+
 	if owned != want {
 		t.Fatalf("workspace group owns Session = %t, want %t", owned, want)
 	}

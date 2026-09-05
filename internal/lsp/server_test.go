@@ -20,6 +20,7 @@ func TestNewRequiresLanguageService(t *testing.T) {
 	if server != nil {
 		t.Fatal("New returned a server for a nil language dependency")
 	}
+
 	if !errors.Is(err, errNilLanguageService) {
 		t.Fatalf("New error = %v, want %v", err, errNilLanguageService)
 	}
@@ -27,10 +28,12 @@ func TestNewRequiresLanguageService(t *testing.T) {
 
 func TestNewUsesSuppliedLanguageService(t *testing.T) {
 	service := newTestLanguageService(t)
+
 	server, err := New(service)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+
 	if server.language != service {
 		t.Fatal("New did not retain the supplied language service")
 	}
@@ -43,39 +46,50 @@ func TestInitializeAdvertisesFullDocumentSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
+
 	result := value.(protocol.InitializeResult)
+
 	options, ok := result.Capabilities.TextDocumentSync.(*protocol.TextDocumentSyncOptions)
 	if !ok {
 		t.Fatalf("TextDocumentSync = %T", result.Capabilities.TextDocumentSync)
 	}
+
 	if options.OpenClose == nil || !*options.OpenClose {
 		t.Fatalf("OpenClose = %#v", options.OpenClose)
 	}
+
 	if options.Change == nil || *options.Change != protocol.TextDocumentSyncKindFull {
 		t.Fatalf("Change = %#v", options.Change)
 	}
+
 	if result.Capabilities.DocumentSymbolProvider != true || result.Capabilities.HoverProvider != true ||
 		result.Capabilities.DefinitionProvider != true || result.Capabilities.ReferencesProvider != true ||
 		result.Capabilities.DocumentFormattingProvider != true {
 		t.Fatalf("language capabilities = %#v", result.Capabilities)
 	}
+
 	if result.Capabilities.RenameProvider != nil || result.Capabilities.CodeActionProvider != nil ||
 		result.Capabilities.WorkspaceSymbolProvider != nil || result.Capabilities.DocumentRangeFormattingProvider != nil {
 		t.Fatalf("future capabilities advertised = %#v", result.Capabilities)
 	}
+
 	if result.Capabilities.Workspace == nil || result.Capabilities.Workspace.WorkspaceFolders == nil ||
 		result.Capabilities.Workspace.WorkspaceFolders.Supported == nil ||
 		!*result.Capabilities.Workspace.WorkspaceFolders.Supported ||
 		result.Capabilities.Workspace.WorkspaceFolders.ChangeNotifications != nil {
 		t.Fatalf("workspace folder capabilities = %#v", result.Capabilities.Workspace)
 	}
+
 	if result.Capabilities.CompletionProvider == nil || !reflect.DeepEqual(result.Capabilities.CompletionProvider.TriggerCharacters, []string{"@", ":"}) {
 		t.Fatalf("completion provider = %#v", result.Capabilities.CompletionProvider)
 	}
+
 	if result.Capabilities.SignatureHelpProvider == nil || !reflect.DeepEqual(result.Capabilities.SignatureHelpProvider.TriggerCharacters, []string{"(", ","}) {
 		t.Fatalf("signature provider = %#v", result.Capabilities.SignatureHelpProvider)
 	}
+
 	semantic, ok := result.Capabilities.SemanticTokensProvider.(*protocol.SemanticTokensOptions)
+
 	wantLegend := protocol.SemanticTokensLegend{
 		TokenTypes:     []string{"namespace", "function", "variable", "parameter", "keyword", "string", "number", "comment", "operator"},
 		TokenModifiers: []string{"declaration", "readonly"},
@@ -97,6 +111,7 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 		if method != protocol.ServerTextDocumentPublishDiagnostics {
 			t.Fatalf("notification method = %q", method)
 		}
+
 		published = append(published, params.(protocol.PublishDiagnosticsParams))
 		publishedSignal <- struct{}{}
 	}}
@@ -111,7 +126,9 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("didOpen: %v", err)
 	}
+
 	waitForNotification(t, publishedSignal)
+
 	if len(published) != 1 || len(published[0].Diagnostics) != 0 || published[0].Version == nil || *published[0].Version != 1 {
 		t.Fatalf("didOpen published = %#v", published)
 	}
@@ -125,7 +142,9 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("didChange: %v", err)
 	}
+
 	waitForNotification(t, publishedSignal)
+
 	if len(published) != 2 || len(published[1].Diagnostics) == 0 || published[1].Version == nil || *published[1].Version != 2 {
 		t.Fatalf("didChange published = %#v", published)
 	}
@@ -135,9 +154,11 @@ func TestDocumentLifecyclePublishesDiagnostics(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("didClose: %v", err)
 	}
+
 	if len(published) != 3 || len(published[2].Diagnostics) != 0 || published[2].Version != nil {
 		t.Fatalf("didClose published = %#v", published)
 	}
+
 	if err := service.ChangeDocument(context.Background(), uri, 3, []language.TextChange{{Text: "RETURN 3"}}); !errors.Is(err, language.ErrDocumentNotOpen) {
 		t.Fatalf("didClose retained document: %v", err)
 	}
@@ -156,6 +177,7 @@ func waitForNotification(t *testing.T, signal <-chan struct{}) {
 func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
 	service := newTestLanguageService(t)
 	server := mustNewServer(t, service)
+
 	uri := documentURI(t, "query.fql")
 	if err := service.OpenDocument(context.Background(), uri, 1, "RETURN 1"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
@@ -184,6 +206,7 @@ func TestDidChangeRejectsIncrementalChanges(t *testing.T) {
 func TestDidChangeRejectsUnsupportedChanges(t *testing.T) {
 	service := newTestLanguageService(t)
 	server := mustNewServer(t, service)
+
 	uri := documentURI(t, "query.fql")
 	if err := service.OpenDocument(context.Background(), uri, 1, "RETURN 1"); err != nil {
 		t.Fatalf("OpenDocument: %v", err)
@@ -208,5 +231,6 @@ func documentURI(t *testing.T, name string) source.URI {
 	if err != nil {
 		t.Fatalf("URIFromPath: %v", err)
 	}
+
 	return uri
 }

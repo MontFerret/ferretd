@@ -13,6 +13,7 @@ import (
 
 func TestMapCompatibilityError(t *testing.T) {
 	grpcStatus := status.New(codes.FailedPrecondition, "incompatible")
+
 	withDetails, err := grpcStatus.WithDetails(&daemonv1.ApiCompatibilityError{
 		ClientApi: &daemonv1.ApiVersion{Major: 2, Minor: 1},
 		ServerApi: &daemonv1.ApiVersion{Major: 1, Minor: 0},

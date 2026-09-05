@@ -17,11 +17,11 @@ func toExecutionStatusError(err error) error {
 
 	if errors.As(err, &compilation) {
 		base := status.New(codes.InvalidArgument, exec.ErrCompilationFailed.Error())
+
 		withDetails, detailErr := base.WithDetails(&executionv1.CompilationFailure{
 			Source:      toProtoSourceSnapshot(compilation.Source),
 			Diagnostics: toProtoDiagnostics(compilation.Diagnostics),
 		})
-
 		if detailErr != nil {
 			return base.Err()
 		}
@@ -66,11 +66,11 @@ func resourceStatusError(
 	condition executionv1.ResourceCondition,
 ) error {
 	base := status.New(code, err.Error())
+
 	withDetails, detailErr := base.WithDetails(&executionv1.ResourceErrorDetail{
 		Resource:  resource,
 		Condition: condition,
 	})
-
 	if detailErr != nil {
 		return base.Err()
 	}

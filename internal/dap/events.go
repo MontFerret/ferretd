@@ -53,6 +53,7 @@ func (s *Server) watchDebugSession(subscription debug.Subscription) {
 		if sendErr := s.sendTerminated(); sendErr != nil {
 			s.logger.Error().Err(sendErr).Msg("send DAP terminated event failed")
 		}
+
 		s.eventMu.Unlock()
 	}
 }
@@ -65,10 +66,12 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 		s.logger.Info().Msg("DAP execution running")
 	case debug.StateStopped:
 		s.stateMu.Lock()
+
 		suppress := s.suppressEntry && snapshot.Reason == apidebugger.ReasonEntry
 		if suppress {
 			s.suppressEntry = false
 		}
+
 		s.stateMu.Unlock()
 
 		if suppress {
@@ -81,6 +84,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 
 			if _, err := s.debugs.ContinueSession(context.Background(), snapshot.ID); err != nil {
 				s.logger.Error().Err(err).Msg("DAP continue after entry failed")
+
 				if sendErr := s.sendOutput(outputCategoryStderr, fmt.Sprintf("continue after entry failed: %v\n", err)); sendErr != nil {
 					s.logger.Error().Err(sendErr).Msg("send DAP output event failed")
 				}
@@ -159,6 +163,7 @@ func (s *Server) sendStopped(snapshot debug.SessionSnapshot) error {
 		reason = stopReasonPause
 	case apidebugger.ReasonRuntimeError:
 		reason = stopReasonException
+
 		if snapshot.Failure != nil {
 			description = snapshot.Failure.Message
 		}

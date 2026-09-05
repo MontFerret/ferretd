@@ -31,6 +31,7 @@ func TestLSP(t *testing.T) {
 	if output != "" {
 		t.Fatalf("lsp output = %q, want protocol-pure stdout", output)
 	}
+
 	if !called {
 		t.Fatal("lsp command did not run the LSP server")
 	}
@@ -38,6 +39,7 @@ func TestLSP(t *testing.T) {
 
 func TestReportCatalogWarningsUsesStderrOnly(t *testing.T) {
 	var stderr bytes.Buffer
+
 	warnings := []language.CatalogWarning{
 		{Kind: language.CatalogWarningReferenceOnly, Name: "api::only"},
 		{Kind: language.CatalogWarningRuntimeOnly, Name: "runtime::only"},

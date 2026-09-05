@@ -64,9 +64,11 @@ func TestExecutionOptionsProtoRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decode options: %v", err)
 			}
+
 			if decoded.WorkingDirectory != test.wantDirectory {
 				t.Fatalf("decoded WorkingDirectory = %q, want %q", decoded.WorkingDirectory, test.wantDirectory)
 			}
+
 			if decoded.OutputContentType != test.wantContentType {
 				t.Fatalf("decoded OutputContentType = %q, want %q", decoded.OutputContentType, test.wantContentType)
 			}
@@ -75,9 +77,11 @@ func TestExecutionOptionsProtoRoundTrip(t *testing.T) {
 			if present := encoded.WorkingDirectory != nil; present != test.wantPresent {
 				t.Fatalf("encoded working directory presence = %t, want %t", present, test.wantPresent)
 			}
+
 			if encoded.GetWorkingDirectory() != test.wantDirectory {
 				t.Fatalf("encoded WorkingDirectory = %q, want %q", encoded.GetWorkingDirectory(), test.wantDirectory)
 			}
+
 			if encoded.OutputContentType != test.wantContentType {
 				t.Fatalf("encoded OutputContentType = %q, want %q", encoded.OutputContentType, test.wantContentType)
 			}
@@ -95,6 +99,7 @@ func TestExecutionServiceRejectsPresentBlankWorkingDirectory(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			workspaces := workspace.New()
+
 			service, err := newExecutionService(mustNewExecutionManager(t, workspaces))
 			if err != nil {
 				t.Fatalf("newExecutionService: %v", err)
@@ -104,6 +109,7 @@ func TestExecutionServiceRejectsPresentBlankWorkingDirectory(t *testing.T) {
 				SessionId: &executionv1.SessionId{Value: "session"},
 				Options:   &executionv1.ExecutionOptions{WorkingDirectory: &test.value},
 			})
+
 			grpcStatus := status.Convert(err)
 			if grpcStatus.Code() != codes.InvalidArgument {
 				t.Fatalf("CreateExecution code = %v, want InvalidArgument", grpcStatus.Code())
@@ -113,9 +119,11 @@ func TestExecutionServiceRejectsPresentBlankWorkingDirectory(t *testing.T) {
 			for _, value := range grpcStatus.Details() {
 				if typed, ok := value.(*executionv1.ResourceErrorDetail); ok {
 					detail = typed
+
 					break
 				}
 			}
+
 			if detail == nil || detail.Resource != executionv1.ResourceKind_RESOURCE_KIND_EXECUTION ||
 				detail.Condition != executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_OPTIONS {
 				t.Fatalf("resource detail = %+v, want execution/invalid-options", detail)
@@ -133,6 +141,7 @@ func TestExecutionCancellationPrecedesOptionValidation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	empty := ""
+
 	_, err = service.CreateExecution(ctx, &executionv1.CreateExecutionRequest{
 		SessionId: &executionv1.SessionId{Value: "session"},
 		Options:   &executionv1.ExecutionOptions{WorkingDirectory: &empty},
@@ -171,9 +180,11 @@ func TestProtoExecutionWorkingDirectoryPresence(t *testing.T) {
 			if err != nil {
 				t.Fatalf("toProtoExecution: %v", err)
 			}
+
 			if present := encoded.Options.WorkingDirectory != nil; present != test.wantPresent {
 				t.Fatalf("working_directory presence = %t, want %t", present, test.wantPresent)
 			}
+
 			if encoded.Options.GetWorkingDirectory() != test.wantDirectory {
 				t.Fatalf(
 					"WorkingDirectory = %q, want %q",

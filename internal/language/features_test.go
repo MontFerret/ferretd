@@ -18,6 +18,7 @@ import (
 func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
+
 	path := filepath.Join(root, "query.fql")
 	if err := os.WriteFile(path, []byte("RETURN missing"), 0o600); err != nil {
 		t.Fatal(err)
@@ -29,10 +30,13 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 			t.Errorf("Clear: %v", err)
 		}
 	})
+
 	if _, err := manager.Open(ctx, root); err != nil {
 		t.Fatal(err)
 	}
+
 	service := mustNewService(t, manager, newTestDefaultCatalog(t), Options{})
+
 	uri, err := source.URIFromPath(path)
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +50,7 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 	if err := service.OpenDocument(ctx, uri, 1, "RETURN 1"); err != nil {
 		t.Fatal(err)
 	}
+
 	report, err = service.Diagnostics(ctx, uri)
 	if err != nil || len(report.Items) != 0 || report.Version == nil || *report.Version != 1 {
 		t.Fatalf("overlay diagnostics = %+v, %v", report, err)
@@ -54,6 +59,7 @@ func TestWorkspaceFallbackAndOverlayPrecedence(t *testing.T) {
 	if err := service.CloseDocument(ctx, uri); err != nil {
 		t.Fatal(err)
 	}
+
 	report, err = service.Diagnostics(ctx, uri)
 	if err != nil || len(report.Items) == 0 || report.Version != nil {
 		t.Fatalf("workspace diagnostics after close = %+v, %v", report, err)
@@ -74,6 +80,7 @@ RETURN [outer(shared), shared]`
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	outer := findDocumentSymbol(symbols, "outer")
 	if outer == nil || findDocumentSymbol(outer.Children, "param") == nil || findDocumentSymbol(outer.Children, "inner") == nil {
 		t.Fatalf("document symbol hierarchy = %+v", symbols)
@@ -81,10 +88,12 @@ RETURN [outer(shared), shared]`
 
 	mapper := source.NewMapper(query)
 	capturedOffset := strings.Index(query, "=> shared") + len("=> ")
+
 	definition, err := service.Definition(context.Background(), uri, mapper.OffsetToPosition(capturedOffset))
 	if err != nil || definition == nil {
 		t.Fatalf("captured definition = %+v, %v", definition, err)
 	}
+
 	if got := mapper.PositionToOffset(definition.Range.Start); got != strings.Index(query, "shared = param") {
 		t.Fatalf("captured definition offset = %d", got)
 	}
@@ -93,6 +102,7 @@ RETURN [outer(shared), shared]`
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(references) != 2 {
 		t.Fatalf("inner shared references = %+v", references)
 	}
@@ -134,6 +144,7 @@ RETURN run(top)`
 			if err != nil || location == nil {
 				t.Fatalf("definition = %+v, %v", location, err)
 			}
+
 			if got := mapper.PositionToOffset(location.Range.Start); got != test.definition {
 				t.Fatalf("definition offset = %d, want %d", got, test.definition)
 			}
@@ -173,6 +184,7 @@ RETURN add(value, 2)`
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	for _, label := range []string{"value", "add", "return", "print"} {
 		if !hasCompletion(items, label) {
 			t.Errorf("completion does not contain %q", label)
@@ -183,6 +195,7 @@ RETURN add(value, 2)`
 	if err != nil || signature == nil {
 		t.Fatalf("signature = %+v, %v", signature, err)
 	}
+
 	if !reflect.DeepEqual(signature.Signatures, []Signature{{
 		Label:      "add(left, right)",
 		Parameters: testSignatureParameters("left", "right"),
@@ -194,6 +207,7 @@ RETURN add(value, 2)`
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	for _, kind := range []SemanticTokenKind{
 		SemanticTokenFunction, SemanticTokenVariable, SemanticTokenParameter,
 		SemanticTokenKeyword, SemanticTokenNumber, SemanticTokenComment, SemanticTokenOperator,
@@ -205,6 +219,7 @@ RETURN add(value, 2)`
 
 	unformatted := "LET value=1\nRETURN {value:value}"
 	formatService, formatURI := openLanguageDocument(t, unformatted)
+
 	edits, err := formatService.Format(context.Background(), formatURI, 2)
 	if err != nil || edits == nil || edits.Text == unformatted || strings.Contains(edits.Text, "\t") {
 		t.Fatalf("format edits = %+v, %v", edits, err)
@@ -213,6 +228,7 @@ RETURN add(value, 2)`
 	formattedService, formattedURI := openLanguageDocument(t, edits.Text)
 	formattedMapper := source.NewMapper(edits.Text)
 	formattedUse := strings.LastIndex(edits.Text, "value")
+
 	formattedDefinition, err := formattedService.Definition(
 		context.Background(),
 		formattedURI,
@@ -229,6 +245,7 @@ RETURN add(value, 2)`
 	}
 
 	invalidService, invalidURI := openLanguageDocument(t, "RETURN [")
+
 	invalid, err := invalidService.Format(context.Background(), invalidURI, 4)
 	if err != nil || invalid != nil {
 		t.Fatalf("invalid format = %+v, %v", invalid, err)
@@ -246,31 +263,38 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 	library.Namespace("CuStOm").Function().Var().Add("DoThing", func(context.Context, ...runtime.Value) (runtime.Value, error) {
 		return runtime.None, nil
 	})
+
 	functions, err := library.Build()
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	configuredParams := runtime.Params{"Configured": runtime.Int(1)}
 	service := mustNewService(t, workspace.New(), newTestRuntimeCatalog(t, functions), Options{Parameters: configuredParams})
 	configuredParams["AddedLater"] = runtime.Int(2)
 	query := "RETURN CuStOm" + runtime.NamespaceSeparator + "DoThing(@Known)"
+
 	uri := documentURI(t, "registry.fql")
 	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
 		t.Fatal(err)
 	}
+
 	mapper := source.NewMapper(query)
 
 	items, err := service.Completion(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "DoThing")))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !hasCompletion(items, "CuStOm::DoThing") {
 		t.Fatalf("namespace completion = %+v", items)
 	}
+
 	typedItems, err := service.Completion(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "DoThing")+len("Do")))
 	if err != nil || !hasCompletion(typedItems, "CuStOm::DoThing") {
 		t.Fatalf("typed namespace completion = %+v, %v", typedItems, err)
 	}
+
 	bindItems, err := service.Completion(
 		context.Background(),
 		uri,
@@ -281,6 +305,7 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 	}
 
 	signature, err := service.SignatureHelp(context.Background(), uri, mapper.OffsetToPosition(strings.Index(query, "@Known")))
+
 	wantSignatures := []Signature{
 		{Label: "CuStOm::DoThing(arg1)", Parameters: testSignatureParameters("arg1")},
 		{Label: "CuStOm::DoThing(arg1, arg2)", Parameters: testSignatureParameters("arg1", "arg2")},
@@ -302,10 +327,12 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 		newTestRuntimeCatalog(t, functions),
 		Options{Parameters: runtime.Params{"Configured": runtime.Int(1)}},
 	)
+
 	paramURI := documentURI(t, "params.fql")
 	if err := paramService.OpenDocument(context.Background(), paramURI, 1, "RETURN @"); err != nil {
 		t.Fatal(err)
 	}
+
 	params, err := paramService.Completion(context.Background(), paramURI, source.Position{Character: 8})
 	if err != nil || !hasCompletion(params, "Configured") {
 		t.Fatalf("configured parameter completion = %+v, %v", params, err)
@@ -315,10 +342,12 @@ func TestConfiguredRegistryAndParametersDriveLanguageFeatures(t *testing.T) {
 func TestCompletionPreservesCaseSensitiveSourceNames(t *testing.T) {
 	query := "LET foo = 1\nLET FOO = 2\nRETURN foo"
 	service, uri := openLanguageDocument(t, query)
+
 	items, err := service.Completion(context.Background(), uri, source.NewMapper(query).OffsetToPosition(strings.LastIndex(query, "foo")))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !hasCompletion(items, "foo") || !hasCompletion(items, "FOO") {
 		t.Fatalf("case-sensitive completion = %+v", items)
 	}
@@ -326,18 +355,21 @@ func TestCompletionPreservesCaseSensitiveSourceNames(t *testing.T) {
 
 func TestCompletionDistinguishesStatementExpressionAndDeclarationContexts(t *testing.T) {
 	statementService, statementURI := openLanguageDocument(t, "")
+
 	statement, err := statementService.Completion(context.Background(), statementURI, source.Position{})
 	if err != nil || !hasCompletion(statement, "let") || hasCompletion(statement, "print") {
 		t.Fatalf("statement completion = %+v, %v", statement, err)
 	}
 
 	expressionService, expressionURI := openLanguageDocument(t, "return ")
+
 	expression, err := expressionService.Completion(context.Background(), expressionURI, source.Position{Character: 7})
 	if err != nil || !hasCompletion(expression, "print") {
 		t.Fatalf("expression completion = %+v, %v", expression, err)
 	}
 
 	declarationService, declarationURI := openLanguageDocument(t, "let ")
+
 	declaration, err := declarationService.Completion(context.Background(), declarationURI, source.Position{Character: 4})
 	if err != nil || len(declaration) != 0 {
 		t.Fatalf("declaration completion = %+v, %v", declaration, err)
@@ -346,6 +378,7 @@ func TestCompletionDistinguishesStatementExpressionAndDeclarationContexts(t *tes
 
 func TestCompletionUsesCanonicalLowercaseForLowercasePrefix(t *testing.T) {
 	service, uri := openLanguageDocument(t, "re")
+
 	items, err := service.Completion(context.Background(), uri, source.Position{Character: 2})
 	if err != nil {
 		t.Fatal(err)
@@ -363,6 +396,7 @@ func TestCompletionUsesCanonicalLowercaseForLowercasePrefix(t *testing.T) {
 
 func TestCompletionUsesFerretSyntaxWordMetadata(t *testing.T) {
 	service, uri := openLanguageDocument(t, "RETURN ")
+
 	items, err := service.Completion(context.Background(), uri, source.Position{Character: 7})
 	if err != nil {
 		t.Fatal(err)
@@ -416,10 +450,12 @@ func TestCompletionUsesFerretSyntaxWordMetadata(t *testing.T) {
 func TestSemanticTokensSplitQualifiedCallsIntoNamespaceAndFunction(t *testing.T) {
 	query := "USE WEB" + runtime.NamespaceSeparator + "HTML AS html\nRETURN html" + runtime.NamespaceSeparator + `PARSE("<p/>")`
 	service, uri := openLanguageDocument(t, query)
+
 	tokens, err := service.SemanticTokens(context.Background(), uri)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	mapper := source.NewMapper(query)
 
 	var namespaceText, functionText string
@@ -436,20 +472,22 @@ func TestSemanticTokensSplitQualifiedCallsIntoNamespaceAndFunction(t *testing.T)
 			}
 		}
 	}
+
 	if namespaceText == "" || functionText == "" {
 		t.Fatalf("qualified semantic tokens = %+v", tokens)
 	}
 }
 
 func TestSemanticTokenConflictPriority(t *testing.T) {
-	if !(semanticPriorityDeclaration > semanticPriorityReference &&
-		semanticPriorityReference > semanticPriorityCall &&
-		semanticPriorityCall > semanticPrioritySyntax) {
+	if semanticPriorityDeclaration <= semanticPriorityReference ||
+		semanticPriorityReference <= semanticPriorityCall ||
+		semanticPriorityCall <= semanticPrioritySyntax {
 		t.Fatalf("semantic priorities do not preserve declaration > reference > call > syntax")
 	}
 
 	query := "FUNC run() => 1\nRETURN run()"
 	service, uri := openLanguageDocument(t, query)
+
 	tokens, err := service.SemanticTokens(context.Background(), uri)
 	if err != nil {
 		t.Fatal(err)
@@ -478,6 +516,7 @@ func TestFormattingUsesLanguageDefaultTabSize(t *testing.T) {
 
 	query := "RETURN {outer:{inner:1}}"
 	service, uri := openLanguageDocument(t, query)
+
 	implicit, err := service.Format(context.Background(), uri, 0)
 	if err != nil || implicit == nil {
 		t.Fatalf("implicit formatting = %+v, %v", implicit, err)
@@ -496,6 +535,7 @@ func TestFormattingUsesLanguageDefaultTabSize(t *testing.T) {
 func TestSemanticTokensSplitMultilineStringsAndComments(t *testing.T) {
 	query := "/* first\r\nsecond */\nRETURN `first\nsecond`"
 	service, uri := openLanguageDocument(t, query)
+
 	tokens, err := service.SemanticTokens(context.Background(), uri)
 	if err != nil {
 		t.Fatal(err)
@@ -506,8 +546,10 @@ func TestSemanticTokensSplitMultilineStringsAndComments(t *testing.T) {
 		if token.Range.Start.Line != token.Range.End.Line {
 			t.Fatalf("multiline semantic token = %+v", token)
 		}
+
 		counts[token.Kind]++
 	}
+
 	if counts[SemanticTokenComment] != 2 || counts[SemanticTokenString] < 2 {
 		t.Fatalf("split semantic token counts = %#v, tokens = %+v", counts, tokens)
 	}
@@ -517,6 +559,7 @@ func openLanguageDocument(t *testing.T, text string) (*Service, source.URI) {
 	t.Helper()
 
 	service := newTestService(t, Options{})
+
 	uri := documentURI(t, "features.fql")
 	if err := service.OpenDocument(context.Background(), uri, 1, text); err != nil {
 		t.Fatal(err)
@@ -530,6 +573,7 @@ func findDocumentSymbol(values []DocumentSymbol, name string) *DocumentSymbol {
 		if values[index].Name == name {
 			return &values[index]
 		}
+
 		if found := findDocumentSymbol(values[index].Children, name); found != nil {
 			return found
 		}

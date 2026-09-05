@@ -16,9 +16,11 @@ func TestParseEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseEndpoint: %v", err)
 	}
+
 	if got, want := endpoint.Address, `\\.\pipe\ferretd-test`; got != want {
 		t.Fatalf("address = %q, want %q", got, want)
 	}
+
 	if got, want := endpoint.String(), "npipe:////./pipe/ferretd-test"; got != want {
 		t.Fatalf("String = %q, want %q", got, want)
 	}
@@ -35,10 +37,12 @@ func TestListenDial(t *testing.T) {
 		Network: NetworkNamedPipe,
 		Address: fmt.Sprintf(`\\.\pipe\ferretd-test-%d`, time.Now().UnixNano()),
 	}
+
 	listener, err := Listen(endpoint)
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
+
 	t.Cleanup(func() { _ = listener.Close() })
 
 	accepted := make(chan net.Conn, 1)
@@ -54,6 +58,7 @@ func TestListenDial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
+
 	_ = connection.Close()
 
 	serverConnection := <-accepted
@@ -67,10 +72,12 @@ func TestListenRefusesActiveEndpoint(t *testing.T) {
 		Network: NetworkNamedPipe,
 		Address: fmt.Sprintf(`\\.\pipe\ferretd-test-%d`, time.Now().UnixNano()),
 	}
+
 	listener, err := Listen(endpoint)
 	if err != nil {
 		t.Fatalf("first Listen: %v", err)
 	}
+
 	t.Cleanup(func() { _ = listener.Close() })
 
 	_, err = Listen(endpoint)

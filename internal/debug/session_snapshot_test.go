@@ -46,6 +46,7 @@ func TestSessionSnapshotClone(t *testing.T) {
 		value.Failure.Diagnostics[0].RelatedInformation[0].Message != "related" {
 		t.Fatalf("clone mutated original snapshot: %+v", value)
 	}
+
 	if reflect.DeepEqual(value, cloned) {
 		t.Fatal("clone did not retain independent mutable data")
 	}
@@ -54,6 +55,7 @@ func TestSessionSnapshotClone(t *testing.T) {
 func TestDebugSessionRetainsIndependentOutputSnapshots(t *testing.T) {
 	fixture := newDebugFixture(t, "RETURN 1")
 	ctx := context.Background()
+
 	created, err := fixture.manager.CreateSession(ctx, fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -72,23 +74,28 @@ func TestDebugSessionRetainsIndependentOutputSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(subscription.Cancel)
 
 	if _, err := fixture.manager.StartSession(ctx, created.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	waitForState(t, subscription, StateStopped)
 
 	if _, err := fixture.manager.ContinueSession(ctx, created.ID); err != nil {
 		t.Fatal(err)
 	}
+
 	terminal := waitForState(t, subscription, StateCompleted)
 	content[0] = 'X'
+
 	if terminal.Output == nil || terminal.Output.ContentType != "text/plain" || string(terminal.Output.Content) != "result" {
 		t.Fatalf("terminal output = %+v", terminal.Output)
 	}
 
 	terminal.Output.Content[0] = 'Y'
+
 	retained, err := fixture.manager.GetSession(ctx, created.ID)
 	if err != nil {
 		t.Fatal(err)

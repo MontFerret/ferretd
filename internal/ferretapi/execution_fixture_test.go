@@ -26,6 +26,7 @@ func mustNewManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
 	if err != nil {
 		t.Fatalf("ferret.New: %v", err)
 	}
+
 	runtime := ferretapi.New(engine)
 
 	manager, err := exec.New(workspaces, runtime)
@@ -33,6 +34,7 @@ func mustNewManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
 		_ = runtime.Close()
 		t.Fatalf("New: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = runtime.Close()
@@ -50,15 +52,19 @@ func newExecutionFixture(t *testing.T, query string) executionFixture {
 	}
 
 	workspaces := workspace.New()
+
 	opened, err := workspaces.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("workspace Open: %v", err)
 	}
+
 	manager := mustNewManager(t, workspaces)
+
 	session, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = workspaces.Clear(context.Background())
@@ -80,6 +86,7 @@ func runAndObserve(t *testing.T, manager *exec.Manager, id exec.ExecutionID) (ex
 		t.Fatalf("WatchExecution: %v", err)
 	}
 	defer subscription.Cancel()
+
 	if subscription.Current.Kind != exec.EventCreated || subscription.Current.Sequence != 1 {
 		t.Fatalf("current event = %+v", subscription.Current)
 	}
@@ -88,6 +95,7 @@ func runAndObserve(t *testing.T, manager *exec.Manager, id exec.ExecutionID) (ex
 	if err != nil {
 		t.Fatalf("RunExecution: %v", err)
 	}
+
 	if running.State != exec.StateRunning {
 		t.Fatalf("RunExecution state = %v, want running", running.State)
 	}
@@ -96,11 +104,13 @@ func runAndObserve(t *testing.T, manager *exec.Manager, id exec.ExecutionID) (ex
 	for event := range subscription.Events {
 		events = append(events, event)
 	}
+
 	for watchErr := range subscription.Errors {
 		if watchErr != nil {
 			t.Fatalf("watch error: %v", watchErr)
 		}
 	}
+
 	terminal := events[len(events)-1].Snapshot
 	if !terminal.State.Terminal() {
 		t.Fatalf("last event = %+v, want terminal", events[len(events)-1])
@@ -125,6 +135,7 @@ func runSessionOutput(t *testing.T, manager *exec.Manager, sessionID exec.Sessio
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
+
 	terminal, _ := runAndObserve(t, manager, created.ID)
 	if terminal.State != exec.StateCompleted || terminal.Output == nil {
 		t.Fatalf("terminal execution = %+v, want completed output", terminal)
@@ -140,6 +151,7 @@ func assertFailure(t *testing.T, terminal exec.ExecutionSnapshot, category exec.
 		terminal.Failure.Message == "" {
 		t.Fatalf("terminal = %+v, want failed category %v", terminal, category)
 	}
+
 	if (terminal.Output != nil) != wantOutput {
 		t.Fatalf("output = %+v, want present %t", terminal.Output, wantOutput)
 	}

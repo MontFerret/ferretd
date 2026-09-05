@@ -48,6 +48,7 @@ func buildSemanticSpans(analysis *compiler.Analysis, text string) []semanticSpan
 		}
 
 		modifiers := SemanticTokenDeclaration
+
 		if !symbol.Mutable {
 			modifiers |= SemanticTokenReadonly
 		}
@@ -67,6 +68,7 @@ func buildSemanticSpans(analysis *compiler.Analysis, text string) []semanticSpan
 		}
 
 		var modifiers SemanticTokenModifiers
+
 		if !symbol.Mutable {
 			modifiers = SemanticTokenReadonly
 		}
@@ -86,6 +88,7 @@ func buildSemanticSpans(analysis *compiler.Analysis, text string) []semanticSpan
 				span.Start += separator + len(runtime.NamespaceSeparator)
 			}
 		}
+
 		result = append(result, semanticSpan{
 			span:     span,
 			kind:     SemanticTokenFunction,
@@ -167,10 +170,12 @@ func splitSemanticSpan(mapper *source.Mapper, text string, span ferretsource.Spa
 		if offset > segmentStart {
 			result = append(result, SemanticToken{Range: mapper.SpanToRange(apisource.Span{Start: segmentStart, End: offset})})
 		}
+
 		offset += size
 		if r == '\r' && offset < end && text[offset] == '\n' {
 			offset++
 		}
+
 		segmentStart = offset
 	}
 

@@ -37,6 +37,7 @@ func TestMapperSpanToRange(t *testing.T) {
 	mapper := NewMapper("😀a\nbé")
 
 	got := mapper.SpanToRange(apisource.Span{Start: 4, End: 9})
+
 	want := Range{
 		Start: Position{Character: 2},
 		End:   Position{Line: 1, Character: 2},
@@ -46,6 +47,7 @@ func TestMapperSpanToRange(t *testing.T) {
 	}
 
 	got = mapper.SpanToRange(apisource.Span{Start: 99, End: -1})
+
 	want = Range{
 		Start: Position{Line: 1, Character: 2},
 		End:   Position{Line: 1, Character: 2},

@@ -9,11 +9,13 @@ import (
 func watcherDirectoryInfo(absolutePath string, selectedRoot bool) (os.FileInfo, error) {
 	var info os.FileInfo
 	var err error
+
 	if selectedRoot {
 		info, err = os.Stat(absolutePath)
 	} else {
 		info, err = os.Lstat(absolutePath)
 	}
+
 	if err != nil {
 		return nil, err
 	}

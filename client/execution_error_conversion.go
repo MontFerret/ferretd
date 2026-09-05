@@ -12,6 +12,7 @@ import (
 
 func mapCreateSessionError(ctx context.Context, err error) error {
 	mapped := mapError(ctx, err)
+
 	grpcStatus, ok := status.FromError(mapped)
 	if !ok {
 		return mapped
@@ -48,6 +49,7 @@ func mapSessionError(ctx context.Context, err error) error {
 
 func mapCreateExecutionError(ctx context.Context, err error) error {
 	mapped := mapExecutionStatus(ctx, err, ErrSessionNotFound, ErrSessionClosed)
+
 	grpcStatus, ok := status.FromError(mapped)
 	if ok && grpcStatus.Code() == codes.InvalidArgument {
 		return fmt.Errorf("%w: %s", ErrInvalidExecutionParameters, grpcStatus.Message())
@@ -62,6 +64,7 @@ func mapExecutionError(ctx context.Context, err error) error {
 
 func mapWatchExecutionError(ctx context.Context, err error) error {
 	mapped := mapExecutionError(ctx, err)
+
 	grpcStatus, ok := status.FromError(mapped)
 	if ok && grpcStatus.Code() == codes.ResourceExhausted {
 		return fmt.Errorf("%w: %s", ErrExecutionWatcherLagged, grpcStatus.Message())
@@ -160,6 +163,7 @@ func resourceClassification(
 
 func compilationErrorFromProto(value *executionv1.CompilationFailure, cause error) error {
 	result := &CompilationError{cause: cause}
+
 	if value != nil {
 		result.Diagnostics = fromProtoDiagnostics(value.Diagnostics)
 		if value.Source != nil {

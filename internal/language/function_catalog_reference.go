@@ -87,6 +87,7 @@ func (c *FunctionCatalog) mergeReference(reference *api.Reference) []CatalogWarn
 	warnings := make([]CatalogWarning, 0)
 	for index := range c.ordered {
 		function := &c.ordered[index]
+
 		referenceFunction, ok := byName[function.identity]
 		if !ok {
 			warnings = append(warnings, CatalogWarning{Kind: CatalogWarningRuntimeOnly, Name: function.name})

@@ -40,6 +40,7 @@ func writeWorkspaceSource(t *testing.T, root, relativePath, content string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
+
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

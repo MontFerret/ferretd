@@ -21,6 +21,7 @@ func TestSyncDownloadsExactReferenceAndCheckStaysOffline(t *testing.T) {
 
 	output := filepath.Join(t.TempDir(), "api.json")
 	command := testCommand(t, "https://example.test/index.json", output, version)
+
 	command.client.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		switch request.URL.Path {
 		case "/index.json":
@@ -39,6 +40,7 @@ func TestSyncDownloadsExactReferenceAndCheckStaysOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if string(got) != string(referenceData) {
 		t.Fatalf("written reference = %q, want %q", got, referenceData)
 	}
@@ -103,6 +105,7 @@ func TestSyncRejectsInvalidInputsWithoutReplacingOutput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			if string(got) != "original" {
 				t.Fatalf("failed sync replaced output with %q", got)
 			}
@@ -120,6 +123,7 @@ func TestCheckRejectsStaleReferenceWithoutNetwork(t *testing.T) {
 	command.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("network used during check")
 	})
+
 	err := command.check(context.Background())
 	if err == nil || !strings.Contains(err.Error(), `version = "2.0.0-alpha.48", want "2.0.0-alpha.49"`) {
 		t.Fatalf("check error = %v", err)
@@ -170,6 +174,7 @@ func testReferenceData(t testing.TB, id, version string) []byte {
 		Version:       version,
 		Namespaces:    []api.Namespace{},
 	}
+
 	data, err := json.Marshal(reference)
 	if err != nil {
 		t.Fatal(err)

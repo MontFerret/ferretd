@@ -161,6 +161,7 @@ func (r *sessionRegistry) beginClose(id SessionID, retained *sessionEntry) (*ses
 		// join a close result after the global lookup stops retaining it.
 		entry = retained
 	}
+
 	if entry == nil {
 		return nil, false
 	}
@@ -172,6 +173,7 @@ func (r *sessionRegistry) beginClose(id SessionID, retained *sessionEntry) (*ses
 	if !entry.session.beginClose() {
 		panic("execution: active Session close has already started")
 	}
+
 	entry.state = registryStateClosing
 
 	return entry, true
@@ -186,6 +188,7 @@ func (r *sessionRegistry) finishClose(entry *sessionEntry) {
 	}
 
 	workspaceID := entry.session.source.Workspace
+
 	group := r.groups[workspaceID]
 	if group == nil {
 		return

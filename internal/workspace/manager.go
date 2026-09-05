@@ -97,6 +97,7 @@ func (m *Manager) LookupDocument(ctx context.Context, absolutePath string) (Docu
 			workspaces = append(workspaces, entry.workspace)
 		}
 	}
+
 	m.mu.RUnlock()
 
 	sort.Slice(workspaces, func(i, j int) bool {
@@ -183,6 +184,7 @@ func (m *Manager) Open(ctx context.Context, root string) (*Workspace, error) {
 		}
 
 		candidate := newWorkspace(candidateID, canonical)
+
 		operation, owner := m.beginOpen(candidate)
 		if !owner {
 			continue
@@ -222,6 +224,7 @@ func (m *Manager) List(ctx context.Context) ([]*Workspace, error) {
 			result = append(result, entry.workspace)
 		}
 	}
+
 	m.mu.RUnlock()
 
 	sort.Slice(result, func(left, right int) bool {
@@ -259,6 +262,7 @@ func (m *Manager) Clear(ctx context.Context) error {
 		if !entry.close.Begin() {
 			panic("workspace: active entry close has already started")
 		}
+
 		entry.workspace.markClosing()
 		entry.state = workspaceEntryClosing
 		owned = append(owned, entry)
@@ -299,6 +303,7 @@ func (m *Manager) beginClose(id ID) (*workspaceEntry, bool) {
 	if !entry.close.Begin() {
 		panic("workspace: active entry close has already started")
 	}
+
 	entry.workspace.markClosing()
 	entry.state = workspaceEntryClosing
 	delete(m.byRoot, entry.workspace.Root())
@@ -325,6 +330,7 @@ func (m *Manager) finishClose(id ID, entry *workspaceEntry) {
 	if m.byID[id] == entry {
 		delete(m.byID, id)
 	}
+
 	m.mu.Unlock()
 }
 
@@ -368,9 +374,11 @@ func (m *Manager) loadAndCommit(ctx context.Context, operation *openOperation) (
 	}
 
 	var content workspaceContent
+
 	if err == nil {
 		content, err = m.loadWorkspace(ctx, operation.workspace.Root(), watcher.AddDirectory)
 	}
+
 	if err == nil {
 		err = ctx.Err()
 	}
@@ -420,6 +428,7 @@ func (m *Manager) finishOpen(operation *openOperation, err error) {
 	if m.opening[operation.workspace.Root()] == operation {
 		delete(m.opening, operation.workspace.Root())
 	}
+
 	operation.err = err
 	close(operation.done)
 	m.mu.Unlock()

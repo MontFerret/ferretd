@@ -37,6 +37,7 @@ func TestNewLoggerLevels(t *testing.T) {
 
 func TestNewLoggerWritesJSONLines(t *testing.T) {
 	var output bytes.Buffer
+
 	logger, err := newLogger(&output, logLevelInfo)
 	if err != nil {
 		t.Fatalf("newLogger: %v", err)
@@ -48,14 +49,17 @@ func TestNewLoggerWritesJSONLines(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(output.Bytes()), &record); err != nil {
 		t.Fatalf("decode diagnostic %q: %v", output.String(), err)
 	}
+
 	if record["level"] != logLevelInfo.String() ||
 		record["message"] != "started" ||
 		record["component"] != "test" {
 		t.Fatalf("diagnostic = %#v", record)
 	}
+
 	if _, ok := record["time"].(string); !ok {
 		t.Fatalf("diagnostic timestamp = %#v", record["time"])
 	}
+
 	if bytes.Count(output.Bytes(), []byte{'\n'}) != 1 {
 		t.Fatalf("diagnostics are not one JSON record per line: %q", output.String())
 	}
@@ -65,6 +69,7 @@ func TestLoggingCommandDefaults(t *testing.T) {
 	for _, name := range []string{"serve", "dap"} {
 		t.Run(name, func(t *testing.T) {
 			command := newDAPCommand()
+
 			if name == "serve" {
 				command = newServeCommand("test")
 			}

@@ -23,8 +23,13 @@ manager borrows the composition runtime.
 Requires Go 1.26.1 or newer.
 
 ```sh
+make install-lint
 make build
 ```
+
+`make install-lint` downloads the pinned golangci-lint release into `bin/` and
+requires curl and a POSIX shell (Git Bash on Windows). `make install-tools`
+also installs the protobuf tools needed for generation.
 
 The binary is written to `bin/ferretd`. Release builds can override the default
 development version:
@@ -53,6 +58,12 @@ make lint
 make generate
 make proto-lint
 ```
+
+`make lint` validates the golangci-lint configuration and checks handwritten Go
+code, including tests, for correctness, formatting, and repository style.
+`make fmt` applies the configured Go formatting and import grouping. See
+[the development guide](docs/development/release.md#go-linting-and-formatting)
+for rule coverage and intentional exceptions.
 
 ## Commands
 

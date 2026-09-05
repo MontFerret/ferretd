@@ -88,10 +88,12 @@ func (r *executionRuntime) run() runtimeRunResult {
 			category: FailureSessionCreation,
 		}
 	}
+
 	r.session = session
 
 	output, runErr := session.Run(r.ctx)
 	var retainedOutput *api.Output
+
 	if output.ContentType != "" || output.Content != nil {
 		retainedOutput = cloneOutput(&output)
 	}

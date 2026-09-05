@@ -11,6 +11,7 @@ func TestNewSessionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSessionID: %v", err)
 	}
+
 	assertUUID(t, id.String())
 }
 
@@ -19,6 +20,7 @@ func TestNewExecutionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newExecutionID: %v", err)
 	}
+
 	assertUUID(t, id.String())
 }
 
@@ -28,6 +30,7 @@ func assertUUID(t *testing.T, value string) {
 	if value == "" {
 		t.Fatal("generated ID is empty")
 	}
+
 	if _, err := uuid.Parse(value); err != nil {
 		t.Fatalf("ID is not a UUID: %v", err)
 	}

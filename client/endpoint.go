@@ -25,6 +25,7 @@ func Discover() (Endpoint, error) {
 func ParseEndpoint(value string) (Endpoint, error) {
 	endpoint, err := transport.ParseEndpoint(value)
 	if err != nil {
+		//nolint:errorlint // Expose only the public endpoint error; keep transport details as text.
 		return Endpoint{}, fmt.Errorf("%w: %v", ErrInvalidEndpoint, err)
 	}
 
@@ -39,6 +40,7 @@ func (e Endpoint) String() string {
 func (e Endpoint) transportEndpoint() (transport.Endpoint, error) {
 	endpoint, err := transport.ParseEndpoint(e.value)
 	if err != nil {
+		//nolint:errorlint // Expose only the public endpoint error; keep transport details as text.
 		return transport.Endpoint{}, fmt.Errorf("%w: %v", ErrInvalidEndpoint, err)
 	}
 

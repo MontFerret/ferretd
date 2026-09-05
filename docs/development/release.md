@@ -9,6 +9,7 @@ the workflow.
 * `go.mod`: Go toolchain and dependency versions.
 * `Makefile`: local installation, formatting, linting, testing, compilation,
   protobuf generation, generation checking, and release entry points.
+* `.golangci.yml`: Go lint rules, formatter settings, and generated-code exclusions.
 * `.github/workflows/ci.yml`: operating-system test matrix, quality checks,
   protobuf checks, and the current race-test package set.
 * `buf.yaml` and `buf.gen.yaml`: protobuf source linting, generation inputs,
@@ -38,6 +39,37 @@ listed shared-state packages.
 The CI race list documents current coverage, not an exemption for another
 package whose shared state changes. Add affected packages to local race
 validation and update CI when ongoing coverage is required.
+
+### Go linting and formatting
+
+Run `make install-lint` before the first lint or build, and again after the
+Makefile's golangci-lint version changes. The target downloads the installer
+from that release tag and uses its checksum verification to install the official
+binary under `bin/tools/golangci-lint/<version>/`. It requires curl and a POSIX
+shell; Windows contributors can use Git Bash. `make install-tools` includes this
+step along with protobuf tool installation. Local commands and the CI quality
+job use the same version and configuration.
+
+`make lint` validates `.golangci.yml` and runs the complete configured analysis
+without rewriting source or module dependencies. Checks cover errors, resource
+cleanup, suspicious constructs, unused code, naming, comments, type declaration
+grouping, and control-flow spacing. Tests are included. Generated files and
+vendor directories are excluded from lint findings and formatting.
+
+`make fmt` applies gofmt and goimports with the repository's MontFerret import
+grouping. It does not apply linter fixes such as control-flow spacing. For a
+deliberate spacing cleanup, use the installed binary's
+`run --enable-only=wsl_v5 --fix ./...` command, review the diff, then rerun
+`make fmt` and `make lint`.
+
+Fix findings at their owning boundary. When a check conflicts with an
+intentional contract, use a narrowly scoped `//nolint:<linter> // reason`
+directive explaining that contract. Directives must name the linter, include an
+explanation, and suppress an actual finding. For example, nil-context rejection
+tests must keep exercising nil input, and error translation must preserve its
+documented error identities. Do not exclude entire test files or packages to
+silence a specific finding. Architectural rules that require judgment remain
+part of the mandatory review.
 
 ## Generated artifacts
 

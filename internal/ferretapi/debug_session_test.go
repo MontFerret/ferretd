@@ -30,6 +30,7 @@ RETURN outer(20) + marker`))
 	if err != nil {
 		t.Fatalf("CompileDebug: %v", err)
 	}
+
 	t.Cleanup(func() {
 		if err := plan.Close(); err != nil {
 			t.Errorf("plan Close: %v", err)
@@ -40,6 +41,7 @@ RETURN outer(20) + marker`))
 	if err != nil {
 		t.Fatalf("NewDebugSession: %v", err)
 	}
+
 	t.Cleanup(func() {
 		if err := session.Close(); err != nil {
 			t.Errorf("session Close: %v", err)
@@ -83,6 +85,7 @@ RETURN outer(20) + marker`))
 
 	wantNames := []string{"inner", "outer", "<main>"}
 	wantDisplays := []string{"30", "20", "10"}
+
 	if len(frames) != len(wantNames) {
 		t.Fatalf("Frames = %+v, want %d frames", frames, len(wantNames))
 	}

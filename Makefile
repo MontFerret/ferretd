@@ -2,23 +2,31 @@ VERSION ?= $(shell sh scripts/versions.sh)
 DIR_BIN = ./bin
 NAME = ferretd
 BUF = go run github.com/bufbuild/buf/cmd/buf@v1.72.0
+GOLANGCI_LINT_VERSION = v2.13.2
+GOLANGCI_LINT_DIR = $(DIR_BIN)/tools/golangci-lint/$(GOLANGCI_LINT_VERSION)
+GOLANGCI_LINT = $(GOLANGCI_LINT_DIR)/golangci-lint
 STDLIB_REF = go run -mod=readonly ./tools/stdlibref
 STDLIB_REF_PATH = ./internal/language/stdlib/api.json
-CLIENT_DIR = ./client
-CMD_DIR = ./cmd
-INTERNAL_DIR = ./internal
+
+.PHONY: install-tools install-lint lint fmt
 
 default: build
 
 build: vet lint test compile
 
-install-tools:
-	go install honnef.co/go/tools/cmd/staticcheck@latest && \
-	go install golang.org/x/tools/cmd/goimports@latest && \
-	go install github.com/mgechev/revive@latest && \
+install-tools: install-lint
 	go install github.com/bufbuild/buf/cmd/buf@v1.72.0 && \
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12 && \
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+
+install-lint:
+	@set -eu; \
+	lint_installer=$$(mktemp); \
+	trap 'rm -f "$$lint_installer"' 0; \
+	curl --fail --silent --show-error --location \
+		"https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh" \
+		--output "$$lint_installer"; \
+	sh "$$lint_installer" -b "$(GOLANGCI_LINT_DIR)" "$(GOLANGCI_LINT_VERSION)"
 
 install:
 	go mod download
@@ -45,13 +53,11 @@ check-generate:
 	test -z "$$(git status --porcelain --untracked-files=all -- gen $(STDLIB_REF_PATH))"
 
 fmt:
-	go fmt ./... && \
-	goimports -w -local github.com/MontFerret ${INTERNAL_DIR} ${CMD_DIR} ${CLIENT_DIR}
+	$(GOLANGCI_LINT) fmt ./...
 
 lint:
-	staticcheck ./... && \
-	revive -config revive.toml -formatter stylish -exclude ./vendor/... ./...
-
+	$(GOLANGCI_LINT) config verify && \
+	$(GOLANGCI_LINT) run ./...
 
 vet:
 	go vet ./...

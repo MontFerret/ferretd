@@ -24,6 +24,7 @@ func TestStandardLibraryMetadataEnrichesLanguageFeatures(t *testing.T) {
 	if !ok {
 		t.Fatal("completion omits abs")
 	}
+
 	if completion.Detail != "abs(number: Int | Float) → Float" ||
 		!strings.Contains(completion.Documentation, "### Parameters") || completion.Deprecated {
 		t.Fatalf("abs completion = %+v", completion)
@@ -33,6 +34,7 @@ func TestStandardLibraryMetadataEnrichesLanguageFeatures(t *testing.T) {
 	if err != nil || help == nil || len(help.Signatures) != 1 {
 		t.Fatalf("abs signature help = %+v, %v", help, err)
 	}
+
 	signature := help.Signatures[0]
 	if signature.Label != "abs(number: Int | Float)" || signature.Parameters[0].Name != "number" ||
 		signature.Parameters[0].Type != "Int | Float" || signature.Parameters[0].Description == "" ||
@@ -55,6 +57,7 @@ func TestStandardLibraryVariadicSignatureClampsActiveParameter(t *testing.T) {
 	if err != nil || help == nil || len(help.Signatures) != 1 {
 		t.Fatalf("concat signature help = %+v, %v", help, err)
 	}
+
 	if !help.Signatures[0].Variadic || !help.Signatures[0].Parameters[0].Variadic || help.ActiveParameter != 0 {
 		t.Fatalf("concat signature help = %+v", help)
 	}
@@ -85,6 +88,7 @@ func TestSignatureHelpPreservesOrderAndPrefersFixedAuthoredOverload(t *testing.T
 	}
 	service := mustNewService(t, workspace.New(), catalog, Options{})
 	query := "RETURN choose(1)"
+
 	uri := documentURI(t, "authored-overloads.fql")
 	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
 		t.Fatal(err)
@@ -94,6 +98,7 @@ func TestSignatureHelpPreservesOrderAndPrefersFixedAuthoredOverload(t *testing.T
 	if err != nil || help == nil {
 		t.Fatalf("signature help = %+v, %v", help, err)
 	}
+
 	if !reflect.DeepEqual(help.Signatures, signatures) || help.ActiveSignature != 1 || help.ActiveParameter != 0 {
 		t.Fatalf("signature help = %+v", help)
 	}

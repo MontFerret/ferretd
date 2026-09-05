@@ -42,9 +42,11 @@ func (p *planSpy) NewSession(
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	if p.closed {
 		return nil, errors.New("plan is closed")
 	}
+
 	p.lastOptions = parsed
 
 	return &sessionSpy{runtime: p.runtime, options: parsed}, nil
@@ -65,9 +67,11 @@ func (p *planSpy) NewDebugSession(
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	if p.closed {
 		return nil, errors.New("plan is closed")
 	}
+
 	p.lastOptions = parsed
 
 	return &debugSessionSpy{runtime: p.runtime}, nil

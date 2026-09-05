@@ -25,6 +25,7 @@ const (
 
 func (o initializeClientOptions) normalized() (clientOptions, error) {
 	format := pathFormatPath
+
 	if o.PathFormat != nil && *o.PathFormat != "" {
 		format = pathFormat(*o.PathFormat)
 	}
@@ -34,11 +35,13 @@ func (o initializeClientOptions) normalized() (clientOptions, error) {
 	}
 
 	linesStartAt1 := true
+
 	if o.LinesStartAt1 != nil {
 		linesStartAt1 = *o.LinesStartAt1
 	}
 
 	columnsStartAt1 := true
+
 	if o.ColumnsStartAt1 != nil {
 		columnsStartAt1 = *o.ColumnsStartAt1
 	}

@@ -16,6 +16,7 @@ func TestReferenceIsEmbeddedAndIndependentOfWorkingDirectory(t *testing.T) {
 	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(func() {
 		if err := os.Chdir(originalDirectory); err != nil {
 			t.Errorf("restore working directory: %v", err)
@@ -35,6 +36,7 @@ func TestReferenceIsEmbeddedAndIndependentOfWorkingDirectory(t *testing.T) {
 
 func TestReferenceVersionMatchesFerretModule(t *testing.T) {
 	command := exec.Command("go", "list", "-mod=readonly", "-m", "-f", "{{.Version}}", "github.com/MontFerret/ferret/v2")
+
 	data, err := command.Output()
 	if err != nil {
 		t.Fatalf("resolve Ferret module version: %v", err)

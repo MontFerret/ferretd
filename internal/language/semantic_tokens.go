@@ -32,6 +32,7 @@ func (s *Service) SemanticTokens(ctx context.Context, uri source.URI) ([]Semanti
 		if spans[i].span.Start != spans[j].span.Start {
 			return spans[i].span.Start < spans[j].span.Start
 		}
+
 		if spans[i].priority != spans[j].priority {
 			return spans[i].priority > spans[j].priority
 		}

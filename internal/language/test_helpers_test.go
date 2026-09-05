@@ -37,6 +37,7 @@ func newTestDefaultCatalog(t testing.TB) *FunctionCatalog {
 	if err != nil {
 		t.Fatalf("NewDefaultFunctionCatalog: %v", err)
 	}
+
 	if len(warnings) != 0 {
 		t.Fatalf("NewDefaultFunctionCatalog warnings = %+v", warnings)
 	}

@@ -18,6 +18,7 @@ func BenchmarkManagerDebugSessionSameSession(b *testing.B) {
 	if err != nil {
 		b.Fatalf("warm CreateSession: %v", err)
 	}
+
 	if err := manager.CloseSession(ctx, warm.ID); err != nil {
 		b.Fatalf("warm CloseSession: %v", err)
 	}
@@ -30,10 +31,12 @@ func BenchmarkManagerDebugSessionSameSession(b *testing.B) {
 		if err != nil {
 			b.Fatalf("CreateSession: %v", err)
 		}
+
 		subscription, err := manager.WatchSession(ctx, created.ID)
 		if err != nil {
 			b.Fatalf("WatchSession: %v", err)
 		}
+
 		if _, err := manager.StartSession(ctx, created.ID); err != nil {
 			b.Fatalf("StartSession: %v", err)
 		}
@@ -45,7 +48,9 @@ func BenchmarkManagerDebugSessionSameSession(b *testing.B) {
 				}
 			}
 		}
+
 		subscription.Cancel()
+
 		if err := manager.CloseSession(ctx, created.ID); err != nil {
 			b.Fatalf("CloseSession: %v", err)
 		}
@@ -66,15 +71,19 @@ func benchmarkDebugManager(
 	if err := os.WriteFile(filepath.Join(root, "query.fql"), []byte("RETURN @value"), 0o600); err != nil {
 		b.Fatalf("WriteFile: %v", err)
 	}
+
 	ctx := context.Background()
 	workspaces := workspace.New()
+
 	opened, err := workspaces.Open(ctx, root)
 	if err != nil {
 		b.Fatalf("workspace Open: %v", err)
 	}
+
 	runtime := newRuntimeSpy()
 	executions := mustNewExecutionManager(b, workspaces, runtime)
 	manager := mustNewManager(b, executions)
+
 	session, err := executions.CreateSession(ctx, opened.ID(), "query.fql")
 	if err != nil {
 		b.Fatalf("CreateSession: %v", err)

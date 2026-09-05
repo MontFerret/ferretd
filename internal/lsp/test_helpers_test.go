@@ -31,6 +31,7 @@ func newTestLanguageService(t testing.TB) *language.Service {
 	if err != nil {
 		t.Fatalf("NewDefaultFunctionCatalog: %v", err)
 	}
+
 	if len(warnings) != 0 {
 		t.Fatalf("NewDefaultFunctionCatalog warnings = %+v", warnings)
 	}

@@ -35,6 +35,7 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
+
 	runtime := ferretapi.New(engine)
 
 	return newServer(input, output, options, runtime)
@@ -42,6 +43,7 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 
 func newServer(input io.Reader, output io.Writer, options Options, runtime api.Runtime) (*Server, error) {
 	workspaces := workspace.New()
+
 	executions, err := exec.New(workspaces, runtime)
 	if err != nil {
 		cleanupErr := errors.Join(workspaces.Clear(context.Background()), runtime.Close())

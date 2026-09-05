@@ -108,12 +108,12 @@ func (m *Manager) CreateDebugRuntime(
 	defer creation.finish()
 
 	parent := creation.session()
+
 	target, err := parent.acquireDebugRuntimeTarget(ctx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, ErrSessionClosed) || errors.Is(err, workspace.ErrClosed) ||
 			errors.Is(err, workspace.ErrDocumentNotFound) {
-
 			return nil, err
 		}
 
@@ -125,9 +125,11 @@ func (m *Manager) CreateDebugRuntime(
 	}
 
 	runtime := newExecutionRuntime(target, input)
+
 	debugger, err := target.plan.NewDebugSession(ctx, runtime.sessionOptions()...)
 	if err != nil {
 		runtime.cancel(errExecutionCanceled)
+
 		if debugger != nil {
 			err = errors.Join(err, debugger.Close())
 		}
@@ -143,6 +145,7 @@ func (m *Manager) CreateDebugRuntime(
 
 		return nil, errors.New("runtime returned no debug session")
 	}
+
 	runtime.session = debugger
 
 	return newDebugRuntime(runtime, debugger, parent), nil

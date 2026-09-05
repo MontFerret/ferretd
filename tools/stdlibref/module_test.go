@@ -68,6 +68,7 @@ func TestResolveFerretVersion(t *testing.T) {
 
 func TestResolveFerretVersionInvokesReadonlyGoList(t *testing.T) {
 	var arguments []string
+
 	_, err := resolveFerretVersion(context.Background(), func(_ context.Context, values ...string) ([]byte, error) {
 		arguments = append(arguments, values...)
 

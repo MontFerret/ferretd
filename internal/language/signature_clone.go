@@ -10,6 +10,7 @@ func cloneSignatures(values []Signature) []Signature {
 		if value.Throws != nil {
 			value.Throws = append([]SignatureThrow{}, value.Throws...)
 		}
+
 		if value.Return != nil {
 			returnValue := *value.Return
 			value.Return = &returnValue

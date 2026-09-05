@@ -18,10 +18,12 @@ func BenchmarkManagerCreateSessionUnchanged(b *testing.B) {
 
 	ctx := context.Background()
 	workspaces := workspace.New()
+
 	opened, err := workspaces.Open(ctx, root)
 	if err != nil {
 		b.Fatalf("workspace Open: %v", err)
 	}
+
 	manager := mustNewManager(b, workspaces)
 
 	b.ReportAllocs()
@@ -32,6 +34,7 @@ func BenchmarkManagerCreateSessionUnchanged(b *testing.B) {
 		if err != nil {
 			b.Fatalf("CreateSession: %v", err)
 		}
+
 		if err := manager.CloseSession(ctx, session.ID); err != nil {
 			b.Fatalf("CloseSession: %v", err)
 		}
@@ -53,17 +56,22 @@ func BenchmarkManagerExecutionSameSession(b *testing.B) {
 		if err != nil {
 			b.Fatalf("CreateExecution: %v", err)
 		}
+
 		subscription, err := manager.WatchExecution(ctx, created.ID)
 		if err != nil {
 			b.Fatalf("WatchExecution: %v", err)
 		}
+
 		if _, err := manager.RunExecution(ctx, created.ID); err != nil {
 			b.Fatalf("RunExecution: %v", err)
 		}
+
 		for event := range subscription.Events {
 			_ = event
 		}
+
 		subscription.Cancel()
+
 		if err := manager.CloseExecution(ctx, created.ID); err != nil {
 			b.Fatalf("CloseExecution: %v", err)
 		}
@@ -93,21 +101,26 @@ func BenchmarkManagerExecutionSameSessionConcurrent(b *testing.B) {
 
 				return
 			}
+
 			subscription, err := manager.WatchExecution(ctx, created.ID)
 			if err != nil {
 				b.Errorf("WatchExecution: %v", err)
 
 				return
 			}
+
 			if _, err := manager.RunExecution(ctx, created.ID); err != nil {
 				b.Errorf("RunExecution: %v", err)
 
 				return
 			}
+
 			for event := range subscription.Events {
 				_ = event
 			}
+
 			subscription.Cancel()
+
 			if err := manager.CloseExecution(ctx, created.ID); err != nil {
 				b.Errorf("CloseExecution: %v", err)
 
@@ -128,13 +141,17 @@ func benchmarkExecutionManager(b *testing.B) (*exec.Manager, exec.SessionSnapsho
 	if err := os.WriteFile(filepath.Join(root, "query.fql"), []byte("RETURN @value"), 0o600); err != nil {
 		b.Fatalf("WriteFile: %v", err)
 	}
+
 	ctx := context.Background()
 	workspaces := workspace.New()
+
 	opened, err := workspaces.Open(ctx, root)
 	if err != nil {
 		b.Fatalf("workspace Open: %v", err)
 	}
+
 	manager := mustNewManager(b, workspaces)
+
 	session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
 	if err != nil {
 		b.Fatalf("CreateSession: %v", err)

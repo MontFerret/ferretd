@@ -7,6 +7,7 @@ import (
 // subscribe returns the latest lifecycle event and future bounded observations.
 func (d *session) subscribe() Subscription {
 	d.mu.Lock()
+
 	current := d.lastEvent.clone()
 	if d.state.Terminal() {
 		events := make(chan Event)
@@ -82,6 +83,7 @@ func (d *session) closeWatcherLocked(id uint64, watcher *debugEventWatcher, err 
 	}
 
 	watcher.closed = true
+
 	if err != nil {
 		watcher.errors <- err
 	}

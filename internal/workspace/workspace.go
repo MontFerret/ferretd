@@ -90,6 +90,7 @@ func (w *Workspace) State() State {
 	w.mu.RLock()
 	state := w.state
 	w.mu.RUnlock()
+
 	if w.closing.Load() && state != StateClosed && state != StateFailed {
 		return StateClosing
 	}
@@ -201,6 +202,7 @@ func (w *Workspace) stopWatcher() error {
 	w.mu.RLock()
 	watcher := w.watcher
 	w.mu.RUnlock()
+
 	if watcher == nil {
 		return nil
 	}

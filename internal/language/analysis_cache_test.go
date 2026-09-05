@@ -27,6 +27,7 @@ func TestAnalysisCacheCoalescesConcurrentRequests(t *testing.T) {
 		if calls.Add(1) == 1 {
 			close(started)
 		}
+
 		<-release
 
 		return realAnalyze(src)
@@ -47,6 +48,7 @@ func TestAnalysisCacheCoalescesConcurrentRequests(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("analysis calls = %d, want 1", got)
 	}
@@ -127,6 +129,7 @@ func TestAnalysisCacheLateOldResultCannotReplaceNewSnapshot(t *testing.T) {
 	if err := service.ChangeDocument(context.Background(), uri, 2, []TextChange{{Text: "RETURN 2"}}); err != nil {
 		t.Fatal(err)
 	}
+
 	go func() {
 		defer wait.Done()
 		_, _ = service.Diagnostics(context.Background(), uri)
@@ -140,6 +143,7 @@ func TestAnalysisCacheLateOldResultCannotReplaceNewSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if report.Version == nil || *report.Version != 2 || len(report.Items) != 0 {
 		t.Fatalf("current diagnostics = %+v", report)
 	}
@@ -147,6 +151,7 @@ func TestAnalysisCacheLateOldResultCannotReplaceNewSnapshot(t *testing.T) {
 
 func TestOverlayGenerationRejectsStaleReportsWhenClientVersionIsReused(t *testing.T) {
 	service, uri := openLanguageDocument(t, "RETURN missing")
+
 	oldReport, err := service.Diagnostics(context.Background(), uri)
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +160,7 @@ func TestOverlayGenerationRejectsStaleReportsWhenClientVersionIsReused(t *testin
 	if err := service.OpenDocument(context.Background(), uri, 1, "RETURN 1"); err != nil {
 		t.Fatal(err)
 	}
+
 	if service.IsCurrent(context.Background(), uri, oldReport.Snapshot) {
 		t.Fatal("replaced overlay kept the old snapshot current")
 	}
@@ -163,6 +169,7 @@ func TestOverlayGenerationRejectsStaleReportsWhenClientVersionIsReused(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if currentReport.Version == nil || *currentReport.Version != 1 || len(currentReport.Items) != 0 {
 		t.Fatalf("current diagnostics = %+v", currentReport)
 	}
@@ -171,6 +178,7 @@ func TestOverlayGenerationRejectsStaleReportsWhenClientVersionIsReused(t *testin
 func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
+
 	filePath := filepath.Join(root, "query.fql")
 	if err := os.WriteFile(filePath, []byte("RETURN missing"), 0o600); err != nil {
 		t.Fatal(err)
@@ -178,11 +186,14 @@ func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
 
 	workspaces := workspace.New()
 	t.Cleanup(func() { _ = workspaces.Clear(context.Background()) })
+
 	opened, err := workspaces.Open(ctx, root)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
+
 	service := mustNewService(t, workspaces, newTestDefaultCatalog(t), Options{})
+
 	uri, err := source.URIFromPath(filePath)
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +203,7 @@ func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
 	if err != nil || len(oldReport.Items) == 0 {
 		t.Fatalf("old diagnostics = %+v, %v", oldReport, err)
 	}
+
 	oldLookup, found, err := workspaces.LookupDocument(ctx, filePath)
 	if err != nil || !found {
 		t.Fatalf("old workspace lookup = %+v, %t, %v", oldLookup, found, err)
@@ -200,9 +212,11 @@ func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
 	if err := os.Remove(filePath); err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := opened.RefreshDocument(ctx, "query.fql"); !errors.Is(err, workspace.ErrDocumentNotFound) {
 		t.Fatalf("delete RefreshDocument error = %v", err)
 	}
+
 	if _, err := service.Diagnostics(ctx, uri); !errors.Is(err, ErrDocumentNotOpen) {
 		t.Fatalf("deleted Diagnostics error = %v, want ErrDocumentNotOpen", err)
 	}
@@ -210,18 +224,22 @@ func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("RETURN 1"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+
 	newDocument, err := opened.RefreshDocument(ctx, "query.fql")
 	if err != nil {
 		t.Fatalf("recreate RefreshDocument: %v", err)
 	}
+
 	newLookup, found, err := workspaces.LookupDocument(ctx, filePath)
 	if err != nil || !found {
 		t.Fatalf("new workspace lookup = %+v, %t, %v", newLookup, found, err)
 	}
+
 	if newLookup.Revision != newDocument.Revision() {
 		t.Fatalf("lookup revision = %d, want document revision %d",
 			newLookup.Revision, newDocument.Revision())
 	}
+
 	if newLookup.Generation <= oldLookup.Generation {
 		t.Fatalf("recreated generation = %d, want greater than %d",
 			newLookup.Generation, oldLookup.Generation)
@@ -231,6 +249,7 @@ func TestWorkspaceGenerationRejectsCacheAfterDeleteAndRecreate(t *testing.T) {
 	if err != nil || len(newReport.Items) != 0 {
 		t.Fatalf("new diagnostics = %+v, %v", newReport, err)
 	}
+
 	if newReport.Snapshot == oldReport.Snapshot {
 		t.Fatal("recreated document reused stale workspace snapshot identity")
 	}

@@ -93,6 +93,7 @@ func (m *Mapper) PositionToOffset(position Position) int {
 	if uint64(position.Line) >= uint64(len(m.lineStarts)) {
 		return len(m.text)
 	}
+
 	line := int(position.Line)
 
 	start := m.lineStarts[line]

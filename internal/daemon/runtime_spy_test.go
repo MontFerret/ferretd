@@ -53,6 +53,7 @@ func (r *runtimeLifecycleSpy) Close() error {
 	r.closeCalls.Add(1)
 	r.record("runtime")
 	r.startOnce.Do(func() { close(r.closeStarted) })
+
 	if r.releaseClose != nil {
 		<-r.releaseClose
 	}

@@ -16,10 +16,12 @@ func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
 	service := newTestLanguageService(t)
 	server := mustNewServer(t, service)
 	uri := documentURI(t, "handlers.fql")
+
 	query := "LET value = 1\nFUNC add(p) => value + p\nRETURN add(value)"
 	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
 		t.Fatal(err)
 	}
+
 	mapper := source.NewMapper(query)
 
 	hover, err := server.hover(nil, &protocol.HoverParams{TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -29,6 +31,7 @@ func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
 	if err != nil || hover == nil {
 		t.Fatalf("hover = %+v, %v", hover, err)
 	}
+
 	if content, ok := hover.Contents.(protocol.MarkupContent); !ok || content.Kind != protocol.MarkupKindMarkdown {
 		t.Fatalf("hover contents = %#v", hover.Contents)
 	} else if !strings.Contains(content.Value, "```fql") || !strings.Contains(content.Value, "FUNC add(p)") {
@@ -65,10 +68,12 @@ func TestLanguageHandlerMappingsAndSemanticEncoding(t *testing.T) {
 func TestInitializationRootsPrecedenceAndDeduplication(t *testing.T) {
 	first := t.TempDir()
 	second := t.TempDir()
+
 	firstURI, err := source.URIFromPath(first)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	secondURI, err := source.URIFromPath(second)
 	if err != nil {
 		t.Fatal(err)
@@ -76,6 +81,7 @@ func TestInitializationRootsPrecedenceAndDeduplication(t *testing.T) {
 
 	rootURI := protocol.DocumentUri(secondURI.String())
 	rootPath := second
+
 	roots, err := initializationRoots(&protocol.InitializeParams{
 		RootURI:  &rootURI,
 		RootPath: &rootPath,
@@ -87,6 +93,7 @@ func TestInitializationRootsPrecedenceAndDeduplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(roots) != 1 || roots[0] != first {
 		t.Fatalf("roots = %#v", roots)
 	}
@@ -116,6 +123,7 @@ func TestEncodeSemanticTokensUsesRelativePositions(t *testing.T) {
 	}
 
 	got := encodeSemanticTokens(values)
+
 	want := []protocol.UInteger{1, 3, 2, 2, 0, 0, 5, 1, 6, 2, 2, 1, 3, 1, 0}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("encoded tokens = %#v, want %#v", got, want)
@@ -166,6 +174,7 @@ func TestSemanticTokenMappingIsExplicitAndMatchesLegend(t *testing.T) {
 
 	legend.TokenTypes[0] = "changed"
 	legend.TokenModifiers[0] = "changed"
+
 	fresh := semanticTokenLegend()
 	if fresh.TokenTypes[0] != "namespace" || fresh.TokenModifiers[0] != "declaration" {
 		t.Fatalf("semantic legend exposed mutable definitions: %+v", fresh)
@@ -190,6 +199,7 @@ func TestFormattingTabSizeClampsMalformedValues(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			options := protocol.FormattingOptions{}
+
 			if test.set {
 				options[protocol.FormattingOptionTabSize] = test.value
 			}
@@ -222,6 +232,7 @@ func TestCompletionWordKindMapping(t *testing.T) {
 func TestCompletionPreservesCanonicalLowercaseText(t *testing.T) {
 	service := newTestLanguageService(t)
 	server := mustNewServer(t, service)
+
 	uri := documentURI(t, "completion.fql")
 	if err := service.OpenDocument(context.Background(), uri, 1, "re"); err != nil {
 		t.Fatal(err)
@@ -250,6 +261,7 @@ func TestCompletionPreservesCanonicalLowercaseText(t *testing.T) {
 
 		if item.Label == "return" {
 			found = true
+
 			if item.InsertText == nil || *item.InsertText != "return" {
 				t.Fatalf("return insertion text = %#v", item.InsertText)
 			}
@@ -265,10 +277,12 @@ func TestStandardLibraryMetadataMapsToLSPDocumentation(t *testing.T) {
 	service := newTestLanguageService(t)
 	server := mustNewServer(t, service)
 	uri := documentURI(t, "stdlib.fql")
+
 	query := "RETURN abs(-1)"
 	if err := service.OpenDocument(context.Background(), uri, 1, query); err != nil {
 		t.Fatal(err)
 	}
+
 	mapper := source.NewMapper(query)
 
 	completionValue, err := server.completion(nil, &protocol.CompletionParams{
@@ -280,11 +294,14 @@ func TestStandardLibraryMetadataMapsToLSPDocumentation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	items := completionValue.([]protocol.CompletionItem)
+
 	completion := protocolCompletionByLabel(t, items, "abs")
 	if completion.Detail == nil || *completion.Detail != "abs(number: Int | Float) → Float" {
 		t.Fatalf("abs completion detail = %#v", completion.Detail)
 	}
+
 	documentation, ok := completion.Documentation.(protocol.MarkupContent)
 	if !ok || documentation.Kind != protocol.MarkupKindMarkdown ||
 		!strings.Contains(documentation.Value, "### Parameters") || !strings.Contains(documentation.Value, "### Returns") {
@@ -298,10 +315,12 @@ func TestStandardLibraryMetadataMapsToLSPDocumentation(t *testing.T) {
 	if err != nil || help == nil || len(help.Signatures) != 1 {
 		t.Fatalf("abs signature help = %+v, %v", help, err)
 	}
+
 	parameter := help.Signatures[0].Parameters[0]
 	if parameter.Label != "number: Int | Float" || parameter.Documentation == nil {
 		t.Fatalf("abs parameter = %+v", parameter)
 	}
+
 	signatureDocumentation, ok := help.Signatures[0].Documentation.(protocol.MarkupContent)
 	if !ok || !strings.Contains(signatureDocumentation.Value, "### Returns") || !strings.Contains(signatureDocumentation.Value, "`Float`") {
 		t.Fatalf("abs signature documentation = %#v", help.Signatures[0].Documentation)
@@ -314,6 +333,7 @@ func TestStandardLibraryMetadataMapsToLSPDocumentation(t *testing.T) {
 	if err != nil || hover == nil {
 		t.Fatalf("abs hover = %+v, %v", hover, err)
 	}
+
 	hoverContent := hover.Contents.(protocol.MarkupContent)
 	if !strings.Contains(hoverContent.Value, "```fql\nabs(number: Int | Float)\n```") ||
 		!strings.Contains(hoverContent.Value, "### Description") ||
@@ -347,6 +367,7 @@ func TestCompletionDeprecationMapsToTagsAndDocumentation(t *testing.T) {
 	if item.Deprecated == nil || !*item.Deprecated || !reflect.DeepEqual(item.Tags, []protocol.CompletionItemTag{protocol.CompletionItemTagDeprecated}) {
 		t.Fatalf("deprecated completion = %+v", item)
 	}
+
 	documentation := item.Documentation.(protocol.MarkupContent)
 	for _, want := range []string{"### Description", "### Parameters", "### Returns", "### Throws", "### Deprecated", "Use replacement."} {
 		if !strings.Contains(documentation.Value, want) {

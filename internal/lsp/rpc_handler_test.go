@@ -37,6 +37,7 @@ func TestRPCHandlerCancellationReturnsLSPCancellationCode(t *testing.T) {
 		result <- client.Call(context.Background(), protocol.MethodTextDocumentHover, protocol.HoverParams{}, &hover)
 	}()
 	<-started
+
 	if err := client.Notify(context.Background(), protocol.MethodCancelRequest, protocol.CancelParams{
 		ID: protocol.IntegerOrString{Value: protocol.Integer(1)},
 	}); err != nil {
@@ -62,6 +63,7 @@ func TestRPCHandlerRejectsUnsupportedMethods(t *testing.T) {
 
 	var result any
 	err := client.Call(context.Background(), protocol.MethodWorkspaceSymbol, struct{}{}, &result)
+
 	var rpcError *jsonrpc2.Error
 	if !errors.As(err, &rpcError) || rpcError.Code != jsonrpc2.CodeMethodNotFound {
 		t.Fatalf("unsupported method error = %T %v", err, err)
@@ -92,6 +94,7 @@ func TestRPCHandlerRequestsWaitForEarlierLifecycleNotification(t *testing.T) {
 	if err := client.Notify(context.Background(), protocol.MethodTextDocumentDidOpen, protocol.DidOpenTextDocumentParams{}); err != nil {
 		t.Fatal(err)
 	}
+
 	<-lifecycleStarted
 
 	requestDone := make(chan error, 1)
@@ -112,6 +115,7 @@ func TestRPCHandlerRequestsWaitForEarlierLifecycleNotification(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("request did not run after lifecycle barrier")
 	}
+
 	if err := <-requestDone; err != nil {
 		t.Fatal(err)
 	}
@@ -132,9 +136,11 @@ func TestRunStreamWritesOnlyFramedProtocolResponses(t *testing.T) {
 	if output == "" || !bytes.HasPrefix([]byte(output), []byte("Content-Length: ")) {
 		t.Fatalf("stdout does not begin with protocol framing: %q", output)
 	}
+
 	if bytes.Contains([]byte(output), []byte("ferretd:")) || bytes.Contains([]byte(output), []byte("jsonrpc2:")) {
 		t.Fatalf("stdout contains non-protocol text: %q", output)
 	}
+
 	if got := bytes.Count([]byte(output), []byte("Content-Length: ")); got != 2 {
 		t.Fatalf("protocol response frame count = %d, output %q", got, output)
 	}
@@ -192,6 +198,7 @@ func (m *memoryReadWriteCloser) Read(buffer []byte) (int, error) {
 
 		return n, err
 	}
+
 	m.mu.Unlock()
 	<-m.closed
 
