@@ -3,7 +3,7 @@ package dap
 import (
 	"testing"
 
-	"github.com/MontFerret/ferretd/internal/debug"
+	apidebugger "github.com/MontFerret/api/debugger"
 )
 
 func TestHandleTableClassifiesCurrentAndMostRecentlyInvalidatedHandles(t *testing.T) {
@@ -19,9 +19,12 @@ func TestHandleTableClassifiesCurrentAndMostRecentlyInvalidatedHandles(t *testin
 		}
 	}
 
-	scopeVariables := []debug.Variable{{Name: "value", Value: debug.Value{Display: "1"}}}
+	scopeVariables := []apidebugger.Variable{{
+		Name:  "value",
+		Value: apidebugger.Value{Display: "1"},
+	}}
 	scopeID := table.Scope(scopeVariables)
-	variableID := table.Variable(debug.ValueReference(17))
+	variableID := table.Variable(apidebugger.ValueReference(17))
 	if variableID == 0 || table.Variable(0) != 0 {
 		t.Fatalf("variable handles = (%d, %d), want nonzero and zero", variableID, table.Variable(0))
 	}

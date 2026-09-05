@@ -6,29 +6,21 @@ import (
 	"errors"
 	"sync"
 
+	apidebugger "github.com/MontFerret/api/debugger"
+	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
-	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
 
-type (
-	// Manager owns all process-local retained debug Sessions.
-	Manager struct {
-		mu sync.RWMutex
+// Manager owns all process-local retained debug Sessions.
+type Manager struct {
+	mu sync.RWMutex
 
-		executions *exec.Manager
-		sessions   map[SessionID]*session
-		closing    map[SessionID]*session
-		groups     map[exec.SessionID]*sessionGroup
-		closed     bool
-	}
-
-	sessionGroup struct {
-		// Manager.mu is acquired before gate when both are needed. Gate never
-		// calls back into the Manager, so the lock order cannot reverse.
-		gate     lifecycle.Gate
-		sessions map[SessionID]*session
-	}
-)
+	executions *exec.Manager
+	sessions   map[SessionID]*session
+	closing    map[SessionID]*session
+	groups     map[exec.SessionID]*sessionGroup
+	closed     bool
+}
 
 // New creates a debug manager that borrows an execution manager.
 // It returns an error when the execution manager is nil.
@@ -171,19 +163,19 @@ func (m *Manager) StepOutSession(ctx context.Context, id SessionID) (SessionSnap
 func (m *Manager) ReplaceBreakpoints(
 	ctx context.Context,
 	id SessionID,
-	file string,
-	locations []BreakpointLocation,
-) ([]Breakpoint, error) {
+	sourceName string,
+	locations []apisource.Position,
+) ([]apidebugger.Breakpoint, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	return session.replaceBreakpoints(ctx, file, locations)
+	return session.replaceBreakpoints(ctx, sourceName, locations)
 }
 
 // Frames returns the current-to-caller paused frame stack.
-func (m *Manager) Frames(ctx context.Context, id SessionID) ([]Frame, error) {
+func (m *Manager) Frames(ctx context.Context, id SessionID) ([]apidebugger.Frame, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
 		return nil, err
@@ -206,8 +198,8 @@ func (m *Manager) Scopes(ctx context.Context, id SessionID, frame int) ([]Scope,
 func (m *Manager) Variables(
 	ctx context.Context,
 	id SessionID,
-	reference ValueReference,
-) ([]Variable, error) {
+	reference apidebugger.ValueReference,
+) ([]apidebugger.Variable, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
 		return nil, err
@@ -222,10 +214,10 @@ func (m *Manager) Evaluate(
 	id SessionID,
 	frame int,
 	expression string,
-) (Value, error) {
+) (apidebugger.Value, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
-		return Value{}, err
+		return apidebugger.Value{}, err
 	}
 
 	return session.evaluate(ctx, frame, expression)

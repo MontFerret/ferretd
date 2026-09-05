@@ -15,9 +15,10 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") {
 			return nil
 		}
+		testFile := strings.HasSuffix(path, "_test.go")
 
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 		if err != nil {
@@ -30,8 +31,20 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 			}
 
 			packagePath := filepath.ToSlash(filepath.Dir(path))
-			if (packagePath == "../exec" || packagePath == "../debug") &&
+			if packagePath == "../debug" &&
 				strings.HasPrefix(name, "github.com/MontFerret/ferret/v2") {
+				t.Errorf("%s imports native Ferret runtime package %q", path, name)
+			}
+			if testFile {
+				continue
+			}
+			if packagePath == "../exec" && strings.HasPrefix(name, "github.com/MontFerret/ferret/v2") {
+				t.Errorf("%s imports native Ferret runtime package %q", path, name)
+			}
+			if packagePath == "../dap" && strings.HasPrefix(name, "github.com/MontFerret/ferret/v2/") {
+				t.Errorf("%s imports native Ferret implementation package %q", path, name)
+			}
+			if packagePath == "../grpc" && strings.HasPrefix(name, "github.com/MontFerret/ferret/v2") {
 				t.Errorf("%s imports native Ferret runtime package %q", path, name)
 			}
 			if name == "github.com/MontFerret/ferret/v2" && packagePath != "../ferretapi" &&

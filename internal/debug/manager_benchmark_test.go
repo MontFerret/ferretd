@@ -72,7 +72,8 @@ func benchmarkDebugManager(
 	if err != nil {
 		b.Fatalf("workspace Open: %v", err)
 	}
-	executions := mustNewExecutionManager(b, workspaces)
+	runtime := newRuntimeSpy()
+	executions := mustNewExecutionManager(b, workspaces, runtime)
 	manager := mustNewManager(b, executions)
 	session, err := executions.CreateSession(ctx, opened.ID(), "query.fql")
 	if err != nil {

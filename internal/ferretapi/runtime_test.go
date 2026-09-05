@@ -172,6 +172,45 @@ func TestRuntimeCopiesOutputAndTranslatesDebugSession(t *testing.T) {
 	}
 }
 
+func TestDebuggerEventTranslation(t *testing.T) {
+	wantErr := errors.New("runtime stopped")
+	nativeOutput := &ferret.Output{
+		ContentType: "application/json",
+		Content:     []byte(`{"result":1}`),
+	}
+	session := &debugSession{source: api.NewSource("/workspace/query.fql", "RETURN 1")}
+	event := session.convertEvent(&ferret.DebugEvent{
+		Error:            wantErr,
+		Output:           nativeOutput,
+		Reason:           ferret.DebugReasonBreakpoint,
+		HitBreakpointIDs: []ferret.DebugBreakpointID{7, 8},
+		Location: ferret.Range{
+			Location: ferret.Location{
+				File:     "/workspace/query.fql",
+				Position: ferret.Position{Line: 3, Column: 4},
+			},
+			Span: ferret.Span{Start: 10, End: 20},
+		},
+		Depth: 2,
+	})
+
+	if event == nil || !errors.Is(event.Error, wantErr) ||
+		event.Reason != apidebugger.ReasonBreakpoint ||
+		event.Location.SourceName != "/workspace/query.fql" ||
+		event.Location.Position != (api.Position{Line: 3, Column: 4}) ||
+		event.Location.Span != (api.Span{Start: 10, End: 20}) || event.Depth != 2 ||
+		len(event.HitBreakpointIDs) != 2 || event.HitBreakpointIDs[0] != 7 ||
+		event.HitBreakpointIDs[1] != 8 || event.Output == nil ||
+		event.Output.ContentType != "application/json" || string(event.Output.Content) != `{"result":1}` {
+		t.Fatalf("event = %+v", event)
+	}
+
+	nativeOutput.Content[0] = 'x'
+	if string(event.Output.Content) != `{"result":1}` {
+		t.Fatalf("event output changed with native output: %q", event.Output.Content)
+	}
+}
+
 func TestRuntimeConvertsDiagnosticsAndPreservesNativeCause(t *testing.T) {
 	runtime := newTestRuntime(t)
 	source := api.NewSource("/absolute/query.fql", "RETURN")
@@ -241,7 +280,9 @@ func TestRuntimeRejectsUnsupportedPlanOptions(t *testing.T) {
 
 func TestDebuggerValueAndBreakpointTranslation(t *testing.T) {
 	breakpoint := convertBreakpoint(ferret.DebugBreakpoint{
-		ID: 7,
+		ID:         7,
+		PointID:    8,
+		FunctionID: 9,
 		RequestedLocation: ferret.Location{
 			File:     "/workspace/query.fql",
 			Position: ferret.Position{Line: 2, Column: 3},
@@ -253,11 +294,14 @@ func TestDebuggerValueAndBreakpointTranslation(t *testing.T) {
 			},
 			Span: ferret.Span{Start: 10, End: 20},
 		},
-		Bound: true,
+		BindingMode: ferret.DebugBreakpointBindExact,
+		Bound:       true,
 	})
 	if breakpoint.ID != 7 || breakpoint.RequestedLocation.SourceName != "/workspace/query.fql" ||
 		breakpoint.RequestedLocation.Line != 2 || breakpoint.Location.Line != 4 ||
-		breakpoint.Location.Span.Start != 10 || !breakpoint.Bound {
+		breakpoint.Location.Span.Start != 10 || breakpoint.PointID != 8 ||
+		breakpoint.FunctionID != 9 || breakpoint.BindingMode != apidebugger.BreakpointBindExact ||
+		!breakpoint.Bound {
 		t.Fatalf("breakpoint = %+v", breakpoint)
 	}
 

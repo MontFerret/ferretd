@@ -3,7 +3,7 @@ package dap
 import (
 	"sync"
 
-	"github.com/MontFerret/ferretd/internal/debug"
+	apidebugger "github.com/MontFerret/api/debugger"
 )
 
 type (
@@ -22,8 +22,8 @@ type (
 
 		next      int
 		frames    map[int]int
-		scopes    map[int][]debug.Variable
-		variables map[int]debug.ValueReference
+		scopes    map[int][]apidebugger.Variable
+		variables map[int]apidebugger.ValueReference
 		stale     map[int]handleKind
 	}
 )
@@ -44,8 +44,8 @@ func newHandleTable() *handleTable {
 	return &handleTable{
 		next:      1,
 		frames:    make(map[int]int),
-		scopes:    make(map[int][]debug.Variable),
-		variables: make(map[int]debug.ValueReference),
+		scopes:    make(map[int][]apidebugger.Variable),
+		variables: make(map[int]apidebugger.ValueReference),
 		stale:     make(map[int]handleKind),
 	}
 }
@@ -105,23 +105,23 @@ func (t *handleTable) FrameIndex(handle int) (int, handleStatus) {
 	return 0, handleInvalid
 }
 
-func (t *handleTable) Scope(variables []debug.Variable) int {
+func (t *handleTable) Scope(variables []apidebugger.Variable) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	handle := t.allocateLocked()
-	t.scopes[handle] = append([]debug.Variable(nil), variables...)
+	t.scopes[handle] = append([]apidebugger.Variable(nil), variables...)
 
 	return handle
 }
 
-func (t *handleTable) ScopeVariables(handle int) ([]debug.Variable, handleStatus) {
+func (t *handleTable) ScopeVariables(handle int) ([]apidebugger.Variable, handleStatus) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	variables, ok := t.scopes[handle]
 	if ok {
-		return append([]debug.Variable(nil), variables...), handleCurrent
+		return append([]apidebugger.Variable(nil), variables...), handleCurrent
 	}
 	if t.stale[handle] == scopeHandle {
 		return nil, handleStale
@@ -130,7 +130,7 @@ func (t *handleTable) ScopeVariables(handle int) ([]debug.Variable, handleStatus
 	return nil, handleInvalid
 }
 
-func (t *handleTable) Variable(reference debug.ValueReference) int {
+func (t *handleTable) Variable(reference apidebugger.ValueReference) int {
 	if reference == 0 {
 		return 0
 	}
@@ -144,7 +144,9 @@ func (t *handleTable) Variable(reference debug.ValueReference) int {
 	return handle
 }
 
-func (t *handleTable) VariableReference(handle int) (debug.ValueReference, handleStatus) {
+func (t *handleTable) VariableReference(
+	handle int,
+) (apidebugger.ValueReference, handleStatus) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

@@ -126,8 +126,10 @@ A Session can also lazily own one matching debug Plan. `internal/exec` builds an
 execution runtime that owns one Universal debugger Session. A DebugRuntime
 exposes that session's debugger capability and owns the debug-Plan lease through
 the common runtime's one-time session close attempt. `internal/debug` layers
-DebugSession identity, commands, inspection, events, and state on that
-DebugRuntime. Ordinary Executions and DebugSessions remain sibling resources
+DebugSession identity, commands, presentation scopes, events, and state on that
+DebugRuntime while consuming Universal debugger and source values directly.
+Only `internal/ferretapi` translates those values to or from native Ferret
+debugger types. Ordinary Executions and DebugSessions remain sibling resources
 with distinct observable state machines. Closing a parent stops new runtime
 creation, settles both child kinds, releases leases, and only then closes its
 Plans. Composition cleanup then clears workspaces and closes the shared runtime

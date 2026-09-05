@@ -6,28 +6,28 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/api"
+	apidebugger "github.com/MontFerret/api/debugger"
+	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
-	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 type debugFixture struct {
 	manager    *Manager
 	executions *exec.Manager
+	runtime    *runtimeSpy
 	workspaces *workspace.Manager
 	workspace  *workspace.Workspace
 	session    exec.SessionSnapshot
 }
 
-func mustNewExecutionManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
+func mustNewExecutionManager(
+	t testing.TB,
+	workspaces *workspace.Manager,
+	runtime api.Runtime,
+) *exec.Manager {
 	t.Helper()
-
-	engine, err := ferret.New()
-	if err != nil {
-		t.Fatalf("ferret.New: %v", err)
-	}
-	runtime := ferretapi.New(engine)
 
 	manager, err := exec.New(workspaces, runtime)
 	if err != nil {
@@ -65,6 +65,51 @@ func assertPanics(t testing.TB, call func()) {
 	call()
 }
 
+func debuggerEvent(
+	reason apidebugger.Reason,
+	sourceName string,
+	line int,
+) *apidebugger.Event {
+	return &apidebugger.Event{
+		Reason: reason,
+		Location: apisource.Range{
+			Location: apisource.Location{
+				SourceName: sourceName,
+				Position:   apisource.Position{Line: line, Column: 1},
+			},
+		},
+	}
+}
+
+func debuggerCommandsInclude(commands []debuggerCommand, expected ...string) bool {
+	seen := make(map[string]bool, len(commands))
+	for _, command := range commands {
+		seen[command.name] = true
+	}
+
+	for _, name := range expected {
+		if !seen[name] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func blockDebuggerOnContinue(t testing.TB, debugger *debuggerSessionSpy) {
+	t.Helper()
+
+	if debugger == nil {
+		t.Fatal("debugger session was not created")
+	}
+
+	debugger.continueFn = func(ctx context.Context) (*apidebugger.Event, error) {
+		<-ctx.Done()
+
+		return nil, ctx.Err()
+	}
+}
+
 func newDebugFixture(t *testing.T, query string) debugFixture {
 	t.Helper()
 
@@ -78,7 +123,8 @@ func newDebugFixture(t *testing.T, query string) debugFixture {
 	if err != nil {
 		t.Fatalf("workspace Open: %v", err)
 	}
-	executions := mustNewExecutionManager(t, workspaces)
+	runtime := newRuntimeSpy()
+	executions := mustNewExecutionManager(t, workspaces, runtime)
 	manager := mustNewManager(t, executions)
 	session, err := executions.CreateSession(context.Background(), opened.ID(), "query.fql")
 	if err != nil {
@@ -93,6 +139,7 @@ func newDebugFixture(t *testing.T, query string) debugFixture {
 	return debugFixture{
 		manager:    manager,
 		executions: executions,
+		runtime:    runtime,
 		workspaces: workspaces,
 		workspace:  opened,
 		session:    session,

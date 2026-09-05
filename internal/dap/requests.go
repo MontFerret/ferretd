@@ -11,6 +11,8 @@ import (
 	protocol "github.com/google/go-dap"
 	"github.com/rs/zerolog"
 
+	apidebugger "github.com/MontFerret/api/debugger"
+	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
 )
@@ -337,7 +339,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		)
 	}
 
-	locations := make([]debug.BreakpointLocation, 0, len(request.Arguments.Breakpoints))
+	locations := make([]apisource.Position, 0, len(request.Arguments.Breakpoints))
 	for _, breakpoint := range request.Arguments.Breakpoints {
 		if breakpoint.Condition != "" || breakpoint.HitCondition != "" || breakpoint.LogMessage != "" {
 			return s.sendFailure(
@@ -365,7 +367,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 			)
 		}
 
-		locations = append(locations, debug.BreakpointLocation{Line: line, Column: column})
+		locations = append(locations, apisource.Position{Line: line, Column: column})
 	}
 
 	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, s.owned.program, locations)
@@ -383,16 +385,16 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 	}
 
 	result := make([]protocol.Breakpoint, len(breakpoints))
-	s.clearNativeBreakpoints(s.owned.program)
+	s.clearDebuggerBreakpoints(s.owned.program)
 
 	for index, breakpoint := range breakpoints {
 		stableID := s.bindBreakpointID(s.owned.program, locations[index], breakpoint.ID)
 		result[index] = protocol.Breakpoint{
 			Id:       stableID,
-			Verified: breakpoint.Verified,
+			Verified: breakpoint.Bound,
 			Source:   &protocol.Source{Name: filepath.Base(identity.path), Path: clientPath},
-			Line:     s.toClientLine(breakpoint.Line),
-			Column:   s.toClientColumn(breakpoint.Column),
+			Line:     s.toClientLine(breakpoint.Location.Line),
+			Column:   s.toClientColumn(breakpoint.Location.Column),
 		}
 	}
 
@@ -447,14 +449,14 @@ func (s *Server) sendUnverifiedBreakpoints(
 }
 
 func (s *Server) bindBreakpointID(
-	file string,
-	requested debug.BreakpointLocation,
-	nativeID debug.BreakpointID,
+	sourceName string,
+	requested apisource.Position,
+	debuggerID apidebugger.BreakpointID,
 ) int {
 	s.breakpointMu.Lock()
 	defer s.breakpointMu.Unlock()
 
-	key := breakpointKey{file: file, line: requested.Line, column: requested.Column}
+	key := breakpointKey{sourceName: sourceName, position: requested}
 	stableID := s.stableBreakpoints[key]
 	if stableID == 0 {
 		stableID = s.nextBreakpointID
@@ -462,29 +464,29 @@ func (s *Server) bindBreakpointID(
 		s.stableBreakpoints[key] = stableID
 	}
 
-	s.nativeBreakpoints[nativeID] = stableID
-	s.nativeBreakpointFiles[nativeID] = file
+	s.debuggerBreakpoints[debuggerID] = stableID
+	s.debuggerBreakpointSources[debuggerID] = sourceName
 
 	return stableID
 }
 
-func (s *Server) clearNativeBreakpoints(file string) {
+func (s *Server) clearDebuggerBreakpoints(sourceName string) {
 	s.breakpointMu.Lock()
 	defer s.breakpointMu.Unlock()
 
-	for id, existingFile := range s.nativeBreakpointFiles {
-		if existingFile == file {
-			delete(s.nativeBreakpointFiles, id)
-			delete(s.nativeBreakpoints, id)
+	for id, existingSource := range s.debuggerBreakpointSources {
+		if existingSource == sourceName {
+			delete(s.debuggerBreakpointSources, id)
+			delete(s.debuggerBreakpoints, id)
 		}
 	}
 }
 
-func (s *Server) dapBreakpointID(nativeID debug.BreakpointID) int {
+func (s *Server) dapBreakpointID(debuggerID apidebugger.BreakpointID) int {
 	s.breakpointMu.Lock()
 	defer s.breakpointMu.Unlock()
 
-	return s.nativeBreakpoints[nativeID]
+	return s.debuggerBreakpoints[debuggerID]
 }
 
 func (s *Server) handleContinue(ctx context.Context, request *protocol.ContinueRequest) error {
@@ -664,8 +666,8 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 	}
 
 	result := make([]protocol.StackFrame, 0, end-start)
-	for _, frame := range frames[start:end] {
-		path, pathErr := s.clientPath(frame.Location.File)
+	for offset, frame := range frames[start:end] {
+		path, pathErr := s.clientPath(frame.Location.SourceName)
 		if pathErr != nil {
 			return s.sendFailure(
 				request.GetRequest(),
@@ -673,20 +675,22 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 				func(event *zerolog.Event) {
 					event.
 						Int("thread_id", request.Arguments.ThreadId).
-						Str("source", frame.Location.File)
+						Str("source", frame.Location.SourceName)
 				},
 			)
 		}
 
-		frameID := s.handles.Frame(frame.Index)
+		// Universal frame indices address positions in the complete current Frames() result.
+		frameIndex := start + offset
+		frameID := s.handles.Frame(frameIndex)
 		s.logger.Debug().
 			Int("frame_id", frameID).
-			Int("frame_index", frame.Index).
+			Int("frame_index", frameIndex).
 			Msg("DAP stack frame handle allocated")
 		result = append(result, protocol.StackFrame{
 			Id:     frameID,
 			Name:   frame.Name,
-			Source: &protocol.Source{Name: filepath.Base(frame.Location.File), Path: path},
+			Source: &protocol.Source{Name: filepath.Base(frame.Location.SourceName), Path: path},
 			Line:   s.toClientLine(frame.Location.Line),
 			Column: s.toClientColumn(frame.Location.Column),
 		})
@@ -1032,7 +1036,7 @@ func (s *Server) configuredDebug(requireConfigured bool) (debug.SessionID, bool)
 	return s.owned.debug, true
 }
 
-func (s *Server) protocolVariable(variable debug.Variable) protocol.Variable {
+func (s *Server) protocolVariable(variable apidebugger.Variable) protocol.Variable {
 	return protocol.Variable{
 		Name:               variable.Name,
 		Value:              variable.Value.Display,
