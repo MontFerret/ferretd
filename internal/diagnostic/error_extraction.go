@@ -52,10 +52,7 @@ func convertAPIDiagnostic(uri source.URI, fallbackText string, value apidiagnost
 
 	if primaryIndex >= 0 {
 		annotation := value.Annotations[primaryIndex]
-		result.Range = mapper.SpanToRange(source.Span{
-			Start: annotation.Range.Span.Start,
-			End:   annotation.Range.Span.End,
-		})
+		result.Range = mapper.SpanToRange(annotation.Range.Span)
 	}
 
 	for index, annotation := range value.Annotations {
@@ -68,11 +65,8 @@ func convertAPIDiagnostic(uri source.URI, fallbackText string, value apidiagnost
 			message = "Related location"
 		}
 		result.RelatedInformation = append(result.RelatedInformation, RelatedInformation{
-			URI: uri,
-			Range: mapper.SpanToRange(source.Span{
-				Start: annotation.Range.Span.Start,
-				End:   annotation.Range.Span.End,
-			}),
+			URI:     uri,
+			Range:   mapper.SpanToRange(annotation.Range.Span),
 			Message: message,
 		})
 	}

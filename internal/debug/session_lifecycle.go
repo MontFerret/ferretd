@@ -32,7 +32,7 @@ func (d *session) applyRuntimeEventLocked(event *apidebugger.Event, runtimeError
 		d.publishLocked(EventStopped, false)
 	case apidebugger.ReasonCompleted:
 		d.state = StateCompleted
-		d.output = d.runtime.MaterializeOutput(event.Output)
+		d.output = cloneOutput(event.Output)
 		d.publishLocked(EventCompleted, true)
 	case apidebugger.ReasonTerminated:
 		if runtimeErrorResume && event.Error != nil && !d.terminating {

@@ -161,6 +161,9 @@ These absences are boundaries, not extension points to fill during unrelated
 work. Adding a capability requires changing its owning domain package first,
 then the appropriate adapter and public documentation.
 
+The [Universal API audit](universal-api-audit.md) records retained native import
+exceptions, semantic-type decisions, ownership, and validation evidence.
+
 ## Subsystem guides
 
 * [Daemon and protocols](daemon.md)

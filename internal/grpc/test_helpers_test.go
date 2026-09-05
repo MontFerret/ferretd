@@ -4,20 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferretd/internal/exec"
-	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 func mustNewExecutionManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
 	t.Helper()
 
-	engine, err := ferret.New()
-	if err != nil {
-		t.Fatalf("ferret.New: %v", err)
-	}
-	runtime := ferretapi.New(engine)
+	runtime := &unusedRuntime{t: t}
 
 	manager, err := exec.New(workspaces, runtime)
 	if err != nil {

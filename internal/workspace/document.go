@@ -10,6 +10,8 @@ import (
 	parserdiagnostics "github.com/MontFerret/ferret/v2/pkg/parser/diagnostics"
 	"github.com/MontFerret/ferret/v2/pkg/parser/fql"
 	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
+	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/source"
 )
 
 // Document is a daemon-owned source snapshot for a discovered file. Source and
@@ -139,4 +141,16 @@ func (d Document) VisitSyntax(visitor fql.FqlParserVisitor) (any, bool) {
 // Diagnostics returns copies of the document's load and syntax diagnostics.
 func (d Document) Diagnostics() []*ferretdiagnostics.Diagnostic {
 	return cloneDiagnostics(d.diagnostics)
+}
+
+// ProjectDiagnostics returns independent load and syntax diagnostics in local
+// URI and UTF-16 coordinates, without exposing native parser representations.
+func (d Document) ProjectDiagnostics() []diagnostic.Diagnostic {
+	mapper := source.NewMapper(d.Content())
+	result := make([]diagnostic.Diagnostic, len(d.diagnostics))
+	for index, item := range d.diagnostics {
+		result[index] = diagnostic.Convert(d.file.URI, mapper, item)
+	}
+
+	return result
 }

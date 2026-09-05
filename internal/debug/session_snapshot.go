@@ -27,12 +27,7 @@ func (s SessionSnapshot) Clone() SessionSnapshot {
 	result := s
 	result.HitBreakpointIDs = append([]apidebugger.BreakpointID(nil), s.HitBreakpointIDs...)
 	result.Parameters = s.Parameters.Clone()
-	if s.Output != nil {
-		result.Output = &api.Output{
-			ContentType: s.Output.ContentType,
-			Content:     append([]byte(nil), s.Output.Content...),
-		}
-	}
+	result.Output = cloneOutput(s.Output)
 	result.Failure = s.Failure.Clone()
 
 	return result
@@ -46,7 +41,7 @@ func (d *session) snapshot() SessionSnapshot {
 }
 
 func (d *session) snapshotLocked() SessionSnapshot {
-	result := SessionSnapshot{
+	return SessionSnapshot{
 		ID:               d.id,
 		ExecutionSession: d.runtime.SessionID(),
 		State:            d.state,
@@ -55,9 +50,7 @@ func (d *session) snapshotLocked() SessionSnapshot {
 		HitBreakpointIDs: append([]apidebugger.BreakpointID(nil), d.hitBreakpointIDs...),
 		Parameters:       d.runtime.Parameters(),
 		Options:          d.runtime.Options(),
-		Output:           d.output,
+		Output:           cloneOutput(d.output),
 		Failure:          d.failure.Clone(),
 	}
-
-	return result.Clone()
 }

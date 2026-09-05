@@ -2,13 +2,12 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/MontFerret/api"
-	"github.com/MontFerret/ferret/v2"
-	"github.com/MontFerret/ferretd/internal/ferretapi"
 	localsource "github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -18,16 +17,17 @@ type executionFixture struct {
 	workspaces *workspace.Manager
 	workspace  *workspace.Workspace
 	session    SessionSnapshot
+	runtime    *runtimeSpy
 }
 
 func mustNewManager(t testing.TB, workspaces *workspace.Manager) *Manager {
 	t.Helper()
 
-	engine, err := ferret.New()
-	if err != nil {
-		t.Fatalf("ferret.New: %v", err)
-	}
-	runtime := ferretapi.New(engine)
+	return newManagerWithRuntime(t, workspaces, newRuntimeSpy())
+}
+
+func newManagerWithRuntime(t testing.TB, workspaces *workspace.Manager, runtime *runtimeSpy) *Manager {
+	t.Helper()
 
 	manager, err := New(workspaces, runtime)
 	if err != nil {
@@ -67,7 +67,8 @@ func newExecutionFixture(t *testing.T, query string) executionFixture {
 	if err != nil {
 		t.Fatalf("workspace Open: %v", err)
 	}
-	manager := mustNewManager(t, workspaces)
+	runtime := newRuntimeSpy()
+	manager := newManagerWithRuntime(t, workspaces, runtime)
 	session, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -82,6 +83,7 @@ func newExecutionFixture(t *testing.T, query string) executionFixture {
 		workspaces: workspaces,
 		workspace:  opened,
 		session:    session,
+		runtime:    runtime,
 	}
 }
 
@@ -196,4 +198,16 @@ func runAndObserve(t *testing.T, manager *Manager, id ExecutionID) (ExecutionSna
 	}
 
 	return terminal, events
+}
+
+func parameterOutput(_ context.Context, options sessionOptionsSpy) (api.Output, error) {
+	content, err := json.Marshal(options.params["value"])
+
+	return api.Output{ContentType: options.contentType, Content: content}, err
+}
+
+func canceledOutput(ctx context.Context, _ sessionOptionsSpy) (api.Output, error) {
+	<-ctx.Done()
+
+	return api.Output{}, ctx.Err()
 }

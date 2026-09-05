@@ -25,8 +25,9 @@ consistently with the Session's source snapshot.
 `internal/exec` creates a DebugRuntime through the same lower-level machinery as
 ordinary execution. The common execution state owns cloned parameters,
 normalized `exec.RuntimeOptions`, immutable source/Plan data, manager-owned
-cancellation, one Universal debugger Session, copied `api.Output` and
-`RuntimeFailure` materialization, and idempotent cleanup. The DebugRuntime
+cancellation, one Universal debugger Session, `RuntimeFailure` materialization,
+and idempotent cleanup. The retained debug Session copies `api.Output` when
+accepting completion and when returning snapshots. The DebugRuntime
 exposes the Universal debugger capability and owns the debug-Plan lease. It does
 not expose mutable Session maps, locks, or child state.
 
@@ -47,7 +48,8 @@ The concrete debug Session implementation is package-private; adapters consume
 
 Resolved breakpoint identities and reported hits use `debugger.BreakpointID`;
 DAP owns the projection from those session-scoped identities to stable protocol
-breakpoint IDs.
+breakpoint IDs. Unknown binding modes are rejected by the native adapter rather
+than interpreted as the default.
 
 Supported commands include start, continue, pause, step-in, step-over, step-out,
 and terminate. Inspection includes threads, stack frames, scopes, variables, and

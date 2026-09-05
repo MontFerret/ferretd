@@ -14,7 +14,7 @@ import (
 
 func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
 	t.Run("concurrent_success", func(t *testing.T) {
-		manager, snapshot, engine := newHookedManager(t, "RETURN 1")
+		manager, snapshot, runtimeSpy := newHookedManager(t, "RETURN 1")
 		parent := retainedSession(t, manager, snapshot.ID).session
 		var calls atomic.Int32
 		started := make(chan struct{})
@@ -25,7 +25,7 @@ func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
 			}
 
 			<-release
-			return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
+			return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 		}
 
 		var wait sync.WaitGroup
@@ -120,7 +120,7 @@ func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
 	})
 }
 
-func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T) {
+func TestDebugRuntimePreparesParametersOptionsAndCancellation(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN @value")
 	workingDirectory := t.TempDir()
 	input := map[string]any{
@@ -132,9 +132,8 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 		fixture.session.ID,
 		input,
 		RuntimeOptions{
-			OutputContentType:   " \t\n",
-			WorkingDirectory:    workingDirectory,
-			WorkingDirectorySet: true,
+			OutputContentType: " \t\n",
+			WorkingDirectory:  workingDirectory,
 		},
 	)
 	if err != nil {
@@ -160,30 +159,19 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
-	if !options.WorkingDirectorySet ||
-		options.WorkingDirectory != filepath.Clean(canonicalWorkingDirectory) {
+	if options.WorkingDirectory != filepath.Clean(canonicalWorkingDirectory) {
 		t.Fatalf(
-			"working directory = %q, set = %t, want %q set",
+			"working directory = %q, want %q",
 			options.WorkingDirectory,
-			options.WorkingDirectorySet,
 			canonicalWorkingDirectory,
 		)
 	}
 
-	if _, err := runtime.Debugger().Start(runtime.Context()); err != nil {
-		t.Fatalf("debugger Start: %v", err)
-	}
-	event, err := runtime.Debugger().Continue(runtime.Context())
-	if err != nil {
-		t.Fatalf("debugger Continue: %v", err)
-	}
-	output := runtime.MaterializeOutput(event.Output)
-	if output == nil || output.ContentType != defaultOutputContentType || string(output.Content) != "7" {
-		t.Fatalf("runtime output = %+v", output)
-	}
-	event.Output.Content[0] = '9'
-	if string(output.Content) != "7" {
-		t.Fatalf("runtime output changed with Ferret output: %q", output.Content)
+	parent := retainedSession(t, fixture.manager, fixture.session.ID).session
+	plan := parent.debugPlan.(*planSpy)
+	if got := plan.lastOptions; got.params["value"] != 7 ||
+		got.contentType != defaultOutputContentType || got.fsRoot != canonicalWorkingDirectory {
+		t.Fatalf("debug session options = %+v", got)
 	}
 
 	if err := runtime.Close(); err != nil {
@@ -192,20 +180,11 @@ func TestDebugRuntimePreparesParametersOptionsOutputAndCancellation(t *testing.T
 	if !errors.Is(runtime.Context().Err(), context.Canceled) {
 		t.Fatalf("runtime context error = %v, want context.Canceled", runtime.Context().Err())
 	}
-
-	if _, err := fixture.manager.CreateDebugRuntime(
-		context.Background(),
-		fixture.session.ID,
-		map[string]any{"invalid": make(chan int)},
-		RuntimeOptions{},
-	); err == nil {
-		t.Fatal("invalid parameters unexpectedly succeeded")
-	}
 }
 
 func TestSessionCloseWaitsForDebugRuntimeCompilationWithoutPublishingRuntime(t *testing.T) {
 	var closes atomic.Int32
-	manager, snapshot, engine := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
+	manager, snapshot, runtimeSpy := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		closes.Add(1)
 
 		return nil
@@ -217,7 +196,7 @@ func TestSessionCloseWaitsForDebugRuntimeCompilationWithoutPublishingRuntime(t *
 		close(compileStarted)
 		<-releaseCompile
 
-		return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
+		return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
 
 	type createResult struct {
@@ -255,14 +234,14 @@ func TestSessionCloseWaitsForDebugRuntimeCompilationWithoutPublishingRuntime(t *
 
 func TestDebugRuntimeLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 	var closes atomic.Int32
-	manager, snapshot, engine := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
+	manager, snapshot, runtimeSpy := newHookedManager(t, "RETURN 1", withPlanCloseHook(func() error {
 		closes.Add(1)
 
 		return nil
 	}))
 	parent := retainedSession(t, manager, snapshot.ID).session
 	parent.compileDebug = func(context.Context) (api.Plan, error) {
-		return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
+		return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {
@@ -311,10 +290,10 @@ func TestDebugRuntimeLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 }
 
 func TestDebugRuntimeSessionSetupFailureReleasesLease(t *testing.T) {
-	manager, snapshot, engine := newHookedManager(t, "RETURN 1")
+	manager, snapshot, runtimeSpy := newHookedManager(t, "RETURN 1")
 	parent := retainedSession(t, manager, snapshot.ID).session
 	parent.compileDebug = func(context.Context) (api.Plan, error) {
-		return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
+		return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {
@@ -354,21 +333,28 @@ func TestDebugRuntimeSessionSetupFailureReleasesLease(t *testing.T) {
 
 func TestDebugRuntimeClosesPartialSessionOnSetupFailure(t *testing.T) {
 	want := errors.New("debug session creation failed")
+	closeErr := errors.New("partial session cleanup failed")
 	var closes atomic.Int32
+	var parent *session
 	manager, snapshot, runtime := newHookedManager(
 		t,
 		"RETURN 1",
 		withSessionCloseHook(func() error {
 			closes.Add(1)
+			parent.mu.Lock()
+			leases := parent.debugRuntimes
+			parent.mu.Unlock()
+			if leases != 1 {
+				t.Errorf("leases during partial session cleanup = %d, want 1", leases)
+			}
 
-			return nil
+			return closeErr
 		}),
 	)
-	parent := retainedSession(t, manager, snapshot.ID).session
+	parent = retainedSession(t, manager, snapshot.ID).session
 	parent.compileDebug = func(context.Context) (api.Plan, error) {
 		return &planSpy{
 			runtime: runtime,
-			debug:   true,
 			newDebugFn: func(context.Context, ...api.SessionOption) (apidebugger.Session, error) {
 				return &debugSessionSpy{runtime: runtime}, want
 			},
@@ -376,7 +362,7 @@ func TestDebugRuntimeClosesPartialSessionOnSetupFailure(t *testing.T) {
 	}
 
 	created, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
-	if created != nil || !errors.Is(err, want) {
+	if created != nil || !errors.Is(err, want) || !errors.Is(err, closeErr) {
 		t.Fatalf("CreateDebugRuntime = %v, %v; want nil, %v", created, err, want)
 	}
 	if closes.Load() != 1 {
@@ -393,14 +379,14 @@ func TestDebugRuntimeClosesPartialSessionOnSetupFailure(t *testing.T) {
 func TestDebugRuntimeCloseSharesFailureAndReleasesLeaseOnce(t *testing.T) {
 	want := errors.New("debug runtime close failed")
 	var calls atomic.Int32
-	manager, snapshot, engine := newHookedManager(t, "RETURN 1", withSessionCloseHook(func() error {
+	manager, snapshot, runtimeSpy := newHookedManager(t, "RETURN 1", withSessionCloseHook(func() error {
 		calls.Add(1)
 
 		return want
 	}))
 	parent := retainedSession(t, manager, snapshot.ID).session
 	parent.compileDebug = func(context.Context) (api.Plan, error) {
-		return engine.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
+		return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {

@@ -12,6 +12,8 @@ import (
 	"github.com/MontFerret/ferret/v2/pkg/vm"
 )
 
+// The native aggregate implementation is internal to vm; its exported iterator
+// is the available boundary for preserving every runtime diagnostic.
 type runtimeErrorSet interface {
 	Errors() iter.Seq2[int, *vm.RuntimeError]
 }

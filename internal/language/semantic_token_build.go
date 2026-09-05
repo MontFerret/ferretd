@@ -4,6 +4,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	apisource "github.com/MontFerret/api/source"
+
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
 	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
@@ -163,7 +165,7 @@ func splitSemanticSpan(mapper *source.Mapper, text string, span ferretsource.Spa
 		}
 
 		if offset > segmentStart {
-			result = append(result, SemanticToken{Range: mapper.SpanToRange(source.Span{Start: segmentStart, End: offset})})
+			result = append(result, SemanticToken{Range: mapper.SpanToRange(apisource.Span{Start: segmentStart, End: offset})})
 		}
 		offset += size
 		if r == '\r' && offset < end && text[offset] == '\n' {
@@ -173,7 +175,7 @@ func splitSemanticSpan(mapper *source.Mapper, text string, span ferretsource.Spa
 	}
 
 	if segmentStart < end {
-		result = append(result, SemanticToken{Range: mapper.SpanToRange(source.Span{Start: segmentStart, End: end})})
+		result = append(result, SemanticToken{Range: mapper.SpanToRange(apisource.Span{Start: segmentStart, End: end})})
 	}
 
 	return result

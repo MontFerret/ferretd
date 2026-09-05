@@ -3,7 +3,6 @@ package exec
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/MontFerret/api"
@@ -12,8 +11,6 @@ import (
 
 type planSpy struct {
 	runtime *runtimeSpy
-	source  api.Source
-	debug   bool
 
 	mu           sync.Mutex
 	closed       bool
@@ -27,11 +24,7 @@ type planSpy struct {
 var _ api.Plan = (*planSpy)(nil)
 
 func (p *planSpy) Params() []string {
-	if strings.Contains(p.source.Content, "@value") {
-		return []string{"value"}
-	}
-
-	return nil
+	return p.runtime.parameters
 }
 
 func (p *planSpy) NewSession(
@@ -54,7 +47,7 @@ func (p *planSpy) NewSession(
 	}
 	p.lastOptions = parsed
 
-	return &sessionSpy{runtime: p.runtime, source: p.source, options: parsed}, nil
+	return &sessionSpy{runtime: p.runtime, options: parsed}, nil
 }
 
 func (p *planSpy) NewDebugSession(

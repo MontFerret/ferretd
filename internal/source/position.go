@@ -3,6 +3,8 @@ package source
 import (
 	"sort"
 	"unicode/utf8"
+
+	apisource "github.com/MontFerret/api/source"
 )
 
 type (
@@ -118,7 +120,7 @@ func (m *Mapper) PositionToOffset(position Position) int {
 }
 
 // SpanToRange converts a half-open UTF-8 byte span to a UTF-16 range.
-func (m *Mapper) SpanToRange(span Span) Range {
+func (m *Mapper) SpanToRange(span apisource.Span) Range {
 	start := m.clampOffset(span.Start)
 	end := m.clampOffset(span.End)
 
@@ -130,7 +132,7 @@ func (m *Mapper) SpanToRange(span Span) Range {
 }
 
 // RangeToSpan converts a UTF-16 range to a half-open UTF-8 byte span.
-func (m *Mapper) RangeToSpan(value Range) Span {
+func (m *Mapper) RangeToSpan(value Range) apisource.Span {
 	start := m.PositionToOffset(value.Start)
 	end := m.PositionToOffset(value.End)
 
@@ -138,7 +140,7 @@ func (m *Mapper) RangeToSpan(value Range) Span {
 		end = start
 	}
 
-	return Span{Start: start, End: end}
+	return apisource.Span{Start: start, End: end}
 }
 
 // Text returns the mapper's immutable source text.

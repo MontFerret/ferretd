@@ -69,7 +69,7 @@ func (r *Runtime) Compile(
 		return nil, err
 	}
 
-	if err := parsedOptions.requireOptimizationLevel(api.OptimizationFull); err != nil {
+	if err := parsedOptions.validate(false); err != nil {
 		return nil, err
 	}
 
@@ -100,7 +100,7 @@ func (r *Runtime) CompileDebug(
 		return nil, err
 	}
 
-	if err := parsedOptions.requireOptimizationLevel(api.OptimizationNone); err != nil {
+	if err := parsedOptions.validate(true); err != nil {
 		return nil, err
 	}
 

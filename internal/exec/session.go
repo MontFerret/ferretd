@@ -45,7 +45,7 @@ func newSession(
 	return &session{
 		id:           id,
 		source:       source,
-		parameters:   plan.Params(),
+		parameters:   append([]string(nil), plan.Params()...),
 		text:         text,
 		fsRoot:       fsRoot,
 		compileDebug: compileDebug,

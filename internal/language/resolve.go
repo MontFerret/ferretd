@@ -3,6 +3,8 @@ package language
 import (
 	"context"
 
+	apisource "github.com/MontFerret/api/source"
+
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 
 	"github.com/MontFerret/ferretd/internal/source"
@@ -37,27 +39,27 @@ func (d analyzedDocument) resolve(position source.Position) resolution {
 	if symbol, ok := d.analysis.SymbolAt(offset); ok {
 		result.Symbol = &symbol
 		if symbol.HasDeclaration {
-			declaration := d.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan))
+			declaration := d.mapper.SpanToRange(apisource.Span(symbol.SelectionSpan))
 			result.Range = declaration
 			result.Declaration = &declaration
 		}
 	}
 
 	if reference, ok := d.analysis.ReferenceAt(offset); ok {
-		result.Range = d.mapper.SpanToRange(source.SpanFromFerret(reference.Span))
+		result.Range = d.mapper.SpanToRange(apisource.Span(reference.Span))
 	}
 
 	if call, ok := d.analysis.CallAt(offset); ok {
 		result.Call = &call
 		if offset >= call.CalleeSpan.Start && offset < call.CalleeSpan.End {
-			result.Range = d.mapper.SpanToRange(source.SpanFromFerret(call.CalleeSpan))
+			result.Range = d.mapper.SpanToRange(apisource.Span(call.CalleeSpan))
 		}
 	}
 
 	if fact, ok := d.analysis.TypeAt(offset); ok {
 		result.Type = &fact
 		if result.Range == (source.Range{}) {
-			result.Range = d.mapper.SpanToRange(source.SpanFromFerret(fact.Span))
+			result.Range = d.mapper.SpanToRange(apisource.Span(fact.Span))
 		}
 	}
 

@@ -89,16 +89,25 @@ func (s *executionService) CreateExecution(
 		return nil, status.Error(codes.InvalidArgument, "session ID is required")
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, toExecutionStatusError(err)
+	}
+
 	parameters := map[string]any{}
 	if request.Parameters != nil {
 		parameters = request.Parameters.AsMap()
+	}
+
+	options, err := fromProtoExecutionOptions(request.Options)
+	if err != nil {
+		return nil, toExecutionStatusError(err)
 	}
 
 	result, err := s.executions.CreateExecution(
 		ctx,
 		exec.SessionID(request.SessionId.Value),
 		exec.Parameters(parameters),
-		fromProtoExecutionOptions(request.Options),
+		options,
 	)
 	if err != nil {
 		return nil, toExecutionStatusError(err)

@@ -64,6 +64,9 @@ The file model stores discovered identity and path information. The document
 model additionally retains source contents, a typed `workspace.Revision`,
 Ferret source and parse state, and load or syntax diagnostics. Callers receive
 values or copies rather than mutable manager-owned collections.
+`Document.ProjectDiagnostics` projects load and syntax diagnostics to local URIs
+and UTF-16 ranges. Execution orchestration consumes this neutral view; native
+diagnostic and parser access remains available for tooling.
 
 A malformed or unreadable document does not fail an otherwise coherent
 workspace. It remains represented with diagnostics so other files are usable.

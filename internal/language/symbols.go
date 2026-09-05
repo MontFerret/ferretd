@@ -4,6 +4,8 @@ import (
 	"context"
 	"sort"
 
+	apisource "github.com/MontFerret/api/source"
+
 	"github.com/MontFerret/ferret/v2/pkg/compiler"
 
 	"github.com/MontFerret/ferretd/internal/source"
@@ -32,8 +34,8 @@ func (s *Service) DocumentSymbols(ctx context.Context, uri source.URI) ([]Docume
 			symbol: symbol,
 			value: DocumentSymbol{
 				Name:           symbol.Name,
-				Range:          document.mapper.SpanToRange(source.SpanFromFerret(symbol.DeclarationSpan)),
-				SelectionRange: document.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan)),
+				Range:          document.mapper.SpanToRange(apisource.Span(symbol.DeclarationSpan)),
+				SelectionRange: document.mapper.SpanToRange(apisource.Span(symbol.SelectionSpan)),
 				Kind:           symbol.Kind,
 				Type:           symbol.Type,
 			},
@@ -135,14 +137,14 @@ func (s *Service) References(
 	if includeDeclaration && symbol.HasDeclaration {
 		locations = append(locations, Location{
 			URI:   uri,
-			Range: document.mapper.SpanToRange(source.SpanFromFerret(symbol.SelectionSpan)),
+			Range: document.mapper.SpanToRange(apisource.Span(symbol.SelectionSpan)),
 		})
 	}
 
 	for _, reference := range document.analysis.ReferencesTo(symbol.ID) {
 		locations = append(locations, Location{
 			URI:   uri,
-			Range: document.mapper.SpanToRange(source.SpanFromFerret(reference.Span)),
+			Range: document.mapper.SpanToRange(apisource.Span(reference.Span)),
 		})
 	}
 

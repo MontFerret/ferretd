@@ -2,8 +2,6 @@ package exec
 
 import (
 	"context"
-	"encoding/json"
-	"strings"
 	"sync"
 
 	"github.com/MontFerret/api"
@@ -11,7 +9,6 @@ import (
 
 type sessionSpy struct {
 	runtime *runtimeSpy
-	source  api.Source
 	options sessionOptionsSpy
 
 	closeOnce sync.Once
@@ -29,22 +26,11 @@ func (s *sessionSpy) Run(ctx context.Context) (api.Output, error) {
 		}
 	}
 
-	if strings.Contains(s.source.Content, "WAITFOR FALSE") {
-		<-ctx.Done()
-
-		return api.Output{}, ctx.Err()
+	if s.runtime.run != nil {
+		return s.runtime.run(ctx, s.options)
 	}
 
-	content := []byte("1")
-	if strings.Contains(s.source.Content, "@value") {
-		encoded, err := json.Marshal(s.options.params["value"])
-		if err != nil {
-			return api.Output{}, err
-		}
-		content = encoded
-	}
-
-	return api.Output{ContentType: s.options.contentType, Content: content}, nil
+	return api.Output{ContentType: s.options.contentType, Content: []byte("1")}, nil
 }
 
 func (s *sessionSpy) Close() error {

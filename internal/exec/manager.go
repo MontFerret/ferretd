@@ -9,7 +9,6 @@ import (
 
 	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
-	"github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -117,16 +116,10 @@ func (m *Manager) prepareSession(
 
 	if !document.Loaded() {
 		compileErr := fmt.Errorf("%w: %s", workspace.ErrDocumentUnavailable, file.RelativePath)
-		mapper := source.NewMapper(text)
-		diagnostics := make([]diagnostic.Diagnostic, 0, len(document.Diagnostics()))
-
-		for _, item := range document.Diagnostics() {
-			diagnostics = append(diagnostics, diagnostic.Convert(sourceSnapshot.URI, mapper, item))
-		}
 
 		return nil, &CompilationError{
 			Source:      sourceSnapshot,
-			Diagnostics: diagnostics,
+			Diagnostics: document.ProjectDiagnostics(),
 			Cause:       compileErr,
 		}
 	}

@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -22,13 +23,14 @@ func TestExecutionOptionsProtoRoundTrip(t *testing.T) {
 		wantDirectory   string
 		wantPresent     bool
 		wantContentType string
+		wantError       bool
 	}{
 		{name: "options omitted"},
 		{name: "field omitted", value: &executionv1.ExecutionOptions{}},
 		{
-			name:        "empty field present",
-			value:       &executionv1.ExecutionOptions{WorkingDirectory: &empty},
-			wantPresent: true,
+			name:      "empty field present",
+			value:     &executionv1.ExecutionOptions{WorkingDirectory: &empty},
+			wantError: true,
 		},
 		{
 			name:          "whitespace field present",
@@ -50,9 +52,17 @@ func TestExecutionOptionsProtoRoundTrip(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			decoded := fromProtoExecutionOptions(test.value)
-			if present := decoded.WorkingDirectorySet; present != test.wantPresent {
-				t.Fatalf("decoded working directory presence = %t, want %t", present, test.wantPresent)
+			decoded, err := fromProtoExecutionOptions(test.value)
+			if test.wantError {
+				if !errors.Is(err, exec.ErrInvalidExecutionOptions) {
+					t.Fatalf("decode error = %v, want invalid options", err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("decode options: %v", err)
 			}
 			if decoded.WorkingDirectory != test.wantDirectory {
 				t.Fatalf("decoded WorkingDirectory = %q, want %q", decoded.WorkingDirectory, test.wantDirectory)
@@ -114,23 +124,37 @@ func TestExecutionServiceRejectsPresentBlankWorkingDirectory(t *testing.T) {
 	}
 }
 
+func TestExecutionCancellationPrecedesOptionValidation(t *testing.T) {
+	service, err := newExecutionService(mustNewExecutionManager(t, workspace.New()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	empty := ""
+	_, err = service.CreateExecution(ctx, &executionv1.CreateExecutionRequest{
+		SessionId: &executionv1.SessionId{Value: "session"},
+		Options:   &executionv1.ExecutionOptions{WorkingDirectory: &empty},
+	})
+	if status.Code(err) != codes.Canceled {
+		t.Fatalf("canceled creation: %v", err)
+	}
+}
+
 func TestProtoExecutionWorkingDirectoryPresence(t *testing.T) {
 	tests := []struct {
-		name                string
-		workingDirectory    string
-		workingDirectorySet bool
-		wantPresent         bool
-		wantDirectory       string
+		name             string
+		workingDirectory string
+		wantPresent      bool
+		wantDirectory    string
 	}{
 		{name: "omitted"},
-		{name: "unset value", workingDirectory: "/ignored"},
-		{name: "empty present", workingDirectorySet: true, wantPresent: true},
 		{
-			name:                "present",
-			workingDirectory:    "/canonical/runtime",
-			workingDirectorySet: true,
-			wantPresent:         true,
-			wantDirectory:       "/canonical/runtime",
+			name:             "present",
+			workingDirectory: "/canonical/runtime",
+			wantPresent:      true,
+			wantDirectory:    "/canonical/runtime",
 		},
 	}
 
@@ -141,8 +165,7 @@ func TestProtoExecutionWorkingDirectoryPresence(t *testing.T) {
 				Session: "session",
 				State:   exec.StateCreated,
 				Options: exec.RuntimeOptions{
-					WorkingDirectory:    test.workingDirectory,
-					WorkingDirectorySet: test.workingDirectorySet,
+					WorkingDirectory: test.workingDirectory,
 				},
 			})
 			if err != nil {

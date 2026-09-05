@@ -22,6 +22,8 @@ type (
 		compilePlan         api.Plan
 		compileSources      []api.Source
 		compileDebugSources []api.Source
+		parameters          []string
+		run                 func(context.Context, sessionOptionsSpy) (api.Output, error)
 
 		compileCalls      atomic.Int64
 		compileDebugCalls atomic.Int64
@@ -105,7 +107,7 @@ func (r *runtimeSpy) Compile(
 		return compilePlan, compileErr
 	}
 
-	return &planSpy{runtime: r, source: source}, nil
+	return &planSpy{runtime: r}, nil
 }
 
 func (r *runtimeSpy) CompileDebug(
@@ -123,7 +125,7 @@ func (r *runtimeSpy) CompileDebug(
 		}
 	}
 
-	return &planSpy{runtime: r, source: source, debug: true}, nil
+	return &planSpy{runtime: r}, nil
 }
 
 func (r *runtimeSpy) Close() error {

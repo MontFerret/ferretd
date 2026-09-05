@@ -1,15 +1,12 @@
 package exec
 
-import (
-	"encoding/json"
-
-	"github.com/MontFerret/api"
-)
+import "github.com/MontFerret/api"
 
 type sessionOptionsSpy struct {
 	params      map[string]any
 	contentType string
 	fsRoot      string
+	fsRootCalls int
 }
 
 func newSessionOptionsSpy(options []api.SessionOption) (sessionOptionsSpy, error) {
@@ -28,9 +25,6 @@ func newSessionOptionsSpy(options []api.SessionOption) (sessionOptionsSpy, error
 }
 
 func (o *sessionOptionsSpy) SetParam(name string, value any) error {
-	if _, err := json.Marshal(value); err != nil {
-		return err
-	}
 	o.params[name] = value
 
 	return nil
@@ -54,6 +48,7 @@ func (o *sessionOptionsSpy) SetOutputContentType(contentType string) error {
 
 func (o *sessionOptionsSpy) SetFSRoot(root string) error {
 	o.fsRoot = root
+	o.fsRootCalls++
 
 	return nil
 }

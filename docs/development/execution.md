@@ -52,9 +52,13 @@ Raw maps are converted to `Parameters` only at gRPC and DAP boundaries.
 The package has one concrete per-run implementation. It owns the immutable
 Session/Plan/source target, cloned parameters, normalized options, a
 manager-owned context and cancellation function, one `api.Session` or Universal
-debugger Session, defensively copied `api.Output`, `RuntimeFailure`
+debugger Session, ordinary output capture, `RuntimeFailure`
 materialization, and idempotent session cleanup. Both normal and debug creation
 use the same preparation and cloning semantics.
+
+Ordinary output is copied before closing the Universal session, so cleanup
+cannot invalidate retained bytes. Debug output is retained by the debug Session.
+Both snapshot APIs copy mutable fields once for each caller.
 
 Runtime options also retain an optional canonical working directory. Validation
 requires a nonblank absolute path that resolves to an accessible directory and
@@ -65,11 +69,23 @@ workspace. Every fresh runtime Session receives the parent workspace root via
 baseline without changing the retained daemon option snapshot, compilation, or
 Plan identity.
 
+An empty internal working directory means no explicit override. If neither an
+override nor a workspace root is available, no `api.WithFSRoot` option is sent.
+Only the gRPC boundary distinguishes an omitted wire field from a present empty
+one; it rejects the latter before creating a runtime. Nonempty values, including
+whitespace-only input, go through the domain's existing normalization.
+
 Parameters and output content type are applied with `api.WithParams` and
 `api.WithOutputContentType`. Runtime-specific parameter rejection therefore
 occurs when `api.Plan.NewSession` applies these options. Ordinary execution
 retains it as the existing asynchronous session-creation failure category;
 JSON/protobuf validation at public transport boundaries is unchanged.
+
+Normal compilation omits optimization options and uses the wrapped engine's
+configuration. The provisional adapter rejects every explicit normal-plan
+optimization level because the native engine cannot apply or report per-plan
+levels. Debug compilation guarantees `OptimizationNone`, accepting omission or
+that explicit value and rejecting other levels.
 
 Each Execution owns that runtime plus its ordinary one-shot state, ordered
 lifecycle events, and terminal result or failure. The fresh Universal runtime
@@ -164,3 +180,8 @@ with observable hooks or channels rather than sleeps. Benchmarks cover unchanged
 Session creation, execution creation and watching, and parallel observation;
 changes should be assessed for compilation work, allocations, copies, lock
 contention, goroutine lifetime, and retained resources.
+
+Orchestration tests use API fakes with explicit results and hooks. Native
+compilation, filesystem, and execution integration tests and their unchanged
+benchmarks live under `internal/ferretapi`; debug lifecycle benchmarks remain
+with the debug manager.

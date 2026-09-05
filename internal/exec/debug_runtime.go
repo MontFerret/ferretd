@@ -5,7 +5,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/MontFerret/api"
 	apidebugger "github.com/MontFerret/api/debugger"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/workspace"
@@ -63,11 +62,6 @@ func (r *DebugRuntime) Parameters() Parameters {
 // Options returns the normalized runtime options.
 func (r *DebugRuntime) Options() RuntimeOptions {
 	return r.runtime.options()
-}
-
-// MaterializeOutput copies one Universal result into daemon-owned runtime output.
-func (r *DebugRuntime) MaterializeOutput(output *api.Output) *api.Output {
-	return r.runtime.materializeOutput(output)
 }
 
 // MaterializeFailure converts an error to durable source-aware runtime failure details.
@@ -134,10 +128,11 @@ func (m *Manager) CreateDebugRuntime(
 	debugger, err := target.plan.NewDebugSession(ctx, runtime.sessionOptions()...)
 	if err != nil {
 		runtime.cancel(errExecutionCanceled)
-		parent.releaseDebugRuntime()
 		if debugger != nil {
 			err = errors.Join(err, debugger.Close())
 		}
+
+		parent.releaseDebugRuntime()
 
 		return nil, err
 	}
