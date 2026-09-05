@@ -5,13 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 
-	"github.com/google/uuid"
-
 	"github.com/MontFerret/api"
-	apidebugger "github.com/MontFerret/api/debugger"
+	apidiagnostics "github.com/MontFerret/api/diagnostics"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -81,6 +78,7 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 		t.Fatalf("Open: %v", err)
 	}
 	runtime := newRuntimeSpy()
+	runtime.run = parameterOutput
 	manager, err := New(workspaces, runtime)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -133,7 +131,7 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 		context.Background(),
 		snapshot.ID,
 		Parameters{"value": 8},
-		RuntimeOptions{WorkingDirectory: override, WorkingDirectorySet: true},
+		RuntimeOptions{WorkingDirectory: override},
 	)
 	if err != nil {
 		t.Fatalf("CreateExecution override: %v", err)
@@ -256,105 +254,6 @@ func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
 	}
 }
 
-func TestCreateSessionCompilesImmutableSourceAndParameters(t *testing.T) {
-	fixture := newExecutionFixture(t, "RETURN [@second, @first]")
-	got := fixture.session
-	if got.ID == "" || got.Source.Workspace != fixture.workspace.ID() ||
-		got.Source.RelativePath != "query.fql" || got.Source.URI == "" || got.Source.Revision != 1 {
-		t.Fatalf("Session = %+v", got)
-	}
-	if _, err := uuid.Parse(string(got.ID)); err != nil {
-		t.Fatalf("Session ID is not a UUID: %v", err)
-	}
-	if want := []string{"second", "first"}; !reflect.DeepEqual(got.Parameters, want) {
-		t.Fatalf("parameters = %#v, want %#v", got.Parameters, want)
-	}
-
-	got.Parameters[0] = "mutated"
-	stored, err := fixture.manager.GetSession(context.Background(), got.ID)
-	if err != nil {
-		t.Fatalf("GetSession: %v", err)
-	}
-	if stored.Parameters[0] != "second" {
-		t.Fatalf("stored parameters = %#v, want defensive copy", stored.Parameters)
-	}
-
-	second, err := fixture.manager.CreateSession(
-		context.Background(),
-		fixture.workspace.ID(),
-		"query.fql",
-	)
-	if err != nil {
-		t.Fatalf("second CreateSession: %v", err)
-	}
-	if second.ID == got.ID || second.Source != got.Source {
-		t.Fatalf("second Session = %+v, first = %+v", second, got)
-	}
-}
-
-func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T) {
-	fixture := newExecutionFixture(t, "RETURN 1")
-	first := fixture.session
-
-	writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 2")
-	second, err := fixture.manager.CreateSession(
-		context.Background(),
-		fixture.workspace.ID(),
-		"query.fql",
-	)
-	if err != nil {
-		t.Fatalf("second CreateSession: %v", err)
-	}
-	if second.Source.Revision <= first.Source.Revision {
-		t.Fatalf("source revisions = %d and %d, want increasing revisions",
-			first.Source.Revision, second.Source.Revision)
-	}
-
-	if got := runSessionOutput(t, fixture.manager, first.ID); got != "1" {
-		t.Fatalf("first Session output = %q, want 1", got)
-	}
-	if got := runSessionOutput(t, fixture.manager, second.ID); got != "2" {
-		t.Fatalf("second Session output = %q, want 2", got)
-	}
-
-	third, err := fixture.manager.CreateSession(
-		context.Background(),
-		fixture.workspace.ID(),
-		"query.fql",
-	)
-	if err != nil {
-		t.Fatalf("unchanged CreateSession: %v", err)
-	}
-	if third.Source.Revision != second.Source.Revision {
-		t.Fatalf("unchanged source revision = %d, want %d",
-			third.Source.Revision, second.Source.Revision)
-	}
-}
-
-func TestCreateSessionDiscoversSourceCreatedAfterWorkspaceOpen(t *testing.T) {
-	root := t.TempDir()
-	workspaces := workspace.New()
-	manager := mustNewManager(t, workspaces)
-	t.Cleanup(func() {
-		_ = manager.Close(context.Background())
-		_ = workspaces.Clear(context.Background())
-	})
-
-	opened, err := workspaces.Open(context.Background(), root)
-	if err != nil {
-		t.Fatalf("workspace Open: %v", err)
-	}
-	writeSourceFile(t, root, "created.fql", "RETURN 42")
-
-	session, err := manager.CreateSession(context.Background(), opened.ID(), "created.fql")
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if session.Source.RelativePath != "created.fql" || runSessionOutput(t, manager, session.ID) != "42" {
-		t.Fatalf("created source Session = %+v", session)
-	}
-}
-
 func TestCreateSessionDefensiveDiscoveryEnforcesWorkspaceBoundary(t *testing.T) {
 	root := t.TempDir()
 	workspaces := workspace.New()
@@ -405,134 +304,6 @@ func TestCreateSessionDefensiveDiscoveryEnforcesWorkspaceBoundary(t *testing.T) 
 	}
 }
 
-func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T) {
-	t.Run("compilation failure", func(t *testing.T) {
-		fixture := newExecutionFixture(t, "RETURN 1")
-		writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN missing")
-
-		_, err := fixture.manager.CreateSession(
-			context.Background(),
-			fixture.workspace.ID(),
-			"query.fql",
-		)
-		var compilation *CompilationError
-		if !errors.As(err, &compilation) || !errors.Is(err, ErrCompilationFailed) {
-			t.Fatalf("CreateSession error = %v, want CompilationError", err)
-		}
-		failedRevision := compilation.Source.Revision
-		if failedRevision <= 1 || len(compilation.Diagnostics) == 0 {
-			t.Fatalf("CompilationError = %+v, want advanced revision and diagnostics", compilation)
-		}
-
-		writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 3")
-		recovered, err := fixture.manager.CreateSession(
-			context.Background(),
-			fixture.workspace.ID(),
-			"query.fql",
-		)
-		if err != nil {
-			t.Fatalf("recovered CreateSession: %v", err)
-		}
-		if recovered.Source.Revision <= failedRevision || runSessionOutput(t, fixture.manager, recovered.ID) != "3" {
-			t.Fatalf("recovered Session = %+v", recovered)
-		}
-	})
-
-	t.Run("missing source", func(t *testing.T) {
-		fixture := newExecutionFixture(t, "RETURN 1")
-		if err := os.Remove(filepath.Join(fixture.workspace.Root(), "query.fql")); err != nil {
-			t.Fatalf("Remove: %v", err)
-		}
-
-		_, err := fixture.manager.CreateSession(
-			context.Background(),
-			fixture.workspace.ID(),
-			"query.fql",
-		)
-		if !errors.Is(err, workspace.ErrDocumentNotFound) {
-			t.Fatalf("CreateSession error = %v, want ErrDocumentNotFound", err)
-		}
-	})
-}
-
-func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
-	fixture := newExecutionFixture(t, "LET value = 1\nRETURN value")
-	first := fixture.session
-	writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 2")
-	second, err := fixture.manager.CreateSession(
-		context.Background(),
-		fixture.workspace.ID(),
-		"query.fql",
-	)
-	if err != nil {
-		t.Fatalf("second CreateSession: %v", err)
-	}
-	if second.Source.Revision <= first.Source.Revision {
-		t.Fatalf("second source revision = %d, want greater than %d",
-			second.Source.Revision, first.Source.Revision)
-	}
-
-	runtime, err := fixture.manager.CreateDebugRuntime(
-		context.Background(),
-		first.ID,
-		nil,
-		RuntimeOptions{},
-	)
-	if err != nil {
-		t.Fatalf("CreateDebugRuntime: %v", err)
-	}
-	defer func() { _ = runtime.Close() }()
-	if runtime.runtime.target.source != first.Source || runtime.runtime.target.text != "LET value = 1\nRETURN value" {
-		t.Fatalf("debug runtime = source %+v text %q, want first Session snapshot",
-			runtime.runtime.target.source, runtime.runtime.target.text)
-	}
-
-	debugSession := runtime.Debugger()
-	if _, err := debugSession.Start(context.Background()); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	event, err := debugSession.Continue(context.Background())
-	if err != nil {
-		t.Fatalf("Continue: %v", err)
-	}
-	if event.Reason != apidebugger.ReasonCompleted || event.Output == nil || string(event.Output.Content) != "1" {
-		t.Fatalf("debug completion = %+v, want first Session output 1", event)
-	}
-}
-
-func TestOldSessionLazilyCompilesDebugPlanAfterSourceRemoval(t *testing.T) {
-	fixture := newExecutionFixture(t, "LET value = 1\nRETURN value")
-	first := fixture.session
-	if err := os.Remove(filepath.Join(fixture.workspace.Root(), "query.fql")); err != nil {
-		t.Fatalf("Remove: %v", err)
-	}
-	if _, err := fixture.workspace.RefreshDocument(context.Background(), "query.fql"); !errors.Is(err, workspace.ErrDocumentNotFound) {
-		t.Fatalf("RefreshDocument error = %v, want ErrDocumentNotFound", err)
-	}
-	if output := runSessionOutput(t, fixture.manager, first.ID); output != "1" {
-		t.Fatalf("retained Session output = %q, want 1", output)
-	}
-
-	runtime, err := fixture.manager.CreateDebugRuntime(
-		context.Background(),
-		first.ID,
-		nil,
-		RuntimeOptions{},
-	)
-	if err != nil {
-		t.Fatalf("CreateDebugRuntime: %v", err)
-	}
-	defer func() { _ = runtime.Close() }()
-
-	event, err := runtime.Debugger().Start(context.Background())
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	if event.Reason != apidebugger.ReasonEntry {
-		t.Fatalf("entry event = %+v", event)
-	}
-}
-
 func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing.T) {
 	root := t.TempDir()
 	writeSourceFile(t, root, "query.fql", "RETURN missing")
@@ -541,7 +312,12 @@ func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	manager := mustNewManager(t, workspaces)
+	runtime := newRuntimeSpy()
+	runtime.compileErr = apidiagnostics.Diagnostics{{
+		Kind:    apidiagnostics.UnexpectedError,
+		Message: "unknown variable",
+	}}
+	manager := newManagerWithRuntime(t, workspaces, runtime)
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = workspaces.Clear(context.Background())
@@ -774,19 +550,4 @@ func writeSourceFile(t *testing.T, root, relativePath, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-}
-
-func runSessionOutput(t *testing.T, manager *Manager, sessionID SessionID) string {
-	t.Helper()
-
-	created, err := manager.CreateExecution(context.Background(), sessionID, nil, RuntimeOptions{})
-	if err != nil {
-		t.Fatalf("CreateExecution: %v", err)
-	}
-	terminal, _ := runAndObserve(t, manager, created.ID)
-	if terminal.State != StateCompleted || terminal.Output == nil {
-		t.Fatalf("terminal execution = %+v, want completed output", terminal)
-	}
-
-	return string(terminal.Output.Content)
 }

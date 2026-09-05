@@ -1,6 +1,10 @@
 package source
 
-import "testing"
+import (
+	"testing"
+
+	apisource "github.com/MontFerret/api/source"
+)
 
 func TestMapperOffsetToPosition(t *testing.T) {
 	tests := []struct {
@@ -32,7 +36,7 @@ func TestMapperOffsetToPosition(t *testing.T) {
 func TestMapperSpanToRange(t *testing.T) {
 	mapper := NewMapper("😀a\nbé")
 
-	got := mapper.SpanToRange(Span{Start: 4, End: 9})
+	got := mapper.SpanToRange(apisource.Span{Start: 4, End: 9})
 	want := Range{
 		Start: Position{Character: 2},
 		End:   Position{Line: 1, Character: 2},
@@ -41,7 +45,7 @@ func TestMapperSpanToRange(t *testing.T) {
 		t.Fatalf("SpanToRange = %#v, want %#v", got, want)
 	}
 
-	got = mapper.SpanToRange(Span{Start: 99, End: -1})
+	got = mapper.SpanToRange(apisource.Span{Start: 99, End: -1})
 	want = Range{
 		Start: Position{Line: 1, Character: 2},
 		End:   Position{Line: 1, Character: 2},
@@ -92,7 +96,7 @@ func TestMapperRequiresReceiver(t *testing.T) {
 	}{
 		{name: "OffsetToPosition", call: func() { _ = mapper.OffsetToPosition(0) }},
 		{name: "PositionToOffset", call: func() { _ = mapper.PositionToOffset(Position{}) }},
-		{name: "SpanToRange", call: func() { _ = mapper.SpanToRange(Span{}) }},
+		{name: "SpanToRange", call: func() { _ = mapper.SpanToRange(apisource.Span{}) }},
 		{name: "RangeToSpan", call: func() { _ = mapper.RangeToSpan(Range{}) }},
 		{name: "Text", call: func() { _ = mapper.Text() }},
 	}

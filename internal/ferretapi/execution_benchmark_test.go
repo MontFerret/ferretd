@@ -1,4 +1,4 @@
-package exec
+package ferretapi_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -48,7 +49,7 @@ func BenchmarkManagerExecutionSameSession(b *testing.B) {
 	b.ResetTimer()
 
 	for range b.N {
-		created, err := manager.CreateExecution(ctx, session.ID, map[string]any{"value": 1}, RuntimeOptions{})
+		created, err := manager.CreateExecution(ctx, session.ID, map[string]any{"value": 1}, exec.RuntimeOptions{})
 		if err != nil {
 			b.Fatalf("CreateExecution: %v", err)
 		}
@@ -85,7 +86,7 @@ func BenchmarkManagerExecutionSameSessionConcurrent(b *testing.B) {
 				ctx,
 				session.ID,
 				map[string]any{"value": 1},
-				RuntimeOptions{},
+				exec.RuntimeOptions{},
 			)
 			if err != nil {
 				b.Errorf("CreateExecution: %v", err)
@@ -120,7 +121,7 @@ func BenchmarkManagerExecutionSameSessionConcurrent(b *testing.B) {
 	_ = workspaces.Clear(ctx)
 }
 
-func benchmarkExecutionManager(b *testing.B) (*Manager, SessionSnapshot, *workspace.Manager) {
+func benchmarkExecutionManager(b *testing.B) (*exec.Manager, exec.SessionSnapshot, *workspace.Manager) {
 	b.Helper()
 
 	root := b.TempDir()

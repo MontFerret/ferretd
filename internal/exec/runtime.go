@@ -91,11 +91,12 @@ func (r *executionRuntime) run() runtimeRunResult {
 	r.session = session
 
 	output, runErr := session.Run(r.ctx)
-	closeErr := r.closeSession()
 	var retainedOutput *api.Output
 	if output.ContentType != "" || output.Content != nil {
-		retainedOutput = r.materializeOutput(&output)
+		retainedOutput = cloneOutput(&output)
 	}
+
+	closeErr := r.closeSession()
 	result := runtimeRunResult{
 		output:   retainedOutput,
 		err:      errors.Join(runErr, closeErr),
@@ -116,10 +117,13 @@ func (r *executionRuntime) sessionOptions() []api.SessionOption {
 	}
 
 	fsRoot := r.target.fsRoot
-	if r.input.options.WorkingDirectorySet {
+	if r.input.options.WorkingDirectory != "" {
 		fsRoot = r.input.options.WorkingDirectory
 	}
-	options = append(options, api.WithFSRoot(fsRoot))
+
+	if fsRoot != "" {
+		options = append(options, api.WithFSRoot(fsRoot))
+	}
 
 	return options
 }
@@ -142,17 +146,6 @@ func (r *executionRuntime) materializeFailure(err error) *RuntimeFailure {
 	return &RuntimeFailure{
 		Message:     err.Error(),
 		Diagnostics: diagnostic.FromError(r.target.source.URI, r.target.text, err),
-	}
-}
-
-func (r *executionRuntime) materializeOutput(output *api.Output) *api.Output {
-	if output == nil {
-		return nil
-	}
-
-	return &api.Output{
-		ContentType: output.ContentType,
-		Content:     append([]byte(nil), output.Content...),
 	}
 }
 

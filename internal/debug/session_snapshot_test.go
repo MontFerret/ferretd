@@ -1,6 +1,7 @@
 package debug
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -15,8 +16,7 @@ func TestSessionSnapshotClone(t *testing.T) {
 		HitBreakpointIDs: []apidebugger.BreakpointID{1},
 		Parameters:       map[string]any{"nested": []any{map[string]any{"key": "value"}}},
 		Options: exec.RuntimeOptions{
-			WorkingDirectory:    "/runtime root",
-			WorkingDirectorySet: true,
+			WorkingDirectory: "/runtime root",
 		},
 		Output: &api.Output{Content: []byte("one")},
 		Failure: &exec.RuntimeFailure{
@@ -48,5 +48,53 @@ func TestSessionSnapshotClone(t *testing.T) {
 	}
 	if reflect.DeepEqual(value, cloned) {
 		t.Fatal("clone did not retain independent mutable data")
+	}
+}
+
+func TestDebugSessionRetainsIndependentOutputSnapshots(t *testing.T) {
+	fixture := newDebugFixture(t, "RETURN 1")
+	ctx := context.Background()
+	created, err := fixture.manager.CreateSession(ctx, fixture.session.ID, nil, exec.RuntimeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("result")
+	debugger := fixture.runtime.latestDebugger()
+	debugger.continueFn = func(context.Context) (*apidebugger.Event, error) {
+		return &apidebugger.Event{
+			Reason: apidebugger.ReasonCompleted,
+			Output: &api.Output{ContentType: "text/plain", Content: content},
+		}, nil
+	}
+
+	subscription, err := fixture.manager.WatchSession(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(subscription.Cancel)
+
+	if _, err := fixture.manager.StartSession(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitForState(t, subscription, StateStopped)
+
+	if _, err := fixture.manager.ContinueSession(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	terminal := waitForState(t, subscription, StateCompleted)
+	content[0] = 'X'
+	if terminal.Output == nil || terminal.Output.ContentType != "text/plain" || string(terminal.Output.Content) != "result" {
+		t.Fatalf("terminal output = %+v", terminal.Output)
+	}
+
+	terminal.Output.Content[0] = 'Y'
+	retained, err := fixture.manager.GetSession(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if retained.Output == nil || string(retained.Output.Content) != "result" {
+		t.Fatalf("retained output = %+v", retained.Output)
 	}
 }

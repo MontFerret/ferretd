@@ -69,6 +69,11 @@ func (s *debugSession) SetBreakpointAt(
 	location apisource.Location,
 	options apidebugger.BreakpointOptions,
 ) (apidebugger.Breakpoint, error) {
+	mode, err := nativeBreakpointMode(options.BindingMode)
+	if err != nil {
+		return apidebugger.Breakpoint{}, err
+	}
+
 	breakpoint, err := s.session.SetBreakpointAt(
 		ferret.DebugSourceLocation{
 			File: location.SourceName,
@@ -77,7 +82,7 @@ func (s *debugSession) SetBreakpointAt(
 				Column: location.Column,
 			},
 		},
-		ferret.DebugBreakpointOptions{BindingMode: nativeBreakpointMode(options.BindingMode)},
+		ferret.DebugBreakpointOptions{BindingMode: mode},
 	)
 
 	return convertBreakpoint(breakpoint), wrapDiagnosticError(s.source, err)

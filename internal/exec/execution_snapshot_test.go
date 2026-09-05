@@ -12,8 +12,7 @@ func TestExecutionSnapshotClone(t *testing.T) {
 	value := ExecutionSnapshot{
 		Parameters: map[string]any{"nested": []any{map[string]any{"key": "value"}}},
 		Options: RuntimeOptions{
-			WorkingDirectory:    "/runtime root",
-			WorkingDirectorySet: true,
+			WorkingDirectory: "/runtime root",
 		},
 		Output: &api.Output{Content: []byte("one")},
 		Failure: &Failure{

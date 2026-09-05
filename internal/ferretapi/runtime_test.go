@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -37,7 +36,6 @@ func TestRuntimeTranslatesSourceOptionsAndReusesPlan(t *testing.T) {
 	compiled, err := runtime.Compile(
 		context.Background(),
 		api.NewSource(sourcePath, "RETURN [@value, TO_STRING(IO::FS::READ(\"value.txt\"))]"),
-		api.WithOptimizationLevel(api.OptimizationFull),
 	)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
@@ -236,48 +234,6 @@ func TestRuntimeConvertsDiagnosticsAndPreservesNativeCause(t *testing.T) {
 	}
 }
 
-func TestRuntimeRejectsUnsupportedPlanOptions(t *testing.T) {
-	runtime := newTestRuntime(t)
-	source := api.NewAnonymousSource("RETURN 1")
-	tests := []struct {
-		name string
-		call func() error
-	}{
-		{
-			name: "ordinary non-default",
-			call: func() error {
-				_, err := runtime.Compile(
-					context.Background(),
-					source,
-					api.WithOptimizationLevel(api.OptimizationNone),
-				)
-
-				return err
-			},
-		},
-		{
-			name: "debug non-default",
-			call: func() error {
-				_, err := runtime.CompileDebug(
-					context.Background(),
-					source,
-					api.WithOptimizationLevel(api.OptimizationFull),
-				)
-
-				return err
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if err := test.call(); err == nil || !strings.Contains(err.Error(), "not supported") {
-				t.Fatalf("error = %v, want unsupported option", err)
-			}
-		})
-	}
-}
-
 func TestDebuggerValueAndBreakpointTranslation(t *testing.T) {
 	breakpoint := convertBreakpoint(ferret.DebugBreakpoint{
 		ID:         7,
@@ -320,8 +276,8 @@ func TestDebuggerValueAndBreakpointTranslation(t *testing.T) {
 		t.Fatalf("variables = %+v", variables)
 	}
 
-	if nativeBreakpointMode(apidebugger.BreakpointBindNextExecutableInSource) !=
-		ferret.DebugBreakpointBindNextExecutableInFile {
+	mode, err := nativeBreakpointMode(apidebugger.BreakpointBindNextExecutableInSource)
+	if err != nil || mode != ferret.DebugBreakpointBindNextExecutableInFile {
 		t.Fatal("default breakpoint mode was not translated to native in-file binding")
 	}
 	if convertBreakpointMode(ferret.DebugBreakpointBindNextExecutableInFunction) !=

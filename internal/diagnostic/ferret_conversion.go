@@ -3,6 +3,8 @@ package diagnostic
 import (
 	"strings"
 
+	apisource "github.com/MontFerret/api/source"
+
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
 	"github.com/MontFerret/ferretd/internal/source"
 )
@@ -35,10 +37,7 @@ func Convert(uri source.URI, mapper *source.Mapper, value *ferretdiagnostics.Dia
 	}
 
 	if primaryIndex >= 0 {
-		result.Range = mapper.SpanToRange(source.Span{
-			Start: value.Spans[primaryIndex].Span.Start,
-			End:   value.Spans[primaryIndex].Span.End,
-		})
+		result.Range = mapper.SpanToRange(apisource.Span(value.Spans[primaryIndex].Span))
 	}
 
 	for index, span := range value.Spans {
@@ -52,11 +51,8 @@ func Convert(uri source.URI, mapper *source.Mapper, value *ferretdiagnostics.Dia
 		}
 
 		result.RelatedInformation = append(result.RelatedInformation, RelatedInformation{
-			URI: uri,
-			Range: mapper.SpanToRange(source.Span{
-				Start: span.Span.Start,
-				End:   span.Span.End,
-			}),
+			URI:     uri,
+			Range:   mapper.SpanToRange(apisource.Span(span.Span)),
 			Message: label,
 		})
 	}

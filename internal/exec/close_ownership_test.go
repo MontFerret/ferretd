@@ -336,11 +336,12 @@ func newCloseOwnershipFixtureWithRuntimeCloseError(
 
 	manager, session, _ := newHookedManager(
 		t,
-		"RETURN WAITFOR FALSE TIMEOUT 30s EVERY 10ms",
+		"RETURN 1",
 		withBeforeRunHook(func(ctx context.Context) (context.Context, error) {
 			fixture.runStartOnce.Do(func() { close(fixture.runStarted) })
+			<-ctx.Done()
 
-			return ctx, nil
+			return ctx, ctx.Err()
 		}),
 		withSessionCloseHook(func() error {
 			fixture.runtimeCloseCalls.Add(1)

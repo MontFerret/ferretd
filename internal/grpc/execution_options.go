@@ -1,6 +1,8 @@
 package grpc
 
 import (
+	"fmt"
+
 	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 	"github.com/MontFerret/ferretd/internal/exec"
 )
@@ -10,7 +12,7 @@ func toProtoExecutionOptions(value exec.RuntimeOptions) *executionv1.ExecutionOp
 		OutputContentType: value.OutputContentType,
 	}
 
-	if value.WorkingDirectorySet {
+	if value.WorkingDirectory != "" {
 		workingDirectory := value.WorkingDirectory
 		result.WorkingDirectory = &workingDirectory
 	}
@@ -18,9 +20,9 @@ func toProtoExecutionOptions(value exec.RuntimeOptions) *executionv1.ExecutionOp
 	return result
 }
 
-func fromProtoExecutionOptions(value *executionv1.ExecutionOptions) exec.RuntimeOptions {
+func fromProtoExecutionOptions(value *executionv1.ExecutionOptions) (exec.RuntimeOptions, error) {
 	if value == nil {
-		return exec.RuntimeOptions{}
+		return exec.RuntimeOptions{}, nil
 	}
 
 	result := exec.RuntimeOptions{
@@ -28,9 +30,12 @@ func fromProtoExecutionOptions(value *executionv1.ExecutionOptions) exec.Runtime
 	}
 
 	if value.WorkingDirectory != nil {
+		if *value.WorkingDirectory == "" {
+			return exec.RuntimeOptions{}, fmt.Errorf("%w: working directory must not be blank", exec.ErrInvalidExecutionOptions)
+		}
+
 		result.WorkingDirectory = value.GetWorkingDirectory()
-		result.WorkingDirectorySet = true
 	}
 
-	return result
+	return result, nil
 }

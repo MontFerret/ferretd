@@ -102,9 +102,11 @@ document URIs must use the local `file` scheme. Unsupported schemes, non-local
 hosts, queries, fragments, and empty paths are rejected. Unix and Windows path
 rules, escaping, and `localhost` handling are compatibility-sensitive.
 
-Ferret source spans and protocol-neutral spans use zero-based, half-open UTF-8
-byte offsets. Protocol-neutral positions and LSP positions use zero-based lines
-and UTF-16 code units with half-open ranges. The mapper clamps invalid offsets
+Ferret source spans and `api/source.Span` values passed to the local mapper use
+zero-based, half-open UTF-8 byte offsets. The Universal Span leaves units to its
+producer; the mapper explicitly requires bytes. Protocol-neutral positions and
+LSP positions use zero-based lines and UTF-16 code units with half-open ranges.
+The mapper clamps invalid offsets
 safely and preserves CR, LF, CRLF, Unicode, and astral-character behavior.
 
 Protocol-neutral source and diagnostic types stay below the LSP adapter. The

@@ -1,19 +1,23 @@
 package ferretapi
 
 import (
+	"fmt"
+
 	apidebugger "github.com/MontFerret/api/debugger"
 	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferret/v2"
 )
 
-func nativeBreakpointMode(value apidebugger.BreakpointBindingMode) ferret.DebugBreakpointBindingMode {
+func nativeBreakpointMode(value apidebugger.BreakpointBindingMode) (ferret.DebugBreakpointBindingMode, error) {
 	switch value {
 	case apidebugger.BreakpointBindExact:
-		return ferret.DebugBreakpointBindExact
+		return ferret.DebugBreakpointBindExact, nil
 	case apidebugger.BreakpointBindNextExecutableInFunction:
-		return ferret.DebugBreakpointBindNextExecutableInFunction
+		return ferret.DebugBreakpointBindNextExecutableInFunction, nil
+	case apidebugger.BreakpointBindNextExecutableInSource:
+		return ferret.DebugBreakpointBindNextExecutableInFile, nil
 	default:
-		return ferret.DebugBreakpointBindNextExecutableInFile
+		return 0, fmt.Errorf("unknown breakpoint binding mode %d", value)
 	}
 }
 
