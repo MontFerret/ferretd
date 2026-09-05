@@ -9,28 +9,18 @@ import (
 	apidebugger "github.com/MontFerret/api/debugger"
 	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
-	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
 
-type (
-	// Manager owns all process-local retained debug Sessions.
-	Manager struct {
-		mu sync.RWMutex
+// Manager owns all process-local retained debug Sessions.
+type Manager struct {
+	mu sync.RWMutex
 
-		executions *exec.Manager
-		sessions   map[SessionID]*session
-		closing    map[SessionID]*session
-		groups     map[exec.SessionID]*sessionGroup
-		closed     bool
-	}
-
-	sessionGroup struct {
-		// Manager.mu is acquired before gate when both are needed. Gate never
-		// calls back into the Manager, so the lock order cannot reverse.
-		gate     lifecycle.Gate
-		sessions map[SessionID]*session
-	}
-)
+	executions *exec.Manager
+	sessions   map[SessionID]*session
+	closing    map[SessionID]*session
+	groups     map[exec.SessionID]*sessionGroup
+	closed     bool
+}
 
 // New creates a debug manager that borrows an execution manager.
 // It returns an error when the execution manager is nil.

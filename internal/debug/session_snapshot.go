@@ -37,3 +37,27 @@ func (s SessionSnapshot) Clone() SessionSnapshot {
 
 	return result
 }
+
+func (d *session) snapshot() SessionSnapshot {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.snapshotLocked()
+}
+
+func (d *session) snapshotLocked() SessionSnapshot {
+	result := SessionSnapshot{
+		ID:               d.id,
+		ExecutionSession: d.runtime.SessionID(),
+		State:            d.state,
+		Reason:           d.reason,
+		Location:         d.location,
+		HitBreakpointIDs: append([]apidebugger.BreakpointID(nil), d.hitBreakpointIDs...),
+		Parameters:       d.runtime.Parameters(),
+		Options:          d.runtime.Options(),
+		Output:           d.output,
+		Failure:          d.failure.Clone(),
+	}
+
+	return result.Clone()
+}

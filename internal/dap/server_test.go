@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -830,23 +831,58 @@ RETURN outer(@input) + box.value`)
 		Arguments: protocol.StackTraceArguments{
 			ThreadId:   threadID,
 			StartFrame: 1,
-			Levels:     1,
+			Levels:     2,
 		},
 	})
 	pagedStackResponse, ok := client.read().(*protocol.StackTraceResponse)
-	if !ok || len(pagedStackResponse.Body.StackFrames) != 1 ||
+	if !ok || !pagedStackResponse.Success || len(pagedStackResponse.Body.StackFrames) != 2 ||
 		pagedStackResponse.Body.TotalFrames != 3 {
 		t.Fatalf("paged stackTrace response = %#v", pagedStackResponse)
 	}
-	pagedFrame := pagedStackResponse.Body.StackFrames[0]
-	if frameIndex, status := client.server.handles.FrameIndex(pagedFrame.Id); status != handleCurrent || frameIndex != 1 {
-		t.Fatalf("paged frame handle = (%d, %v), want (1, current)", frameIndex, status)
+
+	for offset, frame := range pagedStackResponse.Body.StackFrames {
+		wantIndex := 1 + offset
+		wantFrame := stackResponse.Body.StackFrames[wantIndex]
+		wantFrame.Id = frame.Id
+		if !reflect.DeepEqual(frame, wantFrame) {
+			t.Fatalf("paged frame = %+v, want %+v", frame, wantFrame)
+		}
+
+		if frameIndex, status := client.server.handles.FrameIndex(frame.Id); status != handleCurrent || frameIndex != wantIndex {
+			t.Fatalf("paged frame handle = (%d, %v), want (%d, current)", frameIndex, status, wantIndex)
+		}
+	}
+
+	finalStackTrace := client.request("stackTrace")
+	client.send(&protocol.StackTraceRequest{
+		Request: finalStackTrace,
+		Arguments: protocol.StackTraceArguments{
+			ThreadId:   threadID,
+			StartFrame: 2,
+			Levels:     1,
+		},
+	})
+	finalStackResponse, ok := client.read().(*protocol.StackTraceResponse)
+	if !ok || !finalStackResponse.Success || len(finalStackResponse.Body.StackFrames) != 1 ||
+		finalStackResponse.Body.TotalFrames != 3 {
+		t.Fatalf("final stackTrace page response = %#v", finalStackResponse)
+	}
+
+	finalFrame := finalStackResponse.Body.StackFrames[0]
+	wantFinalFrame := stackResponse.Body.StackFrames[2]
+	wantFinalFrame.Id = finalFrame.Id
+	if !reflect.DeepEqual(finalFrame, wantFinalFrame) {
+		t.Fatalf("final page frame = %+v, want %+v", finalFrame, wantFinalFrame)
+	}
+
+	if frameIndex, status := client.server.handles.FrameIndex(finalFrame.Id); status != handleCurrent || frameIndex != 2 {
+		t.Fatalf("final page frame handle = (%d, %v), want (2, current)", frameIndex, status)
 	}
 
 	scopes := client.request("scopes")
 	client.send(&protocol.ScopesRequest{
 		Request:   scopes,
-		Arguments: protocol.ScopesArguments{FrameId: stackResponse.Body.StackFrames[1].Id},
+		Arguments: protocol.ScopesArguments{FrameId: pagedStackResponse.Body.StackFrames[0].Id},
 	})
 	scopesResponse, ok := client.read().(*protocol.ScopesResponse)
 	if !ok || len(scopesResponse.Body.Scopes) != 2 || scopesResponse.Body.Scopes[0].Name != "Locals" ||
@@ -870,8 +906,8 @@ RETURN outer(@input) + box.value`)
 	client.send(&protocol.EvaluateRequest{
 		Request: evaluate,
 		Arguments: protocol.EvaluateArguments{
-			Expression: "caller + @input",
-			FrameId:    stackResponse.Body.StackFrames[1].Id,
+			Expression: "p + @input",
+			FrameId:    pagedStackResponse.Body.StackFrames[0].Id,
 			Context:    "hover",
 		},
 	})
@@ -880,45 +916,66 @@ RETURN outer(@input) + box.value`)
 		t.Fatalf("evaluate response = %#v", evaluateResponse)
 	}
 
-	mainScopes := client.request("scopes")
-	client.send(&protocol.ScopesRequest{
-		Request:   mainScopes,
-		Arguments: protocol.ScopesArguments{FrameId: stackResponse.Body.StackFrames[2].Id},
-	})
-	mainScopesResponse, ok := client.read().(*protocol.ScopesResponse)
-	if !ok || len(mainScopesResponse.Body.Scopes) != 2 {
-		t.Fatalf("main scopes response = %#v", mainScopesResponse)
-	}
-	mainVariables := client.request("variables")
-	client.send(&protocol.VariablesRequest{
-		Request: mainVariables,
-		Arguments: protocol.VariablesArguments{
-			VariablesReference: mainScopesResponse.Body.Scopes[0].VariablesReference,
-		},
-	})
-	mainVariablesResponse, ok := client.read().(*protocol.VariablesResponse)
-	if !ok {
-		t.Fatalf("main variables response = %#v", mainVariablesResponse)
-	}
-	boxReference := 0
-	for _, variable := range mainVariablesResponse.Body.Variables {
-		if variable.Name == "box" {
-			boxReference = variable.VariablesReference
+	for _, mainFrame := range []protocol.StackFrame{pagedStackResponse.Body.StackFrames[1], finalFrame} {
+		mainScopes := client.request("scopes")
+		client.send(&protocol.ScopesRequest{
+			Request:   mainScopes,
+			Arguments: protocol.ScopesArguments{FrameId: mainFrame.Id},
+		})
+		mainScopesResponse, ok := client.read().(*protocol.ScopesResponse)
+		if !ok || len(mainScopesResponse.Body.Scopes) != 2 {
+			t.Fatalf("main scopes response = %#v", mainScopesResponse)
 		}
-	}
-	if boxReference == 0 {
-		t.Fatalf("box variable has no reference: %#v", mainVariablesResponse.Body.Variables)
-	}
-	boxVariables := client.request("variables")
-	client.send(&protocol.VariablesRequest{
-		Request: boxVariables,
-		Arguments: protocol.VariablesArguments{
-			VariablesReference: boxReference,
-		},
-	})
-	boxVariablesResponse, ok := client.read().(*protocol.VariablesResponse)
-	if !ok || !protocolVariablesContain(boxVariablesResponse.Body.Variables, "value", "10") {
-		t.Fatalf("box variables response = %#v", boxVariablesResponse)
+
+		mainVariables := client.request("variables")
+		client.send(&protocol.VariablesRequest{
+			Request: mainVariables,
+			Arguments: protocol.VariablesArguments{
+				VariablesReference: mainScopesResponse.Body.Scopes[0].VariablesReference,
+			},
+		})
+		mainVariablesResponse, ok := client.read().(*protocol.VariablesResponse)
+		if !ok {
+			t.Fatalf("main variables response = %#v", mainVariablesResponse)
+		}
+
+		boxReference := 0
+		for _, variable := range mainVariablesResponse.Body.Variables {
+			if variable.Name == "box" {
+				boxReference = variable.VariablesReference
+			}
+		}
+
+		if boxReference == 0 {
+			t.Fatalf("box variable has no reference: %#v", mainVariablesResponse.Body.Variables)
+		}
+
+		boxVariables := client.request("variables")
+		client.send(&protocol.VariablesRequest{
+			Request: boxVariables,
+			Arguments: protocol.VariablesArguments{
+				VariablesReference: boxReference,
+			},
+		})
+		boxVariablesResponse, ok := client.read().(*protocol.VariablesResponse)
+		if !ok || !protocolVariablesContain(boxVariablesResponse.Body.Variables, "value", "10") {
+			t.Fatalf("box variables response = %#v", boxVariablesResponse)
+		}
+
+		mainEvaluate := client.request("evaluate")
+		client.send(&protocol.EvaluateRequest{
+			Request: mainEvaluate,
+			Arguments: protocol.EvaluateArguments{
+				Expression: "box.value",
+				FrameId:    mainFrame.Id,
+				Context:    "hover",
+			},
+		})
+		mainEvaluateResponse, ok := client.read().(*protocol.EvaluateResponse)
+		if !ok || !mainEvaluateResponse.Success || mainEvaluateResponse.Body.Result != "10" ||
+			mainEvaluateResponse.Body.Type != "Int" {
+			t.Fatalf("main evaluate response = %#v", mainEvaluateResponse)
+		}
 	}
 
 	next := client.request("next")
@@ -936,7 +993,7 @@ RETURN outer(@input) + box.value`)
 	staleScopes := client.request("scopes")
 	client.send(&protocol.ScopesRequest{
 		Request:   staleScopes,
-		Arguments: protocol.ScopesArguments{FrameId: stackResponse.Body.StackFrames[1].Id},
+		Arguments: protocol.ScopesArguments{FrameId: pagedStackResponse.Body.StackFrames[0].Id},
 	})
 	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
 		len(response.Body.Scopes) != 0 {

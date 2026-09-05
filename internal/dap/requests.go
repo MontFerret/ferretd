@@ -680,6 +680,7 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 			)
 		}
 
+		// Universal frame indices address positions in the complete current Frames() result.
 		frameIndex := start + offset
 		frameID := s.handles.Frame(frameIndex)
 		s.logger.Debug().

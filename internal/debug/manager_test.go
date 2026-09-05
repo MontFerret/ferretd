@@ -266,10 +266,8 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 		Name:  "child",
 		Value: apidebugger.Value{Type: "Number", Display: "4"},
 	}}
-	debuggerSession.values["@input + 3"] = apidebugger.Value{
-		Type:      "Number",
-		Display:   "5",
-		Reference: 88,
+	debuggerSession.values[1] = map[string]apidebugger.Value{
+		"@input + 3": {Type: "Number", Display: "5", Reference: 88},
 	}
 
 	pauseRequested := make(chan struct{})

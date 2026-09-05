@@ -28,7 +28,7 @@ type (
 		frames      []apidebugger.Frame
 		locals      map[int][]apidebugger.Variable
 		variables   map[apidebugger.ValueReference][]apidebugger.Variable
-		values      map[string]apidebugger.Value
+		values      map[int]map[string]apidebugger.Value
 
 		startFn    func(context.Context) (*apidebugger.Event, error)
 		continueFn func(context.Context) (*apidebugger.Event, error)
@@ -50,7 +50,7 @@ func newDebuggerSessionSpy() *debuggerSessionSpy {
 	return &debuggerSessionSpy{
 		locals:    make(map[int][]apidebugger.Variable),
 		variables: make(map[apidebugger.ValueReference][]apidebugger.Variable),
-		values:    make(map[string]apidebugger.Value),
+		values:    make(map[int]map[string]apidebugger.Value),
 	}
 }
 
@@ -235,7 +235,7 @@ func (s *debuggerSessionSpy) EvaluateFrame(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.values[expression], nil
+	return s.values[frame][expression], nil
 }
 
 func (s *debuggerSessionSpy) Close() error {
