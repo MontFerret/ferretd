@@ -10,11 +10,12 @@ import (
 const defaultOutputContentType = "application/json"
 
 // RuntimeOptions contains per-run Universal runtime settings shared by ordinary and
-// debugger execution. An empty WorkingDirectory leaves the filesystem root
-// override absent.
+// debugger execution.
 type RuntimeOptions struct {
 	OutputContentType string
-	WorkingDirectory  string
+	// WorkingDirectory overrides the workspace FS root when nonempty.
+	// Empty means no explicit override; transports resolve presence beforehand.
+	WorkingDirectory string
 }
 
 func (o RuntimeOptions) normalized() (RuntimeOptions, error) {

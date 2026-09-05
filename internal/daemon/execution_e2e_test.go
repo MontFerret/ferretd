@@ -12,7 +12,7 @@ import (
 	supportedclient "github.com/MontFerret/ferretd/client"
 )
 
-func TestSupportedClientExecutionWorkingDirectoryOutsideWorkspace(t *testing.T) {
+func TestSupportedClientExecutionWorkingDirectoryPrecedence(t *testing.T) {
 	// Register the roots before daemon cleanup so LIFO teardown releases Windows
 	// filesystem handles before TempDir removes their directories.
 	workspaceRoot := t.TempDir()
@@ -23,6 +23,11 @@ func TestSupportedClientExecutionWorkingDirectoryOutsideWorkspace(t *testing.T) 
 	); err != nil {
 		t.Fatalf("write query: %v", err)
 	}
+
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "value.txt"), []byte("workspace"), 0o600); err != nil {
+		t.Fatalf("write workspace value: %v", err)
+	}
+
 	runtimeRoot := t.TempDir()
 	if err := os.WriteFile(filepath.Join(runtimeRoot, "value.txt"), []byte("runtime"), 0o600); err != nil {
 		t.Fatalf("write runtime value: %v", err)
@@ -70,46 +75,74 @@ func TestSupportedClientExecutionWorkingDirectoryOutsideWorkspace(t *testing.T) 
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	created, err := client.Executions().CreateExecution(ctx, supportedclient.CreateExecutionRequest{
-		SessionID: session.ID,
-		Options: supportedclient.ExecutionOptions{
-			WorkingDirectory: runtimeRoot,
-		},
-	})
-	if err != nil {
-		t.Fatalf("CreateExecution: %v", err)
-	}
-	if created.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
-		t.Fatalf("WorkingDirectory = %q, want %q", created.Options.WorkingDirectory, canonicalRuntimeRoot)
-	}
 
-	watch, err := client.Executions().WatchExecution(ctx, created.ID)
-	if err != nil {
-		t.Fatalf("WatchExecution: %v", err)
-	}
-	if event, err := watch.Recv(); err != nil || event.Kind != supportedclient.ExecutionEventCreated ||
-		event.Execution.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
-		t.Fatalf("created event = %+v, %v", event, err)
-	}
-	running, err := client.Executions().RunExecution(ctx, created.ID)
-	if err != nil {
-		t.Fatalf("RunExecution: %v", err)
-	}
-	if running.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
-		t.Fatalf("running WorkingDirectory = %q, want %q", running.Options.WorkingDirectory, canonicalRuntimeRoot)
-	}
-	if event, err := watch.Recv(); err != nil || event.Kind != supportedclient.ExecutionEventStarted ||
-		event.Execution.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
-		t.Fatalf("started event = %+v, %v", event, err)
-	}
-	terminal, err := watch.Recv()
-	if err != nil {
-		t.Fatalf("terminal event: %v", err)
-	}
-	if terminal.Kind != supportedclient.ExecutionEventCompleted || terminal.Execution.Output == nil ||
-		string(terminal.Execution.Output.Data) != `"runtime"` ||
-		terminal.Execution.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
-		t.Fatalf("terminal event = %+v", terminal)
+	for _, test := range []struct {
+		name             string
+		workingDirectory string
+		wantDirectory    string
+		wantOutput       string
+	}{
+		{
+			name:       "omitted uses workspace",
+			wantOutput: `"workspace"`,
+		},
+		{
+			name:             "explicit override outside workspace",
+			workingDirectory: runtimeRoot,
+			wantDirectory:    filepath.Clean(canonicalRuntimeRoot),
+			wantOutput:       `"runtime"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			created, err := client.Executions().CreateExecution(ctx, supportedclient.CreateExecutionRequest{
+				SessionID: session.ID,
+				Options: supportedclient.ExecutionOptions{
+					WorkingDirectory: test.workingDirectory,
+				},
+			})
+			if err != nil {
+				t.Fatalf("CreateExecution: %v", err)
+			}
+
+			if created.Options.WorkingDirectory != test.wantDirectory {
+				t.Fatalf("WorkingDirectory = %q, want %q", created.Options.WorkingDirectory, test.wantDirectory)
+			}
+
+			watch, err := client.Executions().WatchExecution(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("WatchExecution: %v", err)
+			}
+
+			if event, err := watch.Recv(); err != nil || event.Kind != supportedclient.ExecutionEventCreated ||
+				event.Execution.Options.WorkingDirectory != test.wantDirectory {
+				t.Fatalf("created event = %+v, %v", event, err)
+			}
+
+			running, err := client.Executions().RunExecution(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("RunExecution: %v", err)
+			}
+
+			if running.Options.WorkingDirectory != test.wantDirectory {
+				t.Fatalf("running WorkingDirectory = %q, want %q", running.Options.WorkingDirectory, test.wantDirectory)
+			}
+
+			if event, err := watch.Recv(); err != nil || event.Kind != supportedclient.ExecutionEventStarted ||
+				event.Execution.Options.WorkingDirectory != test.wantDirectory {
+				t.Fatalf("started event = %+v, %v", event, err)
+			}
+
+			terminal, err := watch.Recv()
+			if err != nil {
+				t.Fatalf("terminal event: %v", err)
+			}
+
+			if terminal.Kind != supportedclient.ExecutionEventCompleted || terminal.Execution.Output == nil ||
+				string(terminal.Execution.Output.Data) != test.wantOutput ||
+				terminal.Execution.Options.WorkingDirectory != test.wantDirectory {
+				t.Fatalf("terminal event = %+v", terminal)
+			}
+		})
 	}
 }
 
