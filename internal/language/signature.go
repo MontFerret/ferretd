@@ -22,6 +22,7 @@ func (s *Service) SignatureHelp(
 	if resolved.Call == nil {
 		return nil, nil
 	}
+
 	call := *resolved.Call
 
 	active := activeArgument(call, resolved.Offset)
@@ -69,6 +70,7 @@ func (s *Service) SignatureHelp(
 
 	if variadic >= 0 {
 		result.ActiveSignature = uint32(variadic)
+
 		parameters := result.Signatures[variadic].Parameters
 		if len(parameters) > 0 && active >= len(parameters) {
 			result.ActiveParameter = uint32(len(parameters) - 1)

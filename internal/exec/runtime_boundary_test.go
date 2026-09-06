@@ -12,6 +12,7 @@ import (
 
 func TestSessionFilesystemPrecedence(t *testing.T) {
 	root, override := t.TempDir(), t.TempDir()
+
 	canonical, err := filepath.EvalSymlinks(override)
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +35,7 @@ func TestSessionFilesystemPrecedence(t *testing.T) {
 
 			runtime := newExecutionRuntime(runtimeTarget{fsRoot: test.root}, input)
 			t.Cleanup(func() { runtime.cancel(errExecutionCanceled) })
+
 			options, err := newSessionOptionsSpy(runtime.sessionOptions())
 			if err != nil {
 				t.Fatal(err)
@@ -84,6 +86,7 @@ func TestExecutionRetainsOutputBeforeSessionClose(t *testing.T) {
 			}
 
 			terminal.Output.Content[0] = 'Y'
+
 			retained, err := manager.GetExecution(context.Background(), created.ID)
 			if err != nil {
 				t.Fatal(err)
@@ -102,6 +105,7 @@ func TestSessionOwnsDeclaredParameterNames(t *testing.T) {
 	plan := &planSpy{runtime: runtime}
 	created := newSession("session", workspace.SourceSnapshot{}, plan, "", "", nil)
 	runtime.parameters[0] = "changed"
+
 	if names := created.snapshot().Parameters; len(names) != 1 || names[0] != "value" {
 		t.Fatalf("retained parameters = %v", names)
 	}
@@ -109,6 +113,7 @@ func TestSessionOwnsDeclaredParameterNames(t *testing.T) {
 
 func TestRuntimeParametersAreIsolatedFromOptionConsumers(t *testing.T) {
 	parameters := Parameters{"nested": map[string]any{"items": []any{"original"}}}
+
 	input, err := newRuntimeInput(parameters, RuntimeOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +121,7 @@ func TestRuntimeParametersAreIsolatedFromOptionConsumers(t *testing.T) {
 
 	runtime := newExecutionRuntime(runtimeTarget{}, input)
 	t.Cleanup(func() { runtime.cancel(errExecutionCanceled) })
+
 	options, err := newSessionOptionsSpy(runtime.sessionOptions())
 	if err != nil {
 		t.Fatal(err)

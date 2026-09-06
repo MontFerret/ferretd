@@ -28,6 +28,7 @@ func newLSPCommand() *cobra.Command {
 
 func serveLSP(ctx context.Context, stderr io.Writer) error {
 	workspaces := workspace.New()
+
 	functions, warnings, err := language.NewDefaultFunctionCatalog()
 	if err != nil {
 		return fmt.Errorf("create default function catalog: %w", err)

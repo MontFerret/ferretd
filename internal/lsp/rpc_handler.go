@@ -45,6 +45,7 @@ func (h *rpcHandler) Handle(_ context.Context, conn *jsonrpc2.Conn, request *jso
 
 	requestCtx := h.ctx
 	var cancel context.CancelFunc
+
 	if !request.Notif {
 		requestCtx, cancel = context.WithCancel(h.ctx)
 		h.mu.Lock()
@@ -55,10 +56,12 @@ func (h *rpcHandler) Handle(_ context.Context, conn *jsonrpc2.Conn, request *jso
 	h.mu.Lock()
 	barrier := h.tail
 	var lifecycleDone chan struct{}
+
 	if isLifecycleMethod(request.Method) {
 		lifecycleDone = make(chan struct{})
 		h.tail = lifecycleDone
 	}
+
 	h.wait.Add(1)
 	h.mu.Unlock()
 
@@ -99,6 +102,7 @@ func (h *rpcHandler) dispatch(
 	}
 
 	params := json.RawMessage(nil)
+
 	if request.Params != nil {
 		params = append(params, (*request.Params)...)
 	}
@@ -166,6 +170,7 @@ func (h *rpcHandler) cancel(request *jsonrpc2.Request) {
 	h.mu.Lock()
 	cancel := h.inFlight[id]
 	h.mu.Unlock()
+
 	if cancel != nil {
 		cancel()
 	}
@@ -190,6 +195,7 @@ func (h *rpcHandler) cancelAll() {
 	for _, cancel := range h.inFlight {
 		cancel()
 	}
+
 	h.mu.Unlock()
 }
 

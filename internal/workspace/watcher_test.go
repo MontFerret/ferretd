@@ -33,6 +33,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, "created.fql"), filepath.Join(root, "renamed.fql")); err != nil {
 		t.Fatalf("Rename .fql to .fql: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "renamed source", func() bool {
 		_, oldFound := opened.Document("created.fql")
 		renamed, newFound := opened.Document("renamed.fql")
@@ -43,6 +44,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, "renamed.fql"), filepath.Join(root, "notes.txt")); err != nil {
 		t.Fatalf("Rename .fql to non-.fql: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "source renamed to non-source", func() bool {
 		_, found := opened.Document("renamed.fql")
 
@@ -52,6 +54,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, "notes.txt"), filepath.Join(root, "restored.fql")); err != nil {
 		t.Fatalf("Rename non-.fql to .fql: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "non-source renamed to source", func() bool {
 		document, found := opened.Document("restored.fql")
 
@@ -68,6 +71,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, "new-directory"), filepath.Join(root, "moved-directory")); err != nil {
 		t.Fatalf("Rename directory: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "renamed directory", func() bool {
 		_, oldFound := opened.Document("new-directory/nested.fql")
 		moved, newFound := opened.Document("moved-directory/nested.fql")
@@ -78,6 +82,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(root, "moved-directory")); err != nil {
 		t.Fatalf("Remove directory: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "deleted directory", func() bool {
 		_, found := opened.Document("moved-directory/nested.fql")
 
@@ -88,6 +93,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	for _, directory := range []string{".hidden", "_generated", "node_modules", "testdata", "vendor"} {
 		writeWorkspaceSource(t, root, directory+"/ignored.fql", "RETURN 5")
 		waitForWatcherPath(t, watcher, directory)
+
 		if _, found := opened.Document(directory + "/ignored.fql"); found {
 			t.Fatalf("dynamically created excluded source %q was retained", directory)
 		}
@@ -95,10 +101,13 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 
 	outside := t.TempDir()
 	writeWorkspaceSource(t, outside, "outside.fql", "RETURN 6")
+
 	if err := os.Symlink(outside, filepath.Join(root, "linked-directory")); err != nil {
 		t.Skipf("create directory symlink: %v", err)
 	}
+
 	waitForWatcherPath(t, watcher, "linked-directory")
+
 	if _, found := opened.Document("linked-directory/outside.fql"); found {
 		t.Fatal("dynamic directory symlink source was retained")
 	}
@@ -109,9 +118,11 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 
 		return found && len(document.Diagnostics()) != 0
 	})
+
 	if err := os.Remove(filepath.Join(root, "invalid.fql")); err != nil {
 		t.Fatalf("Remove invalid source: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "removed invalid source", func() bool {
 		_, found := opened.Document("invalid.fql")
 
@@ -122,6 +133,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 			t.Fatal("removed source remains in workspace file index")
 		}
 	}
+
 	for _, diagnostic := range opened.Diagnostics() {
 		if !diagnostic.Source.Empty() && diagnostic.Source.Name() == filepath.Join(root, "invalid.fql") {
 			t.Fatal("removed source diagnostics remain retained")
@@ -131,6 +143,7 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	if err := manager.Close(context.Background(), opened.ID()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+
 	select {
 	case <-watcher.done:
 	default:
@@ -160,6 +173,7 @@ func TestWorkspaceWatcherTracksDynamicNestedModuleBoundaries(t *testing.T) {
 	if !watcher.WatchesSubtree("module") {
 		t.Fatal("nested module boundary directory is not watched")
 	}
+
 	if watcher.WatchesSubtree("module/child") {
 		t.Fatal("nested module descendants remain watched")
 	}
@@ -167,6 +181,7 @@ func TestWorkspaceWatcherTracksDynamicNestedModuleBoundaries(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "module", "go.mod")); err != nil {
 		t.Fatalf("Remove nested go.mod: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "removed nested module boundary", func() bool {
 		document, found := opened.Document("module/query.fql")
 
@@ -174,9 +189,11 @@ func TestWorkspaceWatcherTracksDynamicNestedModuleBoundaries(t *testing.T) {
 	})
 
 	writeWorkspaceSource(t, root, "module/boundary.txt", "module example.com/nested")
+
 	if err := os.Rename(filepath.Join(root, "module", "boundary.txt"), filepath.Join(root, "module", "go.mod")); err != nil {
 		t.Fatalf("Rename nested go.mod into place: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "renamed nested module boundary", func() bool {
 		_, found := opened.Document("module/query.fql")
 
@@ -186,6 +203,7 @@ func TestWorkspaceWatcherTracksDynamicNestedModuleBoundaries(t *testing.T) {
 	if err := os.Rename(filepath.Join(root, "module", "go.mod"), filepath.Join(root, "module", "go.mod.saved")); err != nil {
 		t.Fatalf("Rename nested go.mod away: %v", err)
 	}
+
 	waitForWorkspaceChange(t, opened, "nested module boundary renamed away", func() bool {
 		document, found := opened.Document("module/query.fql")
 
@@ -205,6 +223,7 @@ func TestWorkspaceWatcherIgnoresLateEventsAfterClose(t *testing.T) {
 	if err := manager.Close(context.Background(), opened.ID()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+
 	writeWorkspaceSource(t, root, "late.fql", "RETURN 1")
 
 	select {
@@ -212,6 +231,7 @@ func TestWorkspaceWatcherIgnoresLateEventsAfterClose(t *testing.T) {
 	default:
 		t.Fatal("watcher remains active after close")
 	}
+
 	if opened.State() != StateClosed || len(opened.Documents()) != 0 {
 		t.Fatalf("closed workspace state = %v documents = %d", opened.State(), len(opened.Documents()))
 	}
@@ -226,6 +246,7 @@ func TestWorkspaceWatcherClearStopsAllWatchers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
+
 		opened = append(opened, workspace)
 		watchers = append(watchers, workspaceWatcherForTest(t, workspace))
 	}
@@ -233,12 +254,14 @@ func TestWorkspaceWatcherClearStopsAllWatchers(t *testing.T) {
 	if err := manager.Clear(context.Background()); err != nil {
 		t.Fatalf("Clear: %v", err)
 	}
+
 	for index, watcher := range watchers {
 		select {
 		case <-watcher.done:
 		default:
 			t.Fatalf("watcher %d remains active after Clear", index)
 		}
+
 		if opened[index].State() != StateClosed {
 			t.Fatalf("workspace %d state = %v, want StateClosed", index, opened[index].State())
 		}
@@ -256,6 +279,7 @@ func TestWorkspaceWatcherOpenFailureDoesNotPublishWorkspace(t *testing.T) {
 	if !errors.Is(err, ErrLoad) || !errors.Is(err, want) {
 		t.Fatalf("Open error = %v, want ErrLoad and watcher cause", err)
 	}
+
 	items, listErr := manager.List(context.Background())
 	if listErr != nil || len(items) != 0 {
 		t.Fatalf("List after failed watcher setup = %#v, %v", items, listErr)
@@ -266,6 +290,7 @@ func TestWorkspaceRootReconciliationRecoversMissedAndDuplicateEvents(t *testing.
 	root := t.TempDir()
 	writeWorkspaceSource(t, root, "removed.fql", "RETURN 1")
 	manager := newTestManager(t)
+
 	opened, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -274,19 +299,23 @@ func TestWorkspaceRootReconciliationRecoversMissedAndDuplicateEvents(t *testing.
 	if err := os.Remove(filepath.Join(root, "removed.fql")); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
+
 	writeWorkspaceSource(t, root, "created/query.fql", "RETURN 2")
 	writeWorkspaceSource(t, root, "created/vendor/ignored.fql", "RETURN 3")
 
 	if err := opened.reconcileTree(context.Background(), "."); err != nil {
 		t.Fatalf("reconcile root: %v", err)
 	}
+
 	if _, found := opened.Document("removed.fql"); found {
 		t.Fatal("root reconciliation retained removed source")
 	}
+
 	created, found := opened.Document("created/query.fql")
 	if !found || created.Content() != "RETURN 2" {
 		t.Fatalf("root reconciliation created source = %#v, %t", created, found)
 	}
+
 	if _, found := opened.Document("created/vendor/ignored.fql"); found {
 		t.Fatal("root reconciliation retained excluded source")
 	}
@@ -294,6 +323,7 @@ func TestWorkspaceRootReconciliationRecoversMissedAndDuplicateEvents(t *testing.
 	if err := opened.reconcileTree(context.Background(), "."); err != nil {
 		t.Fatalf("duplicate reconcile root: %v", err)
 	}
+
 	unchanged, found := opened.Document("created/query.fql")
 	if !found || unchanged.Revision() != created.Revision() ||
 		unchanged.generation != created.generation || unchanged.syntax != created.syntax {
@@ -325,6 +355,7 @@ func workspaceWatcherForTest(t *testing.T, workspace *Workspace) *workspaceWatch
 	workspace.mu.RLock()
 	watcher := workspace.watcher
 	workspace.mu.RUnlock()
+
 	if watcher == nil {
 		t.Fatal("workspace has no watcher")
 	}
@@ -353,9 +384,11 @@ func waitForWorkspaceChange(
 			if !ok {
 				t.Fatalf("watcher stopped before observing %s", description)
 			}
+
 			if result.err != nil {
 				t.Fatalf("watcher reconcile %q: %v", result.relativePath, result.err)
 			}
+
 			if condition() {
 				return
 			}
@@ -376,9 +409,11 @@ func waitForWatcherPath(t *testing.T, watcher *workspaceWatcher, prefix string) 
 			if !ok {
 				t.Fatalf("watcher stopped before observing %q", prefix)
 			}
+
 			if result.err != nil {
 				t.Fatalf("watcher reconcile %q: %v", result.relativePath, result.err)
 			}
+
 			if result.relativePath == prefix || strings.HasPrefix(result.relativePath, prefix+"/") {
 				return
 			}

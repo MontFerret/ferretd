@@ -35,6 +35,7 @@ func (w *Workspace) reconcileDocument(
 	if err := w.beginMutation(ctx); err != nil {
 		return Document{}, false, err
 	}
+
 	defer w.finishMutation()
 
 	key, ok := normalizeDocumentPath(relativePath)
@@ -50,6 +51,7 @@ func (w *Workspace) reconcileDocument(
 	w.mu.RLock()
 	watcher := w.watcher
 	w.mu.RUnlock()
+
 	if watcher != nil {
 		for _, directory := range discovered.directories {
 			if err := watcher.AddDirectory(directory); err != nil {
@@ -76,6 +78,7 @@ func (w *Workspace) reconcileDocument(
 	}
 
 	current, exists := w.documents[key]
+
 	if !discovered.found {
 		if exists {
 			delete(w.documents, key)
@@ -93,9 +96,11 @@ func (w *Workspace) reconcileDocument(
 	if exists {
 		next = next.withRevision(current.Revision() + 1)
 	}
+
 	w.nextDocumentGeneration++
 	next = next.withGeneration(w.nextDocumentGeneration)
 	w.documents[key] = next
+
 	if !exists {
 		w.rebuildIndexesLocked()
 	}
@@ -107,6 +112,7 @@ func (w *Workspace) reconcileTree(ctx context.Context, relativePath string) erro
 	if err := w.beginMutation(ctx); err != nil {
 		return err
 	}
+
 	defer w.finishMutation()
 
 	key, ok := normalizeWorkspacePath(relativePath)
@@ -119,6 +125,7 @@ func (w *Workspace) reconcileTree(ctx context.Context, relativePath string) erro
 	w.mu.RUnlock()
 
 	var observe directoryObserver
+
 	if watcher != nil {
 		observe = watcher.AddDirectory
 	}
@@ -181,6 +188,7 @@ func (w *Workspace) reconcileWatchEvent(
 	}
 
 	absolute := filepath.Join(w.root, filepath.FromSlash(key))
+
 	info, err := os.Lstat(absolute)
 	if err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
 		return w.reconcileTree(ctx, key)
@@ -193,6 +201,7 @@ func (w *Workspace) reconcileWatchEvent(
 	w.mu.RLock()
 	watcher := w.watcher
 	w.mu.RUnlock()
+
 	if watcher != nil && watcher.WatchesSubtree(key) {
 		return w.reconcileTree(ctx, key)
 	}
@@ -245,6 +254,7 @@ func (w *Workspace) applyContentLocked(relativePath string, content workspaceCon
 
 	for _, key := range content.order {
 		next := content.documents[key]
+
 		current, exists := w.documents[key]
 		if exists && current.sameState(next) {
 			continue

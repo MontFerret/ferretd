@@ -65,6 +65,7 @@ func (c *ExecutionClient) CreateExecution(
 ) (Execution, error) {
 	parameters, err := structpb.NewStruct(request.Parameters)
 	if err != nil {
+		//nolint:errorlint // Expose parameter validation failure without protobuf error identities.
 		return Execution{}, fmt.Errorf("%w: %v", ErrInvalidExecutionParameters, err)
 	}
 

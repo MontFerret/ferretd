@@ -55,6 +55,7 @@ func New(
 	}
 
 	serverOptions := make([]grpcgo.ServerOption, 0, 2)
+
 	if options.BearerToken != "" {
 		authentication := newBearerAuthentication(options.BearerToken)
 		serverOptions = append(

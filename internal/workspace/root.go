@@ -12,8 +12,10 @@ func canonicalRoot(root string) (string, error) {
 	}
 
 	canonical := filepath.Clean(root)
+
 	info, err := os.Stat(canonical)
 	if err != nil {
+		//nolint:errorlint // Preserve root validation as the sole error classification.
 		return "", fmt.Errorf("%w: stat root: %v", ErrInvalidRoot, err)
 	}
 

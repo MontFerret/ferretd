@@ -22,9 +22,11 @@ func listenLocal(endpoint Endpoint) (net.Listener, error) {
 	}
 
 	securityDescriptor := fmt.Sprintf("D:P(A;;GA;;;SY)(A;;GA;;;%s)", user.User.Sid.String())
+
 	listener, err := winio.ListenPipe(endpoint.Address, &winio.PipeConfig{SecurityDescriptor: securityDescriptor})
 	if err != nil {
 		if errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_PIPE_BUSY) {
+			//nolint:errorlint // Preserve endpoint contention as the sole error classification.
 			return nil, fmt.Errorf("%w: %v", ErrEndpointInUse, err)
 		}
 

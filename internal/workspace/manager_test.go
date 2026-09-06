@@ -20,6 +20,7 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
+
 	second, err := manager.Open(context.Background(), root+string(filepath.Separator))
 	if err != nil {
 		t.Fatalf("second Open: %v", err)
@@ -28,6 +29,7 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 	if first != second {
 		t.Fatalf("workspaces differ: %#v != %#v", first, second)
 	}
+
 	link := filepath.Join(linkParent, "linked-root")
 	if err := os.Symlink(root, link); err != nil {
 		t.Skipf("create symlink: %v", err)
@@ -37,6 +39,7 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open symlink: %v", err)
 	}
+
 	if linked.ID() == first.ID() {
 		t.Fatal("symlink root unexpectedly resolved to target identity")
 	}
@@ -45,6 +48,7 @@ func TestOpenIsIdempotentAndDoesNotResolveSymlinks(t *testing.T) {
 func TestManagerLookupDocumentUsesDeepestWorkspace(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
+
 	nested := filepath.Join(root, "nested")
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatal(err)
@@ -56,10 +60,12 @@ func TestManagerLookupDocumentUsesDeepestWorkspace(t *testing.T) {
 	}
 
 	manager := newTestManager(t)
+
 	parentWorkspace, err := manager.Open(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	nestedWorkspace, err := manager.Open(ctx, nested)
 	if err != nil {
 		t.Fatal(err)
@@ -69,9 +75,11 @@ func TestManagerLookupDocumentUsesDeepestWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !ok || lookup.Workspace != nestedWorkspace.ID() || lookup.Workspace == parentWorkspace.ID() {
 		t.Fatalf("lookup = %+v, %t", lookup, ok)
 	}
+
 	if lookup.Revision != 1 || lookup.Document.Content() != "RETURN 1" {
 		t.Fatalf("lookup document = %+v", lookup)
 	}
@@ -80,6 +88,7 @@ func TestManagerLookupDocumentUsesDeepestWorkspace(t *testing.T) {
 func TestManagerLookupDocumentDoesNotFallBackPastDeepestWorkspace(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
+
 	nested := filepath.Join(root, "nested")
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatal(err)
@@ -94,9 +103,11 @@ func TestManagerLookupDocumentDoesNotFallBackPastDeepestWorkspace(t *testing.T) 
 	if _, err := manager.Open(ctx, root); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := manager.Open(ctx, nested); err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +160,7 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open zeta: %v", err)
 	}
+
 	alpha, err := manager.Open(context.Background(), roots[1])
 	if err != nil {
 		t.Fatalf("Open alpha: %v", err)
@@ -158,6 +170,7 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
+
 	if len(items) != 2 || items[0] != alpha || items[1] != zeta {
 		t.Fatalf("List = %#v, want alpha then zeta", items)
 	}
@@ -170,12 +183,15 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 	if err := manager.Close(context.Background(), zeta.ID()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+
 	if zeta.State() != StateClosed {
 		t.Fatalf("closed workspace state = %v, want StateClosed", zeta.State())
 	}
+
 	if err := manager.Close(context.Background(), zeta.ID()); err != nil {
 		t.Fatalf("idempotent Close: %v", err)
 	}
+
 	if _, err := manager.Get(context.Background(), zeta.ID()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get closed error = %v, want ErrNotFound", err)
 	}
@@ -183,9 +199,11 @@ func TestWorkspaceLifecycleAndOrdering(t *testing.T) {
 	if err := manager.Clear(context.Background()); err != nil {
 		t.Fatalf("clear manager: %v", err)
 	}
+
 	if alpha.State() != StateClosed {
 		t.Fatalf("cleared workspace state = %v, want StateClosed", alpha.State())
 	}
+
 	items, err = manager.List(context.Background())
 	if err != nil || len(items) != 0 {
 		t.Fatalf("List after Clear = %#v, %v; want empty", items, err)
@@ -207,20 +225,26 @@ func TestWorkspaceCloseCallerCancellationDoesNotStopCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+
 	if err := manager.Close(ctx, opened.ID()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Close error = %v, want context.Canceled", err)
 	}
+
 	<-closeStarted
+
 	if _, err := manager.Get(context.Background(), opened.ID()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get during committed close error = %v, want ErrNotFound", err)
 	}
 
 	close(releaseClose)
+
 	if err := manager.Close(context.Background(), opened.ID()); err != nil {
 		t.Fatalf("wait for committed Close: %v", err)
 	}
+
 	if opened.State() != StateClosed {
 		t.Fatalf("state = %v, want closed", opened.State())
 	}
@@ -257,9 +281,11 @@ func TestWorkspaceClearJoinsCommittedClose(t *testing.T) {
 	<-clearContext.observed
 
 	close(releaseClose)
+
 	if err := <-closed; !errors.Is(err, want) {
 		t.Fatalf("Close error = %v, want %v", err, want)
 	}
+
 	if err := <-cleared; !errors.Is(err, want) {
 		t.Fatalf("Clear error = %v, want %v", err, want)
 	}
@@ -267,6 +293,7 @@ func TestWorkspaceClearJoinsCommittedClose(t *testing.T) {
 	manager.mu.RLock()
 	entries := len(manager.byID)
 	manager.mu.RUnlock()
+
 	if entries != 0 {
 		t.Fatalf("workspace entries after close = %d, want 0", entries)
 	}
@@ -283,6 +310,7 @@ func TestConcurrentOpenConverges(t *testing.T) {
 		if loads.Add(1) == 1 {
 			close(started)
 		}
+
 		<-release
 
 		return workspaceContent{documents: make(map[string]Document)}, nil
@@ -302,6 +330,7 @@ func TestConcurrentOpenConverges(t *testing.T) {
 			errors <- err
 		}()
 	}
+
 	<-started
 	close(release)
 	wait.Wait()
@@ -319,10 +348,12 @@ func TestConcurrentOpenConverges(t *testing.T) {
 		if want == "" {
 			want = result.ID()
 		}
+
 		if result.ID() != want {
 			t.Fatalf("workspace ID = %q, want %q", result.ID(), want)
 		}
 	}
+
 	if loads.Load() != 1 {
 		t.Fatalf("workspace loads = %d, want 1", loads.Load())
 	}
@@ -353,11 +384,13 @@ func TestOpenTransitionsFromOpeningToReady(t *testing.T) {
 	manager.mu.RLock()
 	opening := manager.opening[filepath.Clean(root)].workspace
 	manager.mu.RUnlock()
+
 	if opening.State() != StateOpening {
 		t.Fatalf("opening state = %v, want StateOpening", opening.State())
 	}
 
 	close(release)
+
 	ready := <-done
 	if ready != opening || ready.State() != StateReady {
 		t.Fatalf("ready workspace = %#v state %v", ready, ready.State())
@@ -382,18 +415,22 @@ func TestFailedOpenIsClassifiedRemovedAndRetryable(t *testing.T) {
 	if !errors.Is(err, ErrLoad) || !errors.Is(err, wantErr) {
 		t.Fatalf("Open error = %v, want ErrLoad and cause", err)
 	}
+
 	if failed.State() != StateFailed || !errors.Is(failed.Failure(), wantErr) {
 		t.Fatalf("failed workspace state = %v, failure = %v", failed.State(), failed.Failure())
 	}
+
 	if _, err := manager.Get(context.Background(), failed.ID()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get failed error = %v, want ErrNotFound", err)
 	}
 
 	manager.loadWorkspace = loadWorkspace
+
 	retried, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("retry Open: %v", err)
 	}
+
 	if retried.State() != StateReady || retried.ID() == failed.ID() {
 		t.Fatalf("retried workspace = %#v state %v", retried, retried.State())
 	}
@@ -421,11 +458,13 @@ func TestCanceledWaiterDoesNotCancelOwner(t *testing.T) {
 
 	waiterCtx, cancelWaiter := context.WithCancel(context.Background())
 	cancelWaiter()
+
 	if _, err := manager.Open(waiterCtx, root); !errors.Is(err, context.Canceled) {
 		t.Fatalf("waiter Open error = %v, want context.Canceled", err)
 	}
 
 	close(release)
+
 	if workspace := <-ownerDone; workspace == nil || workspace.State() != StateReady {
 		t.Fatalf("owner workspace = %#v", workspace)
 	}
@@ -490,6 +529,7 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 	}
 
 	cancelOwner()
+
 	ownerErr := <-ownerDone
 	if !errors.Is(ownerErr, ErrLoad) || !errors.Is(ownerErr, context.Canceled) {
 		t.Fatalf("owner Open error = %v, want ErrLoad and context.Canceled", ownerErr)
@@ -501,12 +541,15 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 	case <-waiterBaseCtx.Done():
 		t.Fatalf("waiter Open did not finish: %v", waiterBaseCtx.Err())
 	}
+
 	if waiterResult.err != nil {
 		t.Fatalf("waiter Open: %v", waiterResult.err)
 	}
+
 	if waiterResult.workspace == nil || waiterResult.workspace.State() != StateReady {
 		t.Fatalf("waiter workspace = %#v", waiterResult.workspace)
 	}
+
 	select {
 	case <-secondStarted:
 	default:
@@ -516,9 +559,11 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 	attemptsMu.Lock()
 	loadedRoots := append([]string(nil), roots...)
 	attemptsMu.Unlock()
+
 	if len(loadedRoots) != 2 {
 		t.Fatalf("workspace loads = %d, want 2", len(loadedRoots))
 	}
+
 	for index, loadedRoot := range loadedRoots {
 		if loadedRoot != canonical {
 			t.Fatalf("load %d root = %q, want %q", index+1, loadedRoot, canonical)
@@ -529,6 +574,7 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
+
 	if len(items) != 1 || items[0] != waiterResult.workspace {
 		t.Fatalf("List = %#v, want only waiter workspace", items)
 	}
@@ -539,9 +585,11 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 	rootCount := len(manager.byRoot)
 	retainedID := manager.byRoot[canonical]
 	manager.mu.RUnlock()
+
 	if openingCount != 0 {
 		t.Fatalf("opening workspaces = %d, want 0", openingCount)
 	}
+
 	if workspaceCount != 1 || rootCount != 1 || retainedID != waiterResult.workspace.ID() {
 		t.Fatalf(
 			"retained workspace IDs = %d, roots = %d, root ID = %q",
@@ -555,6 +603,7 @@ func TestCanceledOwnerDoesNotFailActiveWaiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
+
 	if got != waiterResult.workspace {
 		t.Fatalf("Get = %#v, want %#v", got, waiterResult.workspace)
 	}
@@ -583,11 +632,13 @@ func TestClearPreventsInFlightOpenFromCommitting(t *testing.T) {
 	if err := manager.Clear(context.Background()); err != nil {
 		t.Fatalf("clear manager: %v", err)
 	}
+
 	close(release)
 
 	if err := <-done; !errors.Is(err, ErrLoad) {
 		t.Fatalf("in-flight Open error = %v, want ErrLoad", err)
 	}
+
 	items, err := manager.List(context.Background())
 	if err != nil || len(items) != 0 {
 		t.Fatalf("List after Clear = %#v, %v; want empty", items, err)
@@ -602,12 +653,15 @@ func TestOperationsRespectCancellation(t *testing.T) {
 	if _, err := manager.Open(ctx, t.TempDir()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Open error = %v, want context.Canceled", err)
 	}
+
 	if _, err := manager.Get(ctx, "unknown"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Get error = %v, want context.Canceled", err)
 	}
+
 	if _, err := manager.List(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("List error = %v, want context.Canceled", err)
 	}
+
 	if err := manager.Close(ctx, "unknown"); err != nil {
 		t.Fatalf("idempotent Close error = %v, want nil", err)
 	}
@@ -616,14 +670,16 @@ func TestOperationsRespectCancellation(t *testing.T) {
 func TestCloseAndClearRequireContexts(t *testing.T) {
 	t.Run("Close", func(t *testing.T) {
 		manager := New()
+
 		opened, err := manager.Open(context.Background(), t.TempDir())
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
+
 		t.Cleanup(func() { _ = manager.Close(context.Background(), opened.ID()) })
 
 		assertPanics(t, func() {
-			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			//nolint:staticcheck // Exercise the nil-context rejection contract.
 			_ = manager.Close(nil, opened.ID())
 		})
 	})
@@ -633,10 +689,11 @@ func TestCloseAndClearRequireContexts(t *testing.T) {
 		if _, err := manager.Open(context.Background(), t.TempDir()); err != nil {
 			t.Fatalf("Open: %v", err)
 		}
+
 		t.Cleanup(func() { _ = manager.Clear(context.Background()) })
 
 		assertPanics(t, func() {
-			//lint:ignore SA1012 This test verifies that a required context cannot be nil.
+			//nolint:staticcheck // Exercise the nil-context rejection contract.
 			_ = manager.Clear(nil)
 		})
 	})

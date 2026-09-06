@@ -76,6 +76,7 @@ func convertDiagnostic(source api.Source, value *ferretdiagnostics.Diagnostic) a
 	result := apidiagnostics.Diagnostic{
 		Source: source,
 	}
+
 	if value == nil {
 		result.Kind = apidiagnostics.UnexpectedError
 

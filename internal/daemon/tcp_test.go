@@ -29,6 +29,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	const token = "test-token-that-must-not-be-logged"
 	diagnostics := newReadyDiagnosticWriter()
 	logger := zerolog.New(diagnostics)
+
 	d, err := New(Options{
 		Version:     "test-version",
 		Endpoint:    requested,
@@ -38,6 +39,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+
 	startCtx, cancelStart := context.WithCancel(context.Background())
 	t.Cleanup(func() {
 		cancelStart()
@@ -71,6 +73,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(record), &ready); err != nil {
 		t.Fatalf("decode ready diagnostic %q: %v", record, err)
 	}
+
 	if ready.Event != "ferretd.ready" || ready.Version != "test-version" || ready.Message != "ferretd started" {
 		t.Fatalf("ready diagnostic = %#v", ready)
 	}
@@ -79,6 +82,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseEndpoint reported endpoint: %v", err)
 	}
+
 	if bound.String() == requested.String() {
 		t.Fatalf("reported endpoint = %q, want assigned port", bound.String())
 	}
@@ -102,6 +106,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 		client.WithBearerToken("wrong-token"),
 	)
 	cancelUnauthenticated()
+
 	if status.Code(dialErr) != codes.Unauthenticated {
 		t.Fatalf("Dial with wrong token error = %v, want Unauthenticated", dialErr)
 	}
@@ -109,6 +114,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	connection, err := client.Dial(ctx, client.WithEndpoint(bound), client.WithBearerToken(token))
 	cancel()
+
 	if err != nil {
 		t.Fatalf("authenticated Dial: %v", err)
 	}
@@ -116,9 +122,11 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 	infoCtx, cancelInfo := context.WithTimeout(context.Background(), time.Second)
 	info, err := connection.Info(infoCtx)
 	cancelInfo()
+
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
+
 	if info.Version != "test-version" || info.APIVersion != (client.APIVersion{Major: 1, Minor: 1}) {
 		t.Fatalf("Info = %#v", info)
 	}
@@ -128,6 +136,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 		cancelShutdown()
 		t.Fatalf("Shutdown: %v", err)
 	}
+
 	cancelShutdown()
 	_ = connection.Close()
 
@@ -142,6 +151,7 @@ func TestAuthenticatedTCPDaemonReportsAssignedEndpoint(t *testing.T) {
 
 	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
 	defer cancelStop()
+
 	if err := d.Stop(stopCtx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
@@ -167,6 +177,7 @@ func assertTCPRejectsUnauthenticatedRPCs(t *testing.T, endpoint transport.Endpoi
 	defer cancel()
 
 	health := healthv1.NewHealthClient(connection)
+
 	_, err = health.Check(ctx, &healthv1.HealthCheckRequest{})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unauthenticated TCP Check error = %v, want Unauthenticated", err)

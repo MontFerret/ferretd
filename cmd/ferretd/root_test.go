@@ -69,6 +69,7 @@ func TestRejectsInvalidCommands(t *testing.T) {
 			if err == nil {
 				t.Fatal("execute returned nil error")
 			}
+
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("execute error = %q, want it to contain %q", err, tt.want)
 			}

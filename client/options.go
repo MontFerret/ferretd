@@ -44,6 +44,7 @@ func (o dialOptions) resolvedEndpoint() (transport.Endpoint, error) {
 		endpoint = *o.endpoint
 	} else {
 		var err error
+
 		endpoint, err = Discover()
 		if err != nil {
 			return transport.Endpoint{}, err

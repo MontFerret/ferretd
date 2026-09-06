@@ -113,6 +113,7 @@ func (e *execution) cancel() ExecutionSnapshot {
 // subscribe returns the latest lifecycle event and future bounded observations.
 func (e *execution) subscribe() Subscription {
 	e.mu.Lock()
+
 	current := e.lastEvent.clone()
 	if e.state.Terminal() {
 		events := make(chan Event)
@@ -159,6 +160,7 @@ func (e *execution) finish(output *api.Output, err error, category FailureCatego
 	}
 
 	e.output = output
+
 	if err == nil {
 		e.state = StateCompleted
 		e.publishLocked(EventCompleted, true)

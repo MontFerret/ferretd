@@ -41,11 +41,13 @@ func (s *Server) didChange(glspContext *glsp.Context, params *protocol.DidChange
 			if change.Range != nil {
 				return errIncrementalTextChanges
 			}
+
 			changes = append(changes, language.TextChange{Text: change.Text})
 		case *protocol.TextDocumentContentChangeEvent:
 			if change.Range != nil {
 				return errIncrementalTextChanges
 			}
+
 			changes = append(changes, language.TextChange{Text: change.Text})
 		default:
 			return errUnsupportedDocumentChange

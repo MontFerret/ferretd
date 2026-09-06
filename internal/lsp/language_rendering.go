@@ -9,6 +9,7 @@ import (
 
 func renderHoverMarkdown(value language.Hover) string {
 	var sections []string
+
 	if value.Name != "" {
 		declaration := symbolKindName(value.SymbolKind) + " " + value.Name
 

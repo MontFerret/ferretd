@@ -51,13 +51,19 @@ func validateReference(data []byte, version string) (*api.Reference, error) {
 
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	directory := filepath.Dir(path)
+
 	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
+
 	temporaryPath := temporary.Name()
-	defer temporary.Close()
-	defer os.Remove(temporaryPath)
+	defer func() {
+		_ = temporary.Close()
+	}()
+	defer func() {
+		_ = os.Remove(temporaryPath)
+	}()
 
 	if err := temporary.Chmod(mode); err != nil {
 		return err

@@ -72,6 +72,7 @@ func TestCreateExecutionWorkingDirectoryPresenceAndSnapshot(t *testing.T) {
 					request *executionv1.CreateExecutionRequest,
 				) (*executionv1.CreateExecutionResponse, error) {
 					captured = request
+
 					return &executionv1.CreateExecutionResponse{Execution: &executionv1.Execution{
 						Id:         &executionv1.ExecutionId{Value: "execution"},
 						SessionId:  request.SessionId,
@@ -83,6 +84,7 @@ func TestCreateExecutionWorkingDirectoryPresenceAndSnapshot(t *testing.T) {
 			}
 
 			client := &ExecutionClient{client: stub}
+
 			got, err := client.CreateExecution(context.Background(), CreateExecutionRequest{
 				SessionID: "session",
 				Options: ExecutionOptions{
@@ -92,12 +94,15 @@ func TestCreateExecutionWorkingDirectoryPresenceAndSnapshot(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CreateExecution: %v", err)
 			}
+
 			if captured == nil || captured.Options == nil {
 				t.Fatal("CreateExecution did not send execution options")
 			}
+
 			if present := captured.Options.WorkingDirectory != nil; present != test.wantPresent {
 				t.Fatalf("working_directory presence = %t, want %t", present, test.wantPresent)
 			}
+
 			if captured.Options.GetWorkingDirectory() != test.workingDirectory {
 				t.Fatalf(
 					"request working directory = %q, want %q",
@@ -105,6 +110,7 @@ func TestCreateExecutionWorkingDirectoryPresenceAndSnapshot(t *testing.T) {
 					test.workingDirectory,
 				)
 			}
+
 			if got.Options.WorkingDirectory != test.workingDirectory {
 				t.Fatalf(
 					"snapshot working directory = %q, want %q",
@@ -118,6 +124,7 @@ func TestCreateExecutionWorkingDirectoryPresenceAndSnapshot(t *testing.T) {
 
 func TestCreateExecutionMapsInvalidOptionsClassification(t *testing.T) {
 	grpcStatus := status.New(codes.InvalidArgument, "invalid execution options")
+
 	withDetails, err := grpcStatus.WithDetails(&executionv1.ResourceErrorDetail{
 		Resource:  executionv1.ResourceKind_RESOURCE_KIND_EXECUTION,
 		Condition: executionv1.ResourceCondition_RESOURCE_CONDITION_INVALID_OPTIONS,
@@ -130,6 +137,7 @@ func TestCreateExecutionMapsInvalidOptionsClassification(t *testing.T) {
 	if !errors.Is(mapped, ErrInvalidExecutionOptions) {
 		t.Fatalf("mapCreateExecutionError = %v, want ErrInvalidExecutionOptions", mapped)
 	}
+
 	if errors.Is(mapped, ErrInvalidExecutionParameters) {
 		t.Fatalf("mapCreateExecutionError = %v, did not want ErrInvalidExecutionParameters", mapped)
 	}

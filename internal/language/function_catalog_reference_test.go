@@ -17,6 +17,7 @@ func TestFunctionCatalogMergesAuthoritativeReferenceAndPreservesFallback(t *test
 	library.Namespace("Host").Function().Var().Add("Only", func(context.Context, ...runtime.Value) (runtime.Value, error) {
 		return runtime.None, nil
 	})
+
 	functions, err := library.Build()
 	if err != nil {
 		t.Fatal(err)
@@ -29,6 +30,7 @@ func TestFunctionCatalogMergesAuthoritativeReferenceAndPreservesFallback(t *test
 
 	reference := testCatalogReference()
 	warnings := catalog.mergeReference(reference)
+
 	wantWarnings := []CatalogWarning{
 		{Kind: CatalogWarningReferenceOnly, Name: "custom::api_only"},
 		{Kind: CatalogWarningRuntimeOnly, Name: "Host::Only"},
@@ -41,15 +43,19 @@ func TestFunctionCatalogMergesAuthoritativeReferenceAndPreservesFallback(t *test
 	if !ok {
 		t.Fatal("case-insensitive lookup failed")
 	}
+
 	if function.name != "CuStOm::DoThing" || !function.authored || len(function.signatures) != 2 {
 		t.Fatalf("merged function = %+v", function)
 	}
+
 	if got := function.signatures[0].Label; got != "CuStOm::DoThing(value: String | Array)" {
 		t.Fatalf("first signature label = %q", got)
 	}
+
 	if got := function.signatures[1].Label; got != "CuStOm::DoThing(value: String, options: [Int | Float])" {
 		t.Fatalf("second signature label = %q", got)
 	}
+
 	if function.signatures[0].Return == nil || function.signatures[0].Return.Type != "Object" ||
 		function.signatures[0].Parameters[0].Description != "Input value." ||
 		function.signatures[0].Throws[0].Error != "TypeError" ||
@@ -62,8 +68,10 @@ func TestFunctionCatalogMergesAuthoritativeReferenceAndPreservesFallback(t *test
 	if got := function.renderedSignatures(7); !reflect.DeepEqual(got, function.signatures) {
 		t.Fatalf("rendered signatures = %+v, want %+v", got, function.signatures)
 	}
+
 	rendered := function.renderedSignatures(7)
 	rendered[0].Parameters[0].Name = "mutated"
+
 	rendered[0].Return.Type = "Mutated"
 	if function.signatures[0].Parameters[0].Name != "value" || function.signatures[0].Return.Type != "Object" {
 		t.Fatal("catalog exposed mutable signature metadata")
@@ -82,9 +90,11 @@ func TestFunctionCatalogMergesAuthoritativeReferenceAndPreservesFallback(t *test
 	if !ok {
 		t.Fatal("runtime-only host function is missing")
 	}
+
 	if host.detail != "registered function" || host.documentation != "" {
 		t.Fatalf("runtime-only completion metadata = %q, %q", host.detail, host.documentation)
 	}
+
 	wantFallback := []Signature{{
 		Label:      "Host::Only(arg1, arg2, arg3...)",
 		Parameters: []SignatureParameter{{Name: "arg1", Label: "arg1"}, {Name: "arg2", Label: "arg2"}, {Name: "arg3", Label: "arg3...", Variadic: true}},
@@ -98,18 +108,21 @@ func TestFunctionCatalogMergesAuthoritativeReferenceAndPreservesFallback(t *test
 func TestFunctionCatalogDeprecatesCompletionOnlyWhenEverySignatureIsDeprecated(t *testing.T) {
 	function := functionSymbol{authored: true, signatures: []Signature{{Deprecated: "old"}, {}}}
 	function.cacheCompletion()
+
 	if function.deprecated {
 		t.Fatal("mixed overload deprecation marked the function deprecated")
 	}
 
 	function.signatures[1].Deprecated = "also old"
 	function.cacheCompletion()
+
 	if !function.deprecated {
 		t.Fatal("fully deprecated function was not marked deprecated")
 	}
 
 	runtimeOnly := functionSymbol{runtimeVariadic: true}
 	runtimeOnly.cacheCompletion()
+
 	if runtimeOnly.deprecated {
 		t.Fatal("runtime fallback was marked deprecated")
 	}
@@ -117,6 +130,7 @@ func TestFunctionCatalogDeprecatesCompletionOnlyWhenEverySignatureIsDeprecated(t
 
 func TestStructuredReferenceRejectsLegacyStringTypes(t *testing.T) {
 	structured := []byte(`{"schemaVersion":1,"id":"acme/module","version":"1.0.0","namespaces":[{"name":"custom","functions":[{"name":"read","signatures":[{"parameters":[{"name":"value","type":{"kind":"list","element":{"kind":"union","types":[{"kind":"named","name":"Int"},{"kind":"named","name":"Float"}]}},"description":"Input."}]}]}]}]}`)
+
 	reference, err := api.Parse(structured)
 	if err != nil {
 		t.Fatalf("parse structured reference: %v", err)

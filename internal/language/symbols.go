@@ -55,7 +55,6 @@ func (s *Service) DocumentSymbols(ctx context.Context, uri source.URI) ([]Docume
 
 			if container.End <= container.Start || selection.End < selection.Start ||
 				selection.Start < container.Start || selection.End > container.End {
-
 				continue
 			}
 
@@ -131,9 +130,11 @@ func (s *Service) References(
 	if resolved.Symbol == nil {
 		return []Location{}, nil
 	}
+
 	symbol := *resolved.Symbol
 
 	locations := make([]Location, 0)
+
 	if includeDeclaration && symbol.HasDeclaration {
 		locations = append(locations, Location{
 			URI:   uri,

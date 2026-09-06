@@ -42,6 +42,7 @@ func TestExecutionSnapshotClone(t *testing.T) {
 		value.Failure.Diagnostics[0].RelatedInformation[0].Message != "related" {
 		t.Fatalf("clone mutated original snapshot: %+v", value)
 	}
+
 	if reflect.DeepEqual(value, cloned) {
 		t.Fatal("clone did not retain independent mutable data")
 	}

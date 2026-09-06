@@ -73,6 +73,7 @@ func (s *Service) analyzedDocument(ctx context.Context, uri source.URI) (analyze
 			s.cache[uri] = entry
 			go s.runAnalysis(uri, entry)
 		}
+
 		s.mu.Unlock()
 
 		break
@@ -108,6 +109,7 @@ func (s *Service) runAnalysis(uri source.URI, entry *analysisEntry) {
 	if s.cache[uri] == entry && !s.snapshotCurrentLocked(entry.snapshot) {
 		delete(s.cache, uri)
 	}
+
 	close(entry.ready)
 	s.mu.Unlock()
 }

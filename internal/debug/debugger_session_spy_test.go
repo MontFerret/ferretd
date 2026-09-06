@@ -56,6 +56,7 @@ func newDebuggerSessionSpy() *debuggerSessionSpy {
 
 func (s *debuggerSessionSpy) Start(ctx context.Context) (*apidebugger.Event, error) {
 	s.record(debuggerCommand{name: "start"})
+
 	if s.startFn != nil {
 		return s.startFn(ctx)
 	}
@@ -65,6 +66,7 @@ func (s *debuggerSessionSpy) Start(ctx context.Context) (*apidebugger.Event, err
 
 func (s *debuggerSessionSpy) Continue(ctx context.Context) (*apidebugger.Event, error) {
 	s.record(debuggerCommand{name: "continue"})
+
 	if s.continueFn != nil {
 		return s.continueFn(ctx)
 	}
@@ -77,6 +79,7 @@ func (s *debuggerSessionSpy) Continue(ctx context.Context) (*apidebugger.Event, 
 
 func (s *debuggerSessionSpy) StepIn(ctx context.Context) (*apidebugger.Event, error) {
 	s.record(debuggerCommand{name: "step in"})
+
 	if s.stepInFn != nil {
 		return s.stepInFn(ctx)
 	}
@@ -86,6 +89,7 @@ func (s *debuggerSessionSpy) StepIn(ctx context.Context) (*apidebugger.Event, er
 
 func (s *debuggerSessionSpy) StepOver(ctx context.Context) (*apidebugger.Event, error) {
 	s.record(debuggerCommand{name: "step over"})
+
 	if s.stepOverFn != nil {
 		return s.stepOverFn(ctx)
 	}
@@ -95,6 +99,7 @@ func (s *debuggerSessionSpy) StepOver(ctx context.Context) (*apidebugger.Event, 
 
 func (s *debuggerSessionSpy) StepOut(ctx context.Context) (*apidebugger.Event, error) {
 	s.record(debuggerCommand{name: "step out"})
+
 	if s.stepOutFn != nil {
 		return s.stepOutFn(ctx)
 	}
@@ -104,6 +109,7 @@ func (s *debuggerSessionSpy) StepOut(ctx context.Context) (*apidebugger.Event, e
 
 func (s *debuggerSessionSpy) Pause() error {
 	s.record(debuggerCommand{name: "pause"})
+
 	if s.pauseFn != nil {
 		return s.pauseFn()
 	}
@@ -122,6 +128,7 @@ func (s *debuggerSessionSpy) SetBreakpointAt(
 	options apidebugger.BreakpointOptions,
 ) (apidebugger.Breakpoint, error) {
 	s.record(debuggerCommand{name: "set breakpoint", location: location, options: options})
+
 	if s.setFn != nil {
 		breakpoint, err := s.setFn(location, options)
 		if err != nil {
@@ -228,6 +235,7 @@ func (s *debuggerSessionSpy) EvaluateFrame(
 	expression string,
 ) (apidebugger.Value, error) {
 	s.record(debuggerCommand{name: "evaluate frame", frame: frame, expression: expression})
+
 	if err := ctx.Err(); err != nil {
 		return apidebugger.Value{}, err
 	}
@@ -241,6 +249,7 @@ func (s *debuggerSessionSpy) EvaluateFrame(
 func (s *debuggerSessionSpy) Close() error {
 	s.closeOnce.Do(func() {
 		s.record(debuggerCommand{name: "close"})
+
 		if s.closeFn != nil {
 			s.closeErr = s.closeFn()
 		}

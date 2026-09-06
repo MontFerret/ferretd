@@ -1,3 +1,4 @@
+// Package main runs the ferretd developer service and its protocol adapters.
 package main
 
 import (

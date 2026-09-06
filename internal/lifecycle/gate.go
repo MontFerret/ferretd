@@ -28,6 +28,7 @@ func (g *Gate) BeginCreate() bool {
 	if g.creating == 0 {
 		g.createsDone = make(chan struct{})
 	}
+
 	g.creating++
 
 	return true
@@ -86,6 +87,7 @@ func (g *Gate) WaitForCreates() {
 
 		panic("lifecycle: wait for child creation before close begins")
 	}
+
 	done := g.createsDone
 	g.mu.Unlock()
 
@@ -103,6 +105,7 @@ func (g *Gate) FinishClose(err error) {
 
 		panic("lifecycle: finish parent close with active creators")
 	}
+
 	g.mu.Unlock()
 
 	g.close.Finish(err)

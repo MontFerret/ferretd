@@ -17,18 +17,23 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+
 	if d == nil {
 		t.Fatal("New returned a nil daemon")
 	}
+
 	if d.workspaces == nil || d.executions == nil || d.grpc == nil {
 		t.Fatal("New did not construct all service boundaries")
 	}
+
 	if d.runtime == nil {
 		t.Fatal("New did not construct the composition runtime")
 	}
+
 	if _, ok := d.runtime.(*ferretapi.Runtime); !ok {
 		t.Fatalf("New runtime = %T, want native Ferret adapter", d.runtime)
 	}
+
 	if err := d.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
@@ -36,6 +41,7 @@ func TestNew(t *testing.T) {
 
 func TestStartReturnsOnCancellationAndStopCleansUp(t *testing.T) {
 	endpoint := testEndpoint(t)
+
 	d, err := New(Options{Endpoint: endpoint})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -48,9 +54,11 @@ func TestStartReturnsOnCancellationAndStopCleansUp(t *testing.T) {
 	}()
 
 	waitForEndpoint(t, endpoint)
+
 	if _, err := d.workspaces.Open(context.Background(), t.TempDir()); err != nil {
 		t.Fatalf("Open workspace: %v", err)
 	}
+
 	cancel()
 
 	select {
@@ -68,10 +76,12 @@ func TestStartReturnsOnCancellationAndStopCleansUp(t *testing.T) {
 	if err := d.Stop(stopCtx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
+
 	workspaces, err := d.workspaces.List(context.Background())
 	if err != nil || len(workspaces) != 0 {
 		t.Fatalf("workspaces after Stop = %#v, %v; want empty", workspaces, err)
 	}
+
 	assertEndpointUnavailable(t, endpoint)
 }
 
@@ -161,6 +171,7 @@ func TestConcurrentStopBeforeStartSharesCommittedCleanup(t *testing.T) {
 
 func TestStopRunningDaemonUnblocksStart(t *testing.T) {
 	endpoint := testEndpoint(t)
+
 	d, err := New(Options{Endpoint: endpoint})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -178,9 +189,11 @@ func TestStopRunningDaemonUnblocksStart(t *testing.T) {
 	if err := d.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
+
 	if err := <-startDone; err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+
 	if err := d.Stop(ctx); err != nil {
 		t.Fatalf("second Stop: %v", err)
 	}
@@ -188,10 +201,12 @@ func TestStopRunningDaemonUnblocksStart(t *testing.T) {
 
 func TestStartupFailureLeavesStopSafe(t *testing.T) {
 	endpoint := testEndpoint(t)
+
 	listener, err := transport.Listen(endpoint)
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
+
 	t.Cleanup(func() { _ = listener.Close() })
 
 	d, err := New(Options{Endpoint: endpoint})
@@ -203,6 +218,7 @@ func TestStartupFailureLeavesStopSafe(t *testing.T) {
 	if !errors.Is(err, transport.ErrEndpointInUse) {
 		t.Fatalf("Start error = %v, want ErrEndpointInUse", err)
 	}
+
 	if err := d.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop after failed Start: %v", err)
 	}
@@ -210,6 +226,7 @@ func TestStartupFailureLeavesStopSafe(t *testing.T) {
 
 func TestUnexpectedServeFailureCanBeCleanedUp(t *testing.T) {
 	endpoint := testEndpoint(t)
+
 	d, err := New(Options{Endpoint: endpoint})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -224,6 +241,7 @@ func TestUnexpectedServeFailureCanBeCleanedUp(t *testing.T) {
 	d.mu.Lock()
 	listener := d.listener
 	d.mu.Unlock()
+
 	if err := listener.Close(); err != nil {
 		t.Fatalf("close listener: %v", err)
 	}
@@ -243,6 +261,7 @@ func TestUnexpectedServeFailureCanBeCleanedUp(t *testing.T) {
 	if err := d.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
+
 	assertEndpointUnavailable(t, endpoint)
 }
 

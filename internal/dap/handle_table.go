@@ -64,9 +64,11 @@ func (t *handleTable) Invalidate() handleInvalidation {
 		for handle := range t.frames {
 			t.stale[handle] = frameHandle
 		}
+
 		for handle := range t.scopes {
 			t.stale[handle] = scopeHandle
 		}
+
 		for handle := range t.variables {
 			t.stale[handle] = variableHandle
 		}
@@ -98,6 +100,7 @@ func (t *handleTable) FrameIndex(handle int) (int, handleStatus) {
 	if ok {
 		return index, handleCurrent
 	}
+
 	if t.stale[handle] == frameHandle {
 		return 0, handleStale
 	}
@@ -123,6 +126,7 @@ func (t *handleTable) ScopeVariables(handle int) ([]apidebugger.Variable, handle
 	if ok {
 		return append([]apidebugger.Variable(nil), variables...), handleCurrent
 	}
+
 	if t.stale[handle] == scopeHandle {
 		return nil, handleStale
 	}
@@ -154,6 +158,7 @@ func (t *handleTable) VariableReference(
 	if ok {
 		return reference, handleCurrent
 	}
+
 	if t.stale[handle] == variableHandle {
 		return 0, handleStale
 	}

@@ -34,20 +34,24 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	writeWorkspaceFile(t, root, "nested-module/go.mod", "module example.com/nested")
 	writeWorkspaceFile(t, root, "nested-module/ignored.fql", "RETURN 1")
 	writeWorkspaceFile(t, root, "go.mod", "module example.com/root")
+
 	if err := os.Mkdir(filepath.Join(root, "directory.fql"), 0o700); err != nil {
 		t.Fatalf("Mkdir directory.fql: %v", err)
 	}
 
 	manager := New()
+
 	workspace, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
+
 	if workspace.State() != StateReady {
 		t.Fatalf("workspace state = %v, want StateReady", workspace.State())
 	}
 
 	files := workspace.Files()
+
 	wantPaths := []string{"nested/alpha.fql", "nested/invalid.fql", "zeta.fql"}
 	if got := relativePaths(files); !reflect.DeepEqual(got, wantPaths) {
 		t.Fatalf("relative paths = %#v, want %#v", got, wantPaths)
@@ -63,6 +67,7 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 		if file != files[i] {
 			t.Fatalf("document file = %#v, want %#v", file, files[i])
 		}
+
 		if document.Revision() != 1 || !document.Loaded() || !document.HasSyntax() {
 			t.Fatalf("document state = revision %d loaded %t syntax %t", document.Revision(), document.Loaded(), document.HasSyntax())
 		}
@@ -71,6 +76,7 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 		if err != nil {
 			t.Fatalf("URIFromPath: %v", err)
 		}
+
 		if file.URI != wantURI {
 			t.Fatalf("file URI = %q, want %q", file.URI, wantURI)
 		}
@@ -80,22 +86,28 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	if !ok {
 		t.Fatal("Document alpha not found")
 	}
+
 	if alpha.Content() != "RETURN missing" {
 		t.Fatalf("alpha content = %q", alpha.Content())
 	}
+
 	sourceCopy := alpha.Source()
 	if err := sourceCopy.UnmarshalJSON([]byte(`{"name":"mutated","text":"changed","lines":["changed"]}`)); err != nil {
 		t.Fatalf("mutate source copy: %v", err)
 	}
+
 	if alpha.Content() != "RETURN missing" {
 		t.Fatal("source copy mutation changed retained document state")
 	}
+
 	if diagnostics := alpha.Diagnostics(); len(diagnostics) != 0 {
 		t.Fatalf("syntax-valid compiler-invalid diagnostics = %#v, want none", diagnostics)
 	}
+
 	if _, ok := alpha.VisitSyntax(&fql.BaseFqlParserVisitor{}); !ok {
 		t.Fatal("VisitSyntax did not visit retained parse state")
 	}
+
 	if _, ok := workspace.Document("../zeta.fql"); ok {
 		t.Fatal("Document resolved a path outside the workspace")
 	}
@@ -104,10 +116,12 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	if !ok {
 		t.Fatal("Document invalid not found")
 	}
+
 	diagnostics := invalid.Diagnostics()
 	if len(diagnostics) == 0 || diagnostics[0].Kind.String() != "SyntaxError" {
 		t.Fatalf("invalid diagnostics = %#v, want syntax error", diagnostics)
 	}
+
 	if diagnostics[0].Source.Empty() || diagnostics[0].Source.Name() != invalid.File().Path {
 		t.Fatalf("diagnostic source = %#v, want %q", diagnostics[0].Source, invalid.File().Path)
 	}
@@ -130,6 +144,7 @@ func TestOpenDiscoversLoadsAndParsesDocuments(t *testing.T) {
 	if err := manager.Close(context.Background(), workspace.ID()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+
 	if workspace.State() != StateClosed || len(workspace.Files()) != 0 || len(workspace.Documents()) != 0 || len(workspace.Diagnostics()) != 0 {
 		t.Fatalf("closed workspace retained source state")
 	}
@@ -144,6 +159,7 @@ func TestOpenKeepsSelectedRootValidRegardlessOfName(t *testing.T) {
 			writeWorkspaceFile(t, root, "query.fql", "RETURN 1")
 
 			manager := newTestManager(t)
+
 			opened, err := manager.Open(context.Background(), root)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
@@ -161,6 +177,7 @@ func TestOpenPreservesRootSymlinkAndSkipsNestedSymlinks(t *testing.T) {
 	writeWorkspaceFile(t, target, "inside.fql", "RETURN 1")
 
 	linkParent := t.TempDir()
+
 	rootLink := filepath.Join(linkParent, "linked-root")
 	if err := os.Symlink(target, rootLink); err != nil {
 		t.Skipf("create root symlink: %v", err)
@@ -168,18 +185,22 @@ func TestOpenPreservesRootSymlinkAndSkipsNestedSymlinks(t *testing.T) {
 
 	outside := t.TempDir()
 	writeWorkspaceFile(t, outside, "outside.fql", "RETURN 2")
+
 	if err := os.Symlink(outside, filepath.Join(target, "linked-directory")); err != nil {
 		t.Skipf("create directory symlink: %v", err)
 	}
+
 	if err := os.Symlink(filepath.Join(outside, "outside.fql"), filepath.Join(target, "linked-file.fql")); err != nil {
 		t.Skipf("create file symlink: %v", err)
 	}
 
 	manager := newTestManager(t)
+
 	workspace, err := manager.Open(context.Background(), rootLink)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
+
 	if workspace.Root() != filepath.Clean(rootLink) {
 		t.Fatalf("root = %q, want lexical symlink %q", workspace.Root(), rootLink)
 	}
@@ -188,6 +209,7 @@ func TestOpenPreservesRootSymlinkAndSkipsNestedSymlinks(t *testing.T) {
 	if got, want := relativePaths(files), []string{"inside.fql"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("relative paths = %#v, want %#v", got, want)
 	}
+
 	if files[0].Path != filepath.Join(rootLink, "inside.fql") {
 		t.Fatalf("file path = %q, want symlink-root identity", files[0].Path)
 	}
@@ -208,6 +230,7 @@ func TestLoadWorkspaceRetainsUnreadableDocumentDiagnostic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadWorkspaceFS: %v", err)
 	}
+
 	if len(content.documents) != 2 {
 		t.Fatalf("documents = %d, want 2", len(content.documents))
 	}
@@ -216,10 +239,12 @@ func TestLoadWorkspaceRetainsUnreadableDocumentDiagnostic(t *testing.T) {
 	if broken.Loaded() || broken.HasSyntax() {
 		t.Fatalf("broken state = loaded %t syntax %t", broken.Loaded(), broken.HasSyntax())
 	}
+
 	diagnostics := broken.Diagnostics()
 	if len(diagnostics) != 1 || diagnostics[0].Kind != ferretdiagnostics.UnexpectedError || !errors.Is(diagnostics[0], readErr) {
 		t.Fatalf("broken diagnostics = %#v, want retained read error", diagnostics)
 	}
+
 	if valid := content.documents["valid.fql"]; !valid.Loaded() || !valid.HasSyntax() {
 		t.Fatalf("valid document = loaded %t syntax %t", valid.Loaded(), valid.HasSyntax())
 	}
@@ -284,21 +309,27 @@ func TestLoadWorkspaceRootPrunesVanishedNestedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadWorkspaceFS: %v", err)
 	}
+
 	if got, want := observed, []string{".", "nested"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("observed directories = %#v, want %#v", got, want)
 	}
+
 	if got, want := content.directories, []string{"."}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("retained directories = %#v, want %#v", got, want)
 	}
+
 	if got, want := relativePaths(content.files), []string{"kept.fql"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("relative paths = %#v, want %#v", got, want)
 	}
+
 	if got, want := content.order, []string{"kept.fql"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("document order = %#v, want %#v", got, want)
 	}
+
 	if kept, found := content.documents["kept.fql"]; !found || kept.Content() != "RETURN 1" {
 		t.Fatalf("kept document = %#v, %t", kept, found)
 	}
+
 	if _, found := content.documents["nested/query.fql"]; found {
 		t.Fatal("vanished nested document was retained")
 	}
@@ -319,9 +350,11 @@ func TestLoadWorkspaceSubtreeTreatsVanishedDirectoryAsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadWorkspaceSubtree: %v", err)
 	}
+
 	if content.documents == nil {
 		t.Fatal("vanished subtree documents map is nil")
 	}
+
 	if len(content.files) != 0 || len(content.documents) != 0 || len(content.order) != 0 || len(content.directories) != 0 {
 		t.Fatalf("vanished subtree content = %+v, want initialized empty content", content)
 	}
@@ -347,6 +380,7 @@ func TestLoadWorkspaceSubtreePreservesRootAndObservationErrors(t *testing.T) {
 
 	t.Run("unrelated nested error", func(t *testing.T) {
 		observeErr := errors.New("observe directory")
+
 		_, err := loadWorkspaceSubtree(
 			context.Background(),
 			root,
@@ -362,6 +396,7 @@ func TestLoadWorkspaceSubtreePreservesRootAndObservationErrors(t *testing.T) {
 
 	t.Run("mixed nested error", func(t *testing.T) {
 		observeErr := errors.New("remove stale watch")
+
 		_, err := loadWorkspaceSubtree(
 			context.Background(),
 			root,
@@ -402,6 +437,7 @@ func writeWorkspaceFile(t *testing.T, root, relativePath, content string) {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
 		t.Fatalf("MkdirAll %q: %v", relativePath, err)
 	}
+
 	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile %q: %v", relativePath, err)
 	}

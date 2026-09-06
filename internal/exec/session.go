@@ -113,6 +113,7 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 		s.mu.Lock()
 		closing := !s.children.Accepting()
 		var target runtimeTarget
+
 		if err == nil && !closing {
 			s.debugPlan = plan
 			target = s.newDebugRuntimeTargetLocked(plan)
@@ -120,6 +121,7 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 			s.debugCompileErr = err
 			s.debugCompileFailed = true
 		}
+
 		s.debugCompiling = false
 		close(done)
 		s.debugCompileDone = nil
@@ -145,6 +147,7 @@ func (s *session) newDebugRuntimeTargetLocked(plan api.Plan) runtimeTarget {
 	if s.debugRuntimes == 0 {
 		s.debugRuntimeDone = make(chan struct{})
 	}
+
 	s.debugRuntimes++
 
 	return runtimeTarget{

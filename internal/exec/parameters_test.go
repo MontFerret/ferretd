@@ -25,12 +25,15 @@ func TestParametersCloneRecursivelyCopiesBoundaryContainers(t *testing.T) {
 	if got := cloned["map"].(map[string]any)["items"].([]any)[0]; got != "one" {
 		t.Fatalf("cloned map item = %v, want one", got)
 	}
+
 	if got := cloned["slice"].([]any)[0].(map[string]any)["key"]; got != "value" {
 		t.Fatalf("cloned slice map = %v, want value", got)
 	}
+
 	if got := input["map"].(map[string]any)["items"].([]any)[1].(map[string]any)["key"]; got != "value" {
 		t.Fatalf("input nested map = %v, want value", got)
 	}
+
 	if got := input["slice"].([]any)[1].([]any)[0]; got != "nested" {
 		t.Fatalf("input nested slice = %v, want nested", got)
 	}
@@ -56,6 +59,7 @@ func TestParametersCloneReturnsOwnedCopy(t *testing.T) {
 	if got := retained["value"]; got != 7 {
 		t.Fatalf("retained value = %v, want 7", got)
 	}
+
 	if got := retained["nested"].(map[string]any)["items"].([]any)[0]; got != "one" {
 		t.Fatalf("retained nested item = %v, want one", got)
 	}

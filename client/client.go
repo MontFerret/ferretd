@@ -79,6 +79,7 @@ func Dial(ctx context.Context, options ...Option) (*Client, error) {
 
 	if _, err := result.Info(ctx); err != nil {
 		_ = result.Close()
+
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, errors.Join(ErrDaemonUnavailable, err)
 		}
@@ -112,6 +113,7 @@ func (c *Client) Info(ctx context.Context) (ServerInfo, error) {
 // Shutdown requests an idempotent graceful daemon shutdown.
 func (c *Client) Shutdown(ctx context.Context) error {
 	_, err := c.daemon.Shutdown(ctx, &daemonv1.ShutdownRequest{})
+
 	return mapError(ctx, err)
 }
 

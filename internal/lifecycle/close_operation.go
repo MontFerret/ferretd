@@ -110,6 +110,7 @@ func (c *CloseOperation) Wait(ctx context.Context) error {
 
 				return err
 			}
+
 			c.mu.Unlock()
 
 			return ctx.Err()

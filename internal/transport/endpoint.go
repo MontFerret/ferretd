@@ -35,6 +35,7 @@ const (
 func ParseEndpoint(value string) (Endpoint, error) {
 	parsed, err := url.Parse(value)
 	if err != nil {
+		//nolint:errorlint // Classify malformed endpoints without exposing URL parser error identities.
 		return Endpoint{}, fmt.Errorf("%w: parse URL: %v", ErrInvalidEndpoint, err)
 	}
 

@@ -14,6 +14,7 @@ import (
 func TestDebugFramePositionsAddressLocalsAndEvaluation(t *testing.T) {
 	fixture := newDebugFixture(t, "RETURN 1")
 	ctx := context.Background()
+
 	created, err := fixture.manager.CreateSession(ctx, fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -47,6 +48,7 @@ func TestDebugFramePositionsAddressLocalsAndEvaluation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WatchSession: %v", err)
 	}
+
 	t.Cleanup(subscription.Cancel)
 
 	if _, err := fixture.manager.StartSession(ctx, created.ID); err != nil {

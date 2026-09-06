@@ -60,8 +60,10 @@ func serve(
 	stderr io.Writer,
 ) error {
 	var endpoint transport.Endpoint
+
 	if endpointValue != "" {
 		var err error
+
 		endpoint, err = transport.ParseEndpoint(endpointValue)
 		if err != nil {
 			return fmt.Errorf("parse daemon endpoint: %w", err)
@@ -94,6 +96,7 @@ func serve(
 	defer cancel()
 
 	stopErr := d.Stop(stopCtx)
+
 	if startErr != nil {
 		return fmt.Errorf("start daemon: %w", startErr)
 	}

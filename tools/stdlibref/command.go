@@ -115,7 +115,10 @@ func (c *command) fetch(ctx context.Context, location *url.URL, maximum int64) (
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected HTTP status %s", response.Status)

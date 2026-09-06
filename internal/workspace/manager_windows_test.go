@@ -22,6 +22,7 @@ func TestOpenUsesCasePreservingLexicalIdentity(t *testing.T) {
 	}
 
 	manager := newTestManager(t)
+
 	first, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Open original root: %v", err)
@@ -48,6 +49,7 @@ func TestManagerCloseReleasesCanonicalWorkspaceDirectory(t *testing.T) {
 	}
 
 	manager := New()
+
 	opened, err := manager.Open(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

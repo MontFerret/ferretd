@@ -20,9 +20,11 @@ func TestDaemonGetInfoNegotiatesAPIVersion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetInfo with client API 1.%d: %v", minor, err)
 		}
+
 		if response.ServerInfo.Version != "v1.2.3" || response.ServerInfo.InstanceId != "instance" {
 			t.Fatalf("server info = %#v", response.ServerInfo)
 		}
+
 		if got := response.ServerInfo.ApiVersion; got.Major != 1 || got.Minor != 1 {
 			t.Fatalf("API version = %#v, want 1.1", got)
 		}
@@ -42,10 +44,12 @@ func TestDaemonGetInfoRejectsAPIMajorMismatch(t *testing.T) {
 	if len(grpcStatus.Details()) != 1 {
 		t.Fatalf("details = %#v, want one compatibility detail", grpcStatus.Details())
 	}
+
 	detail, ok := grpcStatus.Details()[0].(*daemonv1.ApiCompatibilityError)
 	if !ok {
 		t.Fatalf("detail type = %T, want ApiCompatibilityError", grpcStatus.Details()[0])
 	}
+
 	if detail.ClientApi.Major != 2 || detail.ServerApi.Major != 1 {
 		t.Fatalf("compatibility detail = %#v", detail)
 	}
@@ -71,6 +75,7 @@ func TestDaemonShutdownIsIdempotent(t *testing.T) {
 			t.Fatalf("Shutdown: %v", err)
 		}
 	}
+
 	if calls != 1 {
 		t.Fatalf("shutdown callback calls = %d, want 1", calls)
 	}

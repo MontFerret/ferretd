@@ -84,6 +84,7 @@ func (s *Server) Run(ctx context.Context) (result error) {
 	s.logger.Info().Msg("DAP session started")
 
 	stopCancellation := make(chan struct{})
+
 	if s.readerClose != nil {
 		go func() {
 			select {
@@ -99,6 +100,7 @@ func (s *Server) Run(ctx context.Context) (result error) {
 		result = errors.Join(result, s.cleanup())
 
 		status := "completed"
+
 		if errors.Is(result, context.Canceled) {
 			status = "canceled"
 		} else if result != nil {
@@ -138,6 +140,7 @@ func (s *Server) Run(ctx context.Context) (result error) {
 		s.stateMu.Lock()
 		disconnected := s.disconnected
 		s.stateMu.Unlock()
+
 		if disconnected {
 			return nil
 		}

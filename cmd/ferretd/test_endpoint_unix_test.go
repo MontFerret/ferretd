@@ -19,6 +19,7 @@ func testClientEndpoint(t *testing.T) client.Endpoint {
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
+
 	t.Cleanup(func() { _ = os.RemoveAll(directory) })
 
 	endpoint, err := client.ParseEndpoint((&url.URL{

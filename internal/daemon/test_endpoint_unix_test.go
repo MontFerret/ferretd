@@ -17,6 +17,7 @@ func testEndpoint(t testing.TB) transport.Endpoint {
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
+
 	t.Cleanup(func() { _ = os.RemoveAll(directory) })
 
 	return transport.Endpoint{

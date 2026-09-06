@@ -10,6 +10,7 @@ import (
 
 func mapWorkspaceOpenError(ctx context.Context, err error) error {
 	mapped := mapError(ctx, err)
+
 	grpcStatus, ok := status.FromError(mapped)
 	if !ok || grpcStatus.Code() != codes.InvalidArgument {
 		return mapped
@@ -20,6 +21,7 @@ func mapWorkspaceOpenError(ctx context.Context, err error) error {
 
 func mapWorkspaceGetError(ctx context.Context, err error) error {
 	mapped := mapError(ctx, err)
+
 	grpcStatus, ok := status.FromError(mapped)
 	if !ok || grpcStatus.Code() != codes.NotFound {
 		return mapped

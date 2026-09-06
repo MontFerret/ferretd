@@ -9,10 +9,12 @@ import (
 
 func TestParseURIPath(t *testing.T) {
 	value := "file:///tmp/Ferret%20Lab/%23query-%C3%A9.fql"
+
 	uri, err := ParseURI(value)
 	if err != nil {
 		t.Fatalf("ParseURI: %v", err)
 	}
+
 	if uri.String() != value {
 		t.Fatalf("URI.String = %q, want %q", uri.String(), value)
 	}
@@ -36,6 +38,7 @@ func TestParseURIPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("URI.Path localhost: %v", err)
 	}
+
 	if got != filepath.FromSlash("/tmp/query.fql") {
 		t.Fatalf("URI.Path localhost = %q", got)
 	}
@@ -66,9 +69,11 @@ func TestURIFromPathRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("URIFromPath: %v", err)
 	}
+
 	if !strings.HasPrefix(uri.String(), "file://") {
 		t.Fatalf("URIFromPath = %q, want file URI", uri)
 	}
+
 	if strings.Contains(uri.String(), " ") || strings.Contains(uri.String(), "#") {
 		t.Fatalf("URIFromPath = %q, want escaped URI", uri)
 	}
@@ -77,6 +82,7 @@ func TestURIFromPathRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("URI.Path: %v", err)
 	}
+
 	if runtime.GOOS == "windows" {
 		if !strings.EqualFold(got, path) {
 			t.Fatalf("round trip path = %q, want %q", got, path)

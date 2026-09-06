@@ -84,6 +84,7 @@ func (d *session) terminate() {
 		d.failure = nil
 		d.publishLocked(EventTerminated, true)
 	}
+
 	d.mu.Unlock()
 }
 
@@ -103,6 +104,7 @@ func (d *session) settleClose() {
 	for id, watcher := range d.watchers {
 		d.closeWatcherLocked(id, watcher, nil)
 	}
+
 	d.mu.Unlock()
 }
 

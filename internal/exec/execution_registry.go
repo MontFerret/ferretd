@@ -140,6 +140,7 @@ func (r *executionRegistry) finishClose(entry *executionEntry) {
 	if group.entries[execution.id] == entry {
 		delete(group.entries, execution.id)
 	}
+
 	// Active empty groups are reused by later Executions from the same Session.
 	// Parent close removes the group after the last retained child settles.
 	if group.state == registryStateClosing && len(group.entries) == 0 {

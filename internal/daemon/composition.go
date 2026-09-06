@@ -27,6 +27,7 @@ func New(options Options) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
+
 	runtime := ferretapi.New(engine)
 
 	return newDaemon(options, runtime)
@@ -42,6 +43,7 @@ func newDaemon(options Options, runtime api.Runtime) (*Daemon, error) {
 	}
 
 	workspaceManager := workspace.New()
+
 	executionManager, err := exec.New(workspaceManager, runtime)
 	if err != nil {
 		cleanupErr := errors.Join(workspaceManager.Clear(context.Background()), runtime.Close())
@@ -60,6 +62,7 @@ func newDaemon(options Options, runtime api.Runtime) (*Daemon, error) {
 		stopDone:   make(chan struct{}),
 		state:      stateNew,
 	}
+
 	grpcServer, err := grpcadapter.New(
 		result.workspaces,
 		result.executions,
@@ -68,7 +71,6 @@ func newDaemon(options Options, runtime api.Runtime) (*Daemon, error) {
 		result.requestShutdown,
 		grpcadapter.Options{BearerToken: options.BearerToken},
 	)
-
 	if err != nil {
 		ctx := context.Background()
 		cleanupErr := errors.Join(

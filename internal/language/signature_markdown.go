@@ -19,6 +19,7 @@ func RenderSignatureDocumentation(value Signature) string {
 
 func renderSignatureMarkdown(value Signature, includeLabel bool) string {
 	sections := make([]string, 0, 6)
+
 	if includeLabel {
 		sections = append(sections, "```fql\n"+value.Label+"\n```")
 	}

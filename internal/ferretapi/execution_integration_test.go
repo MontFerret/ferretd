@@ -20,23 +20,28 @@ import (
 
 func TestCreateSessionCompilesImmutableSourceAndParameters(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN [@second, @first]")
+
 	got := fixture.session
 	if got.ID == "" || got.Source.Workspace != fixture.workspace.ID() ||
 		got.Source.RelativePath != "query.fql" || got.Source.URI == "" || got.Source.Revision != 1 {
 		t.Fatalf("Session = %+v", got)
 	}
+
 	if _, err := uuid.Parse(string(got.ID)); err != nil {
 		t.Fatalf("Session ID is not a UUID: %v", err)
 	}
+
 	if want := []string{"second", "first"}; !reflect.DeepEqual(got.Parameters, want) {
 		t.Fatalf("parameters = %#v, want %#v", got.Parameters, want)
 	}
 
 	got.Parameters[0] = "mutated"
+
 	stored, err := fixture.manager.GetSession(context.Background(), got.ID)
 	if err != nil {
 		t.Fatalf("GetSession: %v", err)
 	}
+
 	if stored.Parameters[0] != "second" {
 		t.Fatalf("stored parameters = %#v, want defensive copy", stored.Parameters)
 	}
@@ -49,6 +54,7 @@ func TestCreateSessionCompilesImmutableSourceAndParameters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
 	}
+
 	if second.ID == got.ID || second.Source != got.Source {
 		t.Fatalf("second Session = %+v, first = %+v", second, got)
 	}
@@ -59,6 +65,7 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	first := fixture.session
 
 	writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 2")
+
 	second, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
@@ -67,6 +74,7 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
 	}
+
 	if second.Source.Revision <= first.Source.Revision {
 		t.Fatalf("source revisions = %d and %d, want increasing revisions",
 			first.Source.Revision, second.Source.Revision)
@@ -75,6 +83,7 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	if got := runSessionOutput(t, fixture.manager, first.ID); got != "1" {
 		t.Fatalf("first Session output = %q, want 1", got)
 	}
+
 	if got := runSessionOutput(t, fixture.manager, second.ID); got != "2" {
 		t.Fatalf("second Session output = %q, want 2", got)
 	}
@@ -87,6 +96,7 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	if err != nil {
 		t.Fatalf("unchanged CreateSession: %v", err)
 	}
+
 	if third.Source.Revision != second.Source.Revision {
 		t.Fatalf("unchanged source revision = %d, want %d",
 			third.Source.Revision, second.Source.Revision)
@@ -106,12 +116,14 @@ func TestCreateSessionDiscoversSourceCreatedAfterWorkspaceOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workspace Open: %v", err)
 	}
+
 	writeSourceFile(t, root, "created.fql", "RETURN 42")
 
 	session, err := manager.CreateSession(context.Background(), opened.ID(), "created.fql")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+
 	if session.Source.RelativePath != "created.fql" || runSessionOutput(t, manager, session.ID) != "42" {
 		t.Fatalf("created source Session = %+v", session)
 	}
@@ -127,16 +139,19 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 			fixture.workspace.ID(),
 			"query.fql",
 		)
+
 		var compilation *exec.CompilationError
 		if !errors.As(err, &compilation) || !errors.Is(err, exec.ErrCompilationFailed) {
 			t.Fatalf("CreateSession error = %v, want exec.CompilationError", err)
 		}
+
 		failedRevision := compilation.Source.Revision
 		if failedRevision <= 1 || len(compilation.Diagnostics) == 0 {
 			t.Fatalf("exec.CompilationError = %+v, want advanced revision and diagnostics", compilation)
 		}
 
 		writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 3")
+
 		recovered, err := fixture.manager.CreateSession(
 			context.Background(),
 			fixture.workspace.ID(),
@@ -145,6 +160,7 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		if err != nil {
 			t.Fatalf("recovered CreateSession: %v", err)
 		}
+
 		if recovered.Source.Revision <= failedRevision || runSessionOutput(t, fixture.manager, recovered.ID) != "3" {
 			t.Fatalf("recovered Session = %+v", recovered)
 		}
@@ -171,6 +187,7 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	fixture := newExecutionFixture(t, "LET value = 1\nRETURN value")
 	first := fixture.session
 	writeSourceFile(t, fixture.workspace.Root(), "query.fql", "RETURN 2")
+
 	second, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
@@ -179,6 +196,7 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
 	}
+
 	if second.Source.Revision <= first.Source.Revision {
 		t.Fatalf("second source revision = %d, want greater than %d",
 			second.Source.Revision, first.Source.Revision)
@@ -193,16 +211,19 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDebugRuntime: %v", err)
 	}
+
 	defer func() { _ = runtime.Close() }()
 
 	debugSession := runtime.Debugger()
 	if _, err := debugSession.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+
 	event, err := debugSession.Continue(context.Background())
 	if err != nil {
 		t.Fatalf("Continue: %v", err)
 	}
+
 	if event.Reason != apidebugger.ReasonCompleted || event.Output == nil || string(event.Output.Content) != "1" {
 		t.Fatalf("debug completion = %+v, want first Session output 1", event)
 	}
@@ -210,13 +231,16 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 
 func TestOldSessionLazilyCompilesDebugPlanAfterSourceRemoval(t *testing.T) {
 	fixture := newExecutionFixture(t, "LET value = 1\nRETURN value")
+
 	first := fixture.session
 	if err := os.Remove(filepath.Join(fixture.workspace.Root(), "query.fql")); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
+
 	if _, err := fixture.workspace.RefreshDocument(context.Background(), "query.fql"); !errors.Is(err, workspace.ErrDocumentNotFound) {
 		t.Fatalf("RefreshDocument error = %v, want ErrDocumentNotFound", err)
 	}
+
 	if output := runSessionOutput(t, fixture.manager, first.ID); output != "1" {
 		t.Fatalf("retained Session output = %q, want 1", output)
 	}
@@ -230,12 +254,14 @@ func TestOldSessionLazilyCompilesDebugPlanAfterSourceRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDebugRuntime: %v", err)
 	}
+
 	defer func() { _ = runtime.Close() }()
 
 	event, err := runtime.Debugger().Start(context.Background())
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+
 	if event.Reason != apidebugger.ReasonEntry {
 		t.Fatalf("entry event = %+v", event)
 	}
@@ -257,6 +283,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
+
 		if created.Options.WorkingDirectory != "" {
 			t.Fatalf(
 				"working directory = %q, want absent",
@@ -273,13 +300,16 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 
 	t.Run("override outside workspace", func(t *testing.T) {
 		fixture := newExecutionFixture(t, `RETURN TO_STRING(IO::FS::READ("value.txt"))`)
+
 		runtimeRoot := filepath.Join(t.TempDir(), "runtime root ü")
 		if err := os.Mkdir(runtimeRoot, 0o700); err != nil {
 			t.Fatalf("Mkdir: %v", err)
 		}
+
 		if err := os.WriteFile(filepath.Join(runtimeRoot, "value.txt"), []byte("runtime"), 0o600); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
+
 		canonicalRuntimeRoot, err := filepath.EvalSymlinks(runtimeRoot)
 		if err != nil {
 			t.Fatalf("EvalSymlinks: %v", err)
@@ -294,6 +324,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateExecution: %v", err)
 		}
+
 		if created.Options.WorkingDirectory != filepath.Clean(canonicalRuntimeRoot) {
 			t.Fatalf(
 				"working directory = %q, want %q",
@@ -312,6 +343,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 	t.Run("writes stay under override", func(t *testing.T) {
 		fixture := newExecutionFixture(t, `RETURN IO::FS::WRITE("created.txt", TO_BINARY("session"))`)
 		runtimeRoot := t.TempDir()
+
 		created, err := fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
@@ -326,13 +358,16 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 		if terminal.State != exec.StateCompleted {
 			t.Fatalf("terminal = %+v, want completed", terminal)
 		}
+
 		content, err := os.ReadFile(filepath.Join(runtimeRoot, "created.txt"))
 		if err != nil {
 			t.Fatalf("ReadFile: %v", err)
 		}
+
 		if string(content) != "session" {
 			t.Fatalf("created content = %q, want session", content)
 		}
+
 		if _, err := os.Stat(filepath.Join(fixture.workspace.Root(), "created.txt")); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("workspace created file stat error = %v, want not-exist", err)
 		}
@@ -355,6 +390,7 @@ func TestConcurrentExecutionsUseIndependentWorkingDirectories(t *testing.T) {
 	created := make([]exec.ExecutionSnapshot, len(roots))
 	for index, root := range roots {
 		var err error
+
 		created[index], err = fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
@@ -375,6 +411,7 @@ func TestConcurrentExecutionsUseIndependentWorkingDirectories(t *testing.T) {
 			results[index], _ = runAndObserve(t, fixture.manager, created[index].ID)
 		}()
 	}
+
 	wait.Wait()
 
 	for index, result := range results {
@@ -387,10 +424,12 @@ func TestConcurrentExecutionsUseIndependentWorkingDirectories(t *testing.T) {
 
 func TestWorkingDirectoryRemovedBeforeRunFailsSessionCreation(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
+
 	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
 	if err := os.Mkdir(runtimeRoot, 0o700); err != nil {
 		t.Fatalf("Mkdir: %v", err)
 	}
+
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
 		fixture.session.ID,
@@ -400,6 +439,7 @@ func TestWorkingDirectoryRemovedBeforeRunFailsSessionCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExecution: %v", err)
 	}
+
 	if err := os.Remove(runtimeRoot); err != nil {
 		t.Fatalf("Remove working directory: %v", err)
 	}
@@ -411,6 +451,7 @@ func TestWorkingDirectoryRemovedBeforeRunFailsSessionCreation(t *testing.T) {
 func TestExecutionRuntimeDiagnostics(t *testing.T) {
 	t.Run("runtime", func(t *testing.T) {
 		fixture := newExecutionFixture(t, "RETURN 1 / @zero")
+
 		created, err := fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
@@ -423,6 +464,7 @@ func TestExecutionRuntimeDiagnostics(t *testing.T) {
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
 		assertFailure(t, terminal, exec.FailureRuntime, false)
+
 		if got := terminal.Failure.Diagnostics; len(got) != 1 ||
 			got[0].Code == "" || !strings.Contains(got[0].Message, "division by zero") ||
 			got[0].Range.Start == got[0].Range.End {
@@ -435,6 +477,7 @@ func TestExecutionRuntimeDiagnostics(t *testing.T) {
 LET second = @second
 LET third = @third
 RETURN [first, second, third]`)
+
 		created, err := fixture.manager.CreateExecution(
 			context.Background(),
 			fixture.session.ID,
@@ -447,6 +490,7 @@ RETURN [first, second, third]`)
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
 		assertFailure(t, terminal, exec.FailureRuntime, false)
+
 		if got, want := terminal.Failure.Message, "Found 3 errors"; got != want {
 			t.Fatalf("failure message = %q, want %q", got, want)
 		}
@@ -455,6 +499,7 @@ RETURN [first, second, third]`)
 		if len(diagnostics) != 3 {
 			t.Fatalf("runtime diagnostics = %+v, want three missing-parameter diagnostics", diagnostics)
 		}
+
 		for i, name := range []string{"@first", "@second", "@third"} {
 			diagnostic := diagnostics[i]
 			if diagnostic.Code == "" || !strings.Contains(diagnostic.Message, "missing parameter") ||

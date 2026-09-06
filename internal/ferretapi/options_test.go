@@ -23,6 +23,7 @@ func TestRuntimeOptimizationOptions(t *testing.T) {
 		t.Cleanup(func() { _ = runtime.Close() })
 		for _, debug := range []bool{false, true} {
 			compile := runtime.Compile
+
 			if debug {
 				compile = runtime.CompileDebug
 			}
@@ -32,6 +33,7 @@ func TestRuntimeOptimizationOptions(t *testing.T) {
 				api.OptimizationAggressive, api.OptimizationLevel(-1),
 			} {
 				plan, err := compile(context.Background(), api.NewAnonymousSource("RETURN 1"), api.WithOptimizationLevel(level))
+
 				wantSuccess := debug && level == api.OptimizationNone
 				if (err == nil) != wantSuccess || (plan != nil) != wantSuccess {
 					t.Fatalf("native=%v debug=%t option=%v: plan=%v error=%v", nativeLevel, debug, level, plan, err)
@@ -58,16 +60,19 @@ func TestRuntimeOptimizationOptions(t *testing.T) {
 
 func TestDebuggerRejectsUnknownBreakpointModes(t *testing.T) {
 	runtime := newTestRuntime(t)
+
 	plan, err := runtime.CompileDebug(context.Background(), api.NewAnonymousSource("RETURN 1"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(func() { _ = plan.Close() })
 
 	session, err := plan.NewDebugSession(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(func() { _ = session.Close() })
 
 	for _, mode := range []apidebugger.BreakpointBindingMode{-1, 99} {
@@ -84,10 +89,12 @@ func TestDebuggerRejectsUnknownBreakpointModes(t *testing.T) {
 
 func TestRuntimeRejectsInvalidParameterValues(t *testing.T) {
 	runtime := newTestRuntime(t)
+
 	plan, err := runtime.CompileDebug(context.Background(), api.NewAnonymousSource("RETURN 1"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(func() { _ = plan.Close() })
 
 	option := api.WithParams(map[string]any{"invalid": make(chan int)})

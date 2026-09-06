@@ -53,9 +53,11 @@ func newWorkspaceWatcher(root string) (*workspaceWatcher, error) {
 func (w *workspaceWatcher) AddDirectory(relativePath string) error {
 	key := path.Clean(relativePath)
 	absolute := w.root
+
 	if key != "." {
 		absolute = filepath.Join(w.root, filepath.FromSlash(key))
 	}
+
 	absolute = filepath.Clean(absolute)
 
 	w.mu.Lock()
@@ -81,7 +83,8 @@ func (w *workspaceWatcher) AddDirectory(relativePath string) error {
 	current, err := watcherDirectoryInfo(absolute, key == ".")
 	if err != nil || !os.SameFile(info, current) {
 		removeErr := w.backend.Remove(absolute)
-		if errors.Is(removeErr, fsnotify.ErrNonExistentWatch) || isOnlyNotExist(removeErr) {
+		if errors.Is(removeErr, fsnotify.ErrNonExistentWatch) || isOnlyNotExist(removeErr) ||
+			isInvalidatedWatchRemoval(removeErr) {
 			removeErr = nil
 		}
 
@@ -126,6 +129,7 @@ func (w *workspaceWatcher) Close() error {
 		}
 
 		w.closeErr = w.backend.Close()
+
 		if started {
 			<-w.done
 		} else {
@@ -141,16 +145,20 @@ func (w *workspaceWatcher) ReplaceSubtree(relativePath string, directories []str
 	keep := make(map[string]struct{}, len(directories))
 	for _, directory := range directories {
 		absolute := w.root
+
 		if directory != "." {
 			absolute = filepath.Join(w.root, filepath.FromSlash(directory))
 		}
+
 		keep[filepath.Clean(absolute)] = struct{}{}
 	}
 
 	prefix := w.root
+
 	if relativePath != "." {
 		prefix = filepath.Join(w.root, filepath.FromSlash(relativePath))
 	}
+
 	prefix = filepath.Clean(prefix)
 
 	w.mu.Lock()
@@ -168,9 +176,10 @@ func (w *workspaceWatcher) ReplaceSubtree(relativePath string, directories []str
 
 		if err := w.backend.Remove(watched); err != nil &&
 			!errors.Is(err, fsnotify.ErrNonExistentWatch) && !errors.Is(err, fsnotify.ErrClosed) &&
-			!isOnlyNotExist(err) {
+			!isOnlyNotExist(err) && !isInvalidatedWatchRemoval(err) {
 			result = errors.Join(result, err)
 		}
+
 		delete(w.watched, watched)
 	}
 
@@ -179,9 +188,11 @@ func (w *workspaceWatcher) ReplaceSubtree(relativePath string, directories []str
 
 func (w *workspaceWatcher) WatchesSubtree(relativePath string) bool {
 	prefix := w.root
+
 	if relativePath != "." {
 		prefix = filepath.Join(w.root, filepath.FromSlash(relativePath))
 	}
+
 	prefix = filepath.Clean(prefix)
 
 	w.mu.Lock()

@@ -55,6 +55,7 @@ func TestListenAssignsAndDialsEphemeralTCPPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
+
 	t.Cleanup(func() { _ = listener.Close() })
 
 	bound := listener.Endpoint()
@@ -75,6 +76,7 @@ func TestListenAssignsAndDialsEphemeralTCPPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
+
 	_ = connection.Close()
 
 	serverConnection := <-accepted

@@ -42,6 +42,7 @@ func TestServeStopsOnCancellation(t *testing.T) {
 		if err := json.Unmarshal([]byte(strings.TrimSpace(result.diagnostics)), &diagnostic); err != nil {
 			t.Fatalf("decode serve diagnostics %q: %v", result.diagnostics, err)
 		}
+
 		if diagnostic["level"] != "info" || diagnostic["event"] != "ferretd.ready" ||
 			diagnostic["message"] != "ferretd started" ||
 			diagnostic["endpoint"] != endpoint.String() || diagnostic["version"] != "test-version" {
@@ -110,6 +111,7 @@ func TestServeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace root: %v", err)
 	}
+
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 
 	relativeRoot, err := filepath.Rel(cwd, root)
@@ -172,6 +174,7 @@ func TestServeEndToEnd(t *testing.T) {
 	if err := connection.Shutdown(shutdownCtx); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
+
 	_ = connection.Close()
 
 	select {
@@ -290,6 +293,7 @@ func TestServeAuthenticatedTCP(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(record), &ready); err != nil {
 		t.Fatalf("decode ready diagnostic %q: %v", record, err)
 	}
+
 	if ready.Event != "ferretd.ready" || ready.Version != "test-version" || ready.Message != "ferretd started" {
 		t.Fatalf("ready diagnostic = %#v", ready)
 	}
@@ -298,6 +302,7 @@ func TestServeAuthenticatedTCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseEndpoint: %v", err)
 	}
+
 	if endpoint.String() == "tcp://127.0.0.1:0" {
 		t.Fatalf("reported endpoint = %q, want assigned port", endpoint.String())
 	}
@@ -309,6 +314,7 @@ func TestServeAuthenticatedTCP(t *testing.T) {
 		client.WithBearerToken(token),
 	)
 	cancel()
+
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -318,6 +324,7 @@ func TestServeAuthenticatedTCP(t *testing.T) {
 		cancelShutdown()
 		t.Fatalf("Shutdown: %v", err)
 	}
+
 	cancelShutdown()
 	_ = connection.Close()
 
@@ -356,6 +363,7 @@ func waitForClient(t *testing.T, endpoint client.Endpoint) *client.Client {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		connection, err := client.Dial(ctx, client.WithEndpoint(endpoint))
 		cancel()
+
 		if err == nil {
 			return connection
 		}

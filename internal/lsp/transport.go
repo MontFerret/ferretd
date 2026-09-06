@@ -36,6 +36,7 @@ func (s *Server) runStream(ctx context.Context, stream io.ReadWriteCloser) error
 		cancel()
 		handler.cancelAll()
 	}
+
 	handler.waitForCompletion()
 
 	return nil

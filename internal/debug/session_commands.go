@@ -46,6 +46,7 @@ func (d *session) pause(ctx context.Context) (SessionSnapshot, error) {
 
 		return SessionSnapshot{}, ErrSessionNotRunning
 	}
+
 	d.mu.Unlock()
 
 	if err := d.runtime.Debugger().Pause(); err != nil {

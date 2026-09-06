@@ -135,6 +135,7 @@ func encodeSemanticTokens(values []language.SemanticToken) []protocol.UInteger {
 		start := value.Range.Start.Character
 		deltaLine := line - previousLine
 		deltaStart := start
+
 		if deltaLine == 0 {
 			deltaStart -= previousStart
 		}

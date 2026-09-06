@@ -17,6 +17,7 @@ func TestExecutionServiceRequiresManager(t *testing.T) {
 	if service != nil {
 		t.Fatal("newExecutionService returned a service for a nil manager")
 	}
+
 	if !errors.Is(err, errNilExecutionManager) {
 		t.Fatalf("newExecutionService error = %v, want %v", err, errNilExecutionManager)
 	}
@@ -25,10 +26,12 @@ func TestExecutionServiceRequiresManager(t *testing.T) {
 func TestExecutionServiceUsesSuppliedManager(t *testing.T) {
 	workspaces := workspace.New()
 	manager := mustNewExecutionManager(t, workspaces)
+
 	service, err := newExecutionService(manager)
 	if err != nil {
 		t.Fatalf("newExecutionService: %v", err)
 	}
+
 	if service.executions != manager {
 		t.Fatal("newExecutionService did not retain the supplied manager")
 	}
@@ -103,6 +106,7 @@ func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := toExecutionStatusError(tt.err)
+
 			grpcStatus := status.Convert(err)
 			if grpcStatus.Code() != tt.code {
 				t.Fatalf("code = %v, want %v", grpcStatus.Code(), tt.code)
@@ -117,6 +121,7 @@ func TestExecutionStatusErrorsCarryTypedResourceDetails(t *testing.T) {
 					break
 				}
 			}
+
 			if got == nil || got.Resource != tt.resource || got.Condition != tt.condition {
 				t.Fatalf("resource detail = %+v, want %v/%v", got, tt.resource, tt.condition)
 			}

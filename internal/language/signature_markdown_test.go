@@ -35,6 +35,7 @@ func TestRenderSignaturesMarkdownUsesSharedAuthoredSections(t *testing.T) {
 		if index <= previous {
 			t.Fatalf("Markdown = %q, section %q is missing or out of order", markdown, fragment)
 		}
+
 		previous = index
 	}
 

@@ -27,12 +27,14 @@ func TestNewRequiresNativeEngine(t *testing.T) {
 
 func TestRuntimeTranslatesSourceOptionsAndReusesPlan(t *testing.T) {
 	runtime := newTestRuntime(t)
+
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "value.txt"), []byte("rooted"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	sourcePath := filepath.Join(root, "query.fql")
+
 	compiled, err := runtime.Compile(
 		context.Background(),
 		api.NewSource(sourcePath, "RETURN [@value, TO_STRING(IO::FS::READ(\"value.txt\"))]"),
@@ -40,13 +42,16 @@ func TestRuntimeTranslatesSourceOptionsAndReusesPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
+
 	t.Cleanup(func() { _ = compiled.Close() })
 
 	if got := compiled.Params(); len(got) != 1 || got[0] != "value" {
 		t.Fatalf("Params = %v, want [value]", got)
 	}
+
 	parameters := compiled.Params()
 	parameters[0] = "changed"
+
 	if got := compiled.Params(); len(got) != 1 || got[0] != "value" {
 		t.Fatalf("Params after caller mutation = %v, want [value]", got)
 	}
@@ -63,10 +68,12 @@ func TestRuntimeTranslatesSourceOptionsAndReusesPlan(t *testing.T) {
 		}
 
 		output, runErr := session.Run(context.Background())
+
 		closeErr := session.Close()
 		if err := errors.Join(runErr, closeErr); err != nil {
 			t.Fatalf("session(%s): %v", value, err)
 		}
+
 		want := "[\"" + value + "\",\"rooted\"]"
 		if output.ContentType != "application/json" || string(output.Content) != want {
 			t.Fatalf("output(%s) = %+v, want %s", value, output, want)
@@ -76,6 +83,7 @@ func TestRuntimeTranslatesSourceOptionsAndReusesPlan(t *testing.T) {
 
 func TestRuntimeRunUsesUniversalSessionOptions(t *testing.T) {
 	runtime := newTestRuntime(t)
+
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "value.txt"), []byte("rooted"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -94,6 +102,7 @@ func TestRuntimeRunUsesUniversalSessionOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+
 	if output.ContentType != "application/json" || string(output.Content) != `["direct","rooted"]` {
 		t.Fatalf("output = %+v", output)
 	}
@@ -108,32 +117,39 @@ func TestRuntimeCopiesOutputAndTranslatesDebugSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
+
 	t.Cleanup(func() { _ = compiled.Close() })
 
 	first, err := compiled.NewSession(ctx)
 	if err != nil {
 		t.Fatalf("NewSession first: %v", err)
 	}
+
 	firstOutput, err := first.Run(ctx)
 	if err != nil {
 		t.Fatalf("Run first: %v", err)
 	}
+
 	if err := first.Close(); err != nil {
 		t.Fatalf("Close first: %v", err)
 	}
+
 	firstOutput.Content[0] = '9'
 
 	second, err := compiled.NewSession(ctx)
 	if err != nil {
 		t.Fatalf("NewSession second: %v", err)
 	}
+
 	secondOutput, err := second.Run(ctx)
 	if err != nil {
 		t.Fatalf("Run second: %v", err)
 	}
+
 	if err := second.Close(); err != nil {
 		t.Fatalf("Close second: %v", err)
 	}
+
 	if string(secondOutput.Content) != "1" {
 		t.Fatalf("second output = %q, want independent 1", secondOutput.Content)
 	}
@@ -146,24 +162,30 @@ func TestRuntimeCopiesOutputAndTranslatesDebugSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompileDebug: %v", err)
 	}
+
 	t.Cleanup(func() { _ = debugPlan.Close() })
+
 	debugSession, err := debugPlan.NewDebugSession(ctx)
 	if err != nil {
 		t.Fatalf("NewDebugSession: %v", err)
 	}
+
 	t.Cleanup(func() { _ = debugSession.Close() })
 
 	event, err := debugSession.Start(ctx)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+
 	if event.Reason != apidebugger.ReasonEntry || event.Location.SourceName != sourcePath {
 		t.Fatalf("entry event = %+v", event)
 	}
+
 	completed, err := debugSession.Continue(ctx)
 	if err != nil {
 		t.Fatalf("Continue: %v", err)
 	}
+
 	if completed.Reason != apidebugger.ReasonCompleted || completed.Output == nil ||
 		string(completed.Output.Content) != "1" {
 		t.Fatalf("completed event = %+v", completed)
@@ -219,14 +241,17 @@ func TestRuntimeConvertsDiagnosticsAndPreservesNativeCause(t *testing.T) {
 	}
 
 	var nativeSet *ferretdiagnostics.DiagnosticSet
+
 	var native *ferretdiagnostics.Diagnostic
 	if !errors.As(err, &nativeSet) && !errors.As(err, &native) {
 		t.Fatalf("error does not preserve native diagnostic cause: %v", err)
 	}
+
 	var portable apidiagnostics.Diagnostics
 	if !errors.As(err, &portable) || len(portable) == 0 {
 		t.Fatalf("portable diagnostics = %+v, want non-empty", portable)
 	}
+
 	if portable[0].Source != source || portable[0].Message == "" ||
 		len(portable[0].Annotations) == 0 ||
 		portable[0].Annotations[0].Range.SourceName != source.Name {
@@ -280,6 +305,7 @@ func TestDebuggerValueAndBreakpointTranslation(t *testing.T) {
 	if err != nil || mode != ferret.DebugBreakpointBindNextExecutableInFile {
 		t.Fatal("default breakpoint mode was not translated to native in-file binding")
 	}
+
 	if convertBreakpointMode(ferret.DebugBreakpointBindNextExecutableInFunction) !=
 		apidebugger.BreakpointBindNextExecutableInFunction {
 		t.Fatal("native in-function breakpoint mode was not translated")
@@ -290,6 +316,7 @@ func TestRuntimeResourcesCloseExactlyOnce(t *testing.T) {
 	var engineCloses atomic.Int64
 	var planCloses atomic.Int64
 	var sessionCloses atomic.Int64
+
 	engine, err := ferret.New(
 		ferret.WithEngineCloseHook(func() error {
 			engineCloses.Add(1)
@@ -310,20 +337,24 @@ func TestRuntimeResourcesCloseExactlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ferret.New: %v", err)
 	}
+
 	runtime := New(engine)
 
 	compiled, err := runtime.Compile(context.Background(), api.NewAnonymousSource("RETURN 1"))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
+
 	session, err := compiled.NewSession(context.Background())
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
+
 	debugPlan, err := runtime.CompileDebug(context.Background(), api.NewAnonymousSource("RETURN 1"))
 	if err != nil {
 		t.Fatalf("CompileDebug: %v", err)
 	}
+
 	debugSession, err := debugPlan.NewDebugSession(context.Background())
 	if err != nil {
 		t.Fatalf("NewDebugSession: %v", err)
@@ -333,15 +364,19 @@ func TestRuntimeResourcesCloseExactlyOnce(t *testing.T) {
 		if err := session.Close(); err != nil {
 			t.Fatalf("Session.Close: %v", err)
 		}
+
 		if err := debugSession.Close(); err != nil {
 			t.Fatalf("DebugSession.Close: %v", err)
 		}
+
 		if err := compiled.Close(); err != nil {
 			t.Fatalf("Plan.Close: %v", err)
 		}
+
 		if err := debugPlan.Close(); err != nil {
 			t.Fatalf("DebugPlan.Close: %v", err)
 		}
+
 		if err := runtime.Close(); err != nil {
 			t.Fatalf("Runtime.Close: %v", err)
 		}
@@ -364,6 +399,7 @@ func newTestRuntime(t testing.TB) *Runtime {
 	if err != nil {
 		t.Fatalf("ferret.New: %v", err)
 	}
+
 	runtime := New(engine)
 	t.Cleanup(func() {
 		if err := runtime.Close(); err != nil {

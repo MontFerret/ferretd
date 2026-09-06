@@ -42,6 +42,7 @@ func New(
 	}
 
 	options = options.normalized()
+
 	compilerInstance, err := compiler.New()
 	if err != nil {
 		return nil, fmt.Errorf("create compiler: %w", err)
@@ -157,6 +158,7 @@ func (s *Service) overlay(ctx context.Context, uri source.URI) (*overlay, bool) 
 	s.mu.RLock()
 	document, ok := s.overlays[uri]
 	s.mu.RUnlock()
+
 	if !ok {
 		return nil, false
 	}

@@ -69,12 +69,14 @@ func (m *Manager) CreateSession(
 
 	created := newSession(id, runtime)
 	m.mu.Lock()
+
 	group := m.groups[parentID]
 	if m.closed || group == nil || !group.gate.Accepting() {
 		managerClosed := m.closed
 		m.mu.Unlock()
 
 		closeErr := runtime.Close()
+
 		if managerClosed {
 			return SessionSnapshot{}, errors.Join(ErrClosed, closeErr)
 		}
@@ -265,6 +267,7 @@ func (m *Manager) Close(ctx context.Context) error {
 	for id := range m.groups {
 		parentIDs = append(parentIDs, id)
 	}
+
 	m.mu.Unlock()
 
 	var result error
@@ -283,6 +286,7 @@ func (m *Manager) session(ctx context.Context, id SessionID) (*session, error) {
 	m.mu.RLock()
 	session := m.sessions[id]
 	m.mu.RUnlock()
+
 	if session == nil {
 		return nil, ErrSessionNotFound
 	}
@@ -358,12 +362,14 @@ func (m *Manager) finishSessionClose(session *session) {
 			delete(m.groups, session.runtime.SessionID())
 		}
 	}
+
 	delete(m.closing, session.id)
 	m.mu.Unlock()
 }
 
 func (m *Manager) closeExecutionSession(ctx context.Context, parentID exec.SessionID) error {
 	m.mu.Lock()
+
 	group := m.groups[parentID]
 	if group == nil {
 		m.mu.Unlock()
@@ -389,6 +395,7 @@ func (m *Manager) finishExecutionSessionClose(parentID exec.SessionID, group *se
 	for id := range group.sessions {
 		ids = append(ids, id)
 	}
+
 	m.mu.RUnlock()
 
 	var result error
@@ -402,5 +409,6 @@ func (m *Manager) finishExecutionSessionClose(parentID exec.SessionID, group *se
 	if m.groups[parentID] == group {
 		delete(m.groups, parentID)
 	}
+
 	m.mu.Unlock()
 }

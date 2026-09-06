@@ -75,12 +75,14 @@ func (r *runtimeSpy) Run(
 	if err != nil {
 		return api.Output{}, err
 	}
+
 	defer func() { _ = plan.Close() }()
 
 	session, err := plan.NewSession(ctx, options...)
 	if err != nil {
 		return api.Output{}, err
 	}
+
 	defer func() { _ = session.Close() }()
 
 	return session.Run(ctx)
@@ -97,6 +99,7 @@ func (r *runtimeSpy) Compile(
 	compileErr := r.compileErr
 	compilePlan := r.compilePlan
 	r.mu.Unlock()
+
 	if r.beforeCompile != nil {
 		if err := r.beforeCompile(ctx); err != nil {
 			return nil, err
@@ -119,6 +122,7 @@ func (r *runtimeSpy) CompileDebug(
 	r.mu.Lock()
 	r.compileDebugSources = append(r.compileDebugSources, source)
 	r.mu.Unlock()
+
 	if r.beforeCompile != nil {
 		if err := r.beforeCompile(ctx); err != nil {
 			return nil, err

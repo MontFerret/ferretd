@@ -54,6 +54,7 @@ func (a launchArguments) resolvePaths() (launchPaths, error) {
 		if base == "" {
 			base = processCWD
 		}
+
 		program = filepath.Join(base, program)
 	}
 
@@ -64,6 +65,7 @@ func (a launchArguments) resolvePaths() (launchPaths, error) {
 	}
 
 	root = filepath.Clean(root)
+
 	rootInfo, err := os.Stat(root)
 	if err != nil {
 		return launchPaths{}, fmt.Errorf("stat cwd: %w", err)
@@ -110,6 +112,7 @@ func (s *Server) sourcePath(value string) (string, error) {
 
 	var path string
 	var err error
+
 	if s.client.pathFormat == pathFormatURI {
 		path, err = source.URI(value).Path()
 		if err != nil {
@@ -133,12 +136,14 @@ func newSourceIdentity(path, base string) (sourceIdentity, error) {
 	}
 
 	identity := sourceIdentity{path: filepath.Clean(absolute)}
+
 	canonical, err := filepath.EvalSymlinks(identity.path)
 	if err != nil {
 		return identity, fmt.Errorf("resolve source symlinks: %w", err)
 	}
 
 	identity.canonical = filepath.Clean(canonical)
+
 	identity.info, err = os.Stat(identity.canonical)
 	if err != nil {
 		return identity, fmt.Errorf("stat canonical source: %w", err)

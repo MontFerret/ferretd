@@ -18,6 +18,7 @@ func mustNewExecutionManager(t testing.TB, workspaces *workspace.Manager) *exec.
 		_ = runtime.Close()
 		t.Fatalf("exec.New: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 		_ = runtime.Close()

@@ -25,6 +25,7 @@ func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
 			}
 
 			<-release
+
 			return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 		}
 
@@ -92,6 +93,7 @@ func TestCreateDebugRuntimeCoordinatesCachesAndRetries(t *testing.T) {
 
 		<-started
 		cancel()
+
 		if err := <-result; !errors.Is(err, context.Canceled) {
 			t.Fatalf("canceled creation error = %v", err)
 		}
@@ -127,6 +129,7 @@ func TestDebugRuntimePreparesParametersOptionsAndCancellation(t *testing.T) {
 		"value":  7,
 		"nested": map[string]any{"items": []any{"one", "two"}},
 	}
+
 	runtime, err := fixture.manager.CreateDebugRuntime(
 		context.Background(),
 		fixture.session.ID,
@@ -139,26 +142,31 @@ func TestDebugRuntimePreparesParametersOptionsAndCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDebugRuntime: %v", err)
 	}
+
 	t.Cleanup(func() { _ = runtime.Close() })
 
 	input["value"] = 99
 	input["nested"].(map[string]any)["items"].([]any)[0] = "caller"
 	parameters := runtime.Parameters()
 	parameters["nested"].(map[string]any)["items"].([]any)[1] = "snapshot"
+
 	retained := runtime.Parameters()
 	if retained["value"] != 7 ||
 		retained["nested"].(map[string]any)["items"].([]any)[0] != "one" ||
 		retained["nested"].(map[string]any)["items"].([]any)[1] != "two" {
 		t.Fatalf("runtime parameters = %#v, want immutable prepared values", retained)
 	}
+
 	options := runtime.Options()
 	if options.OutputContentType != defaultOutputContentType {
 		t.Fatalf("OutputContentType = %q, want %q", options.OutputContentType, defaultOutputContentType)
 	}
+
 	canonicalWorkingDirectory, err := filepath.EvalSymlinks(workingDirectory)
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
+
 	if options.WorkingDirectory != filepath.Clean(canonicalWorkingDirectory) {
 		t.Fatalf(
 			"working directory = %q, want %q",
@@ -168,6 +176,7 @@ func TestDebugRuntimePreparesParametersOptionsAndCancellation(t *testing.T) {
 	}
 
 	parent := retainedSession(t, fixture.manager, fixture.session.ID).session
+
 	plan := parent.debugPlan.(*planSpy)
 	if got := plan.lastOptions; got.params["value"] != 7 ||
 		got.contentType != defaultOutputContentType || got.fsRoot != canonicalWorkingDirectory {
@@ -177,6 +186,7 @@ func TestDebugRuntimePreparesParametersOptionsAndCancellation(t *testing.T) {
 	if err := runtime.Close(); err != nil {
 		t.Fatalf("DebugRuntime.Close: %v", err)
 	}
+
 	if !errors.Is(runtime.Context().Err(), context.Canceled) {
 		t.Fatalf("runtime context error = %v, want context.Canceled", runtime.Context().Err())
 	}
@@ -213,11 +223,13 @@ func TestSessionCloseWaitsForDebugRuntimeCompilationWithoutPublishingRuntime(t *
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+
 	if err := manager.CloseSession(ctx, snapshot.ID); !errors.Is(err, context.Canceled) {
 		t.Fatalf("CloseSession error = %v, want context.Canceled", err)
 	}
 
 	close(releaseCompile)
+
 	result := <-createDone
 	if result.runtime != nil || !errors.Is(result.err, ErrSessionClosed) {
 		t.Fatalf("CreateDebugRuntime = (%v, %v), want nil ErrSessionClosed", result.runtime, result.err)
@@ -243,10 +255,12 @@ func TestDebugRuntimeLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 	parent.compileDebug = func(context.Context) (api.Plan, error) {
 		return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
+
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateDebugRuntime: %v", err)
 	}
+
 	if runtime.SessionID() != snapshot.ID || runtime.runtime.target.source != snapshot.Source ||
 		runtime.runtime.target.text != "RETURN 1" {
 		t.Fatalf("runtime identity = (%q, %+v, %q)", runtime.SessionID(),
@@ -270,6 +284,7 @@ func TestDebugRuntimeLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 	}()
 
 	<-hookCalled
+
 	if closes.Load() != 0 {
 		t.Fatalf("plans closed while runtime lease active: %d", closes.Load())
 	}
@@ -277,9 +292,11 @@ func TestDebugRuntimeLeaseAndCloseHookPrecedePlanClosure(t *testing.T) {
 	if err := runtime.Close(); err != nil {
 		t.Fatalf("DebugRuntime.Close: %v", err)
 	}
+
 	if err := runtime.Close(); err != nil {
 		t.Fatalf("repeated DebugRuntime.Close: %v", err)
 	}
+
 	if err := <-closeDone; err != nil {
 		t.Fatalf("CloseSession: %v", err)
 	}
@@ -295,10 +312,12 @@ func TestDebugRuntimeSessionSetupFailureReleasesLease(t *testing.T) {
 	parent.compileDebug = func(context.Context) (api.Plan, error) {
 		return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
+
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateDebugRuntime: %v", err)
 	}
+
 	if err := runtime.Close(); err != nil {
 		t.Fatalf("DebugRuntime.Close: %v", err)
 	}
@@ -306,6 +325,7 @@ func TestDebugRuntimeSessionSetupFailureReleasesLease(t *testing.T) {
 	parent.mu.Lock()
 	debugPlan := parent.debugPlan
 	parent.mu.Unlock()
+
 	if err := debugPlan.Close(); err != nil {
 		t.Fatalf("debug Plan.Close: %v", err)
 	}
@@ -322,6 +342,7 @@ func TestDebugRuntimeSessionSetupFailureReleasesLease(t *testing.T) {
 	parent.mu.Lock()
 	runtimes := parent.debugRuntimes
 	parent.mu.Unlock()
+
 	if runtimes != 0 {
 		t.Fatalf("debug runtime leases = %d, want 0", runtimes)
 	}
@@ -344,6 +365,7 @@ func TestDebugRuntimeClosesPartialSessionOnSetupFailure(t *testing.T) {
 			parent.mu.Lock()
 			leases := parent.debugRuntimes
 			parent.mu.Unlock()
+
 			if leases != 1 {
 				t.Errorf("leases during partial session cleanup = %d, want 1", leases)
 			}
@@ -365,12 +387,15 @@ func TestDebugRuntimeClosesPartialSessionOnSetupFailure(t *testing.T) {
 	if created != nil || !errors.Is(err, want) || !errors.Is(err, closeErr) {
 		t.Fatalf("CreateDebugRuntime = %v, %v; want nil, %v", created, err, want)
 	}
+
 	if closes.Load() != 1 {
 		t.Fatalf("partial debugger Session close calls = %d, want 1", closes.Load())
 	}
+
 	parent.mu.Lock()
 	runtimes := parent.debugRuntimes
 	parent.mu.Unlock()
+
 	if runtimes != 0 {
 		t.Fatalf("debug runtime leases = %d, want 0", runtimes)
 	}
@@ -388,6 +413,7 @@ func TestDebugRuntimeCloseSharesFailureAndReleasesLeaseOnce(t *testing.T) {
 	parent.compileDebug = func(context.Context) (api.Plan, error) {
 		return runtimeSpy.CompileDebug(context.Background(), api.NewSource("/query.fql", "RETURN 1"))
 	}
+
 	runtime, err := manager.CreateDebugRuntime(context.Background(), snapshot.ID, nil, RuntimeOptions{})
 	if err != nil {
 		t.Fatalf("CreateDebugRuntime: %v", err)
@@ -406,6 +432,7 @@ func TestDebugRuntimeCloseSharesFailureAndReleasesLeaseOnce(t *testing.T) {
 	parent.mu.Lock()
 	runtimes := parent.debugRuntimes
 	parent.mu.Unlock()
+
 	if runtimes != 0 {
 		t.Fatalf("debug runtime leases = %d, want 0", runtimes)
 	}

@@ -50,6 +50,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 		return errors.New("daemon has already been started")
 	}
+
 	d.state = stateStarting
 	d.mu.Unlock()
 
@@ -59,6 +60,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		if d.state != stateStopping {
 			d.state = stateStopping
 		}
+
 		stopDone := d.stopDone
 		d.mu.Unlock()
 		d.startCleanup(nil, false)
@@ -171,13 +173,17 @@ func (d *Daemon) startCleanup(listener net.Listener, serving bool) {
 		executionErr := d.executions.Close(ctx)
 		workspaceErr := d.workspaces.Clear(ctx)
 		var grpcErr error
+
 		if serving {
 			grpcErr = d.grpc.Stop(ctx)
 		}
+
 		var listenerErr error
+
 		if listener != nil {
 			listenerErr = listener.Close()
 		}
+
 		runtimeErr := d.runtime.Close()
 		d.finishStop(errors.Join(executionErr, workspaceErr, grpcErr, listenerErr, runtimeErr))
 	}()

@@ -32,6 +32,7 @@ func discoverWorkspaceDocument(
 
 	result, discoverErr := discoverWorkspaceDocumentRoot(ctx, rootPath, root, relativePath)
 	closeErr := root.Close()
+
 	if discoverErr != nil {
 		if closeErr != nil {
 			return discoveredDocument{}, errors.Join(discoverErr, fmt.Errorf("close workspace root: %w", closeErr))
@@ -85,12 +86,14 @@ func discoverWorkspaceDocumentRoot(
 	}
 
 	absolute := filepath.Join(rootPath, filepath.FromSlash(key))
+
 	uri, err := localsource.URIFromPath(absolute)
 	if err != nil {
 		return discoveredDocument{}, fmt.Errorf("resolve source URI for %q: %w", key, err)
 	}
 
 	file := File{RelativePath: key, Path: absolute, URI: uri}
+
 	document, found, err := readDiscoveredDocument(ctx, root, file, pathInfo)
 	if err != nil {
 		return discoveredDocument{}, err
@@ -113,6 +116,7 @@ func validateDocumentAncestors(root *os.Root, relativePath string) ([]string, bo
 		}
 
 		current = path.Join(current, component)
+
 		info, err := root.Lstat(current)
 		if err != nil {
 			if workspacePathMissing(root.FS(), current, err) {
@@ -136,6 +140,7 @@ func validateDocumentAncestors(root *os.Root, relativePath string) ([]string, bo
 		}
 
 		directories = append(directories, current)
+
 		if containsGoModule(entries) {
 			return directories, false, nil
 		}
@@ -166,6 +171,7 @@ func readDiscoveredDocument(
 
 		return newUnreadableDocument(file, fmt.Errorf("open %q: %w", file.RelativePath, err)), true, nil
 	}
+
 	defer func() { _ = handle.Close() }()
 
 	openedInfo, err := handle.Stat()

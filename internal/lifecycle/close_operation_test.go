@@ -26,6 +26,7 @@ func TestCloseOperationConcurrentBeginAndSharedResult(t *testing.T) {
 			ownerCount++
 		}
 	}
+
 	if ownerCount != 1 {
 		t.Fatalf("close owners = %d, want 1", ownerCount)
 	}
@@ -58,15 +59,18 @@ func TestCloseOperationCanceledWaitDoesNotCancelTeardown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+
 	if err := operation.Wait(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Wait error = %v, want context.Canceled", err)
 	}
+
 	if operation.Finished() {
 		t.Fatal("canceled waiter finished the close operation")
 	}
 
 	want := errors.New("close failed")
 	operation.Finish(want)
+
 	if err := operation.Wait(ctx); !errors.Is(err, want) {
 		t.Fatalf("completed Wait error = %v, want %v", err, want)
 	}
@@ -84,6 +88,7 @@ func TestCloseOperationPublishesSuccessfulResult(t *testing.T) {
 	}()
 
 	operation.Finish(nil)
+
 	if err := <-result; err != nil {
 		t.Fatalf("Wait error = %v, want nil", err)
 	}

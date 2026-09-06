@@ -55,6 +55,7 @@ func resolveFerretVersion(ctx context.Context, execute moduleCommand) (string, e
 
 func runGoModuleCommand(ctx context.Context, arguments ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, "go", arguments...)
+
 	data, err := command.Output()
 	if err == nil {
 		return data, nil

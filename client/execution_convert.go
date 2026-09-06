@@ -9,7 +9,6 @@ import (
 func fromProtoSession(value *executionv1.Session) (Session, error) {
 	if value == nil || value.Id == nil || value.Id.Value == "" || value.Source == nil ||
 		value.Source.WorkspaceId == nil {
-
 		return Session{}, errIncompleteExecutionSession
 	}
 
@@ -52,7 +51,6 @@ func fromProtoExecutionOptions(value *executionv1.ExecutionOptions) ExecutionOpt
 func fromProtoExecution(value *executionv1.Execution) (Execution, error) {
 	if value == nil || value.Id == nil || value.Id.Value == "" || value.SessionId == nil ||
 		value.SessionId.Value == "" {
-
 		return Execution{}, errIncompleteExecution
 	}
 
@@ -209,6 +207,7 @@ func fromProtoExecutionEvent(value *executionv1.WatchExecutionResponse) (Executi
 	if err != nil {
 		return ExecutionEvent{}, errors.Join(errIncompleteExecutionEvent, err)
 	}
+
 	eventID := ExecutionID(value.ExecutionId.Value)
 	if snapshot.ID != eventID {
 		return ExecutionEvent{}, errIncompleteExecutionEvent

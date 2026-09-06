@@ -61,6 +61,7 @@ func TestNewRequiresStreams(t *testing.T) {
 			if !errors.Is(err, test.want) {
 				t.Fatalf("New error = %v, want %v", err, test.want)
 			}
+
 			if server != nil {
 				t.Fatalf("New server = %v, want nil", server)
 			}
@@ -73,9 +74,11 @@ func TestNewConstructsNativeRuntimeAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+
 	if _, ok := server.runtime.(*ferretapi.Runtime); !ok {
 		t.Fatalf("New runtime = %T, want native Ferret adapter", server.runtime)
 	}
+
 	if err := server.cleanup(); err != nil {
 		t.Fatalf("cleanup: %v", err)
 	}
@@ -93,10 +96,12 @@ func newTestClientWithOptions(t *testing.T, options Options) *testClient {
 	serverInput, clientInput := io.Pipe()
 	clientOutput, serverOutput := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
+
 	server, err := New(serverInput, serverOutput, options)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+
 	done := make(chan error, 1)
 	go func() {
 		err := server.Run(ctx)
@@ -144,6 +149,7 @@ func (c *testClient) sendRawRequest(command, arguments string) protocol.Request 
 	c.t.Helper()
 
 	request := c.request(command)
+
 	payload := fmt.Sprintf(
 		`{"seq":%d,"type":"request","command":%q,"arguments":%s}`,
 		request.Seq,
@@ -191,6 +197,7 @@ func (c *testClient) disconnect() {
 
 	request := c.request("disconnect")
 	c.send(&protocol.DisconnectRequest{Request: request})
+
 	if response, ok := c.read().(*protocol.DisconnectResponse); !ok || !response.Success {
 		c.t.Fatalf("disconnect response = %#v", response)
 	}
@@ -336,6 +343,7 @@ func TestDAPInitializeClientOptionDefaultsAndConventions(t *testing.T) {
 			client := newTestClient(t)
 			client.sendRawRequest("initialize", test.arguments)
 			message := client.read()
+
 			if test.wantFailure {
 				if response, ok := message.(*protocol.ErrorResponse); !ok || response.Success {
 					t.Fatalf("initialize response = %#v", message)
@@ -348,6 +356,7 @@ func TestDAPInitializeClientOptionDefaultsAndConventions(t *testing.T) {
 				client.server.stateMu.Lock()
 				got := client.server.client
 				client.server.stateMu.Unlock()
+
 				if got != test.want {
 					t.Fatalf("client options = %+v, want %+v", got, test.want)
 				}
@@ -404,6 +413,7 @@ func TestDAPLaunchIgnoresUnknownMetadataAndPreservesSupportedArguments(t *testin
 
 			launch := client.request("launch")
 			client.send(&protocol.LaunchRequest{Request: launch, Arguments: body})
+
 			if _, ok := client.read().(*protocol.InitializedEvent); !ok {
 				t.Fatal("expected initialized event")
 			}
@@ -411,10 +421,12 @@ func TestDAPLaunchIgnoresUnknownMetadataAndPreservesSupportedArguments(t *testin
 			client.server.stateMu.Lock()
 			owned := client.server.owned
 			client.server.stateMu.Unlock()
+
 			wantIdentity, err := newSourceIdentity(program, root)
 			if err != nil {
 				t.Fatalf("newSourceIdentity: %v", err)
 			}
+
 			if owned.root != root || owned.program != program ||
 				!owned.programIdentity.same(wantIdentity) || !owned.stopOnEntry {
 				t.Fatalf("owned Session = %+v, want program %q and stopOnEntry", owned, program)
@@ -424,6 +436,7 @@ func TestDAPLaunchIgnoresUnknownMetadataAndPreservesSupportedArguments(t *testin
 			if err != nil {
 				t.Fatalf("Get workspace: %v", err)
 			}
+
 			if opened.Root() != root {
 				t.Fatalf("workspace root = %q, want %q", opened.Root(), root)
 			}
@@ -432,18 +445,22 @@ func TestDAPLaunchIgnoresUnknownMetadataAndPreservesSupportedArguments(t *testin
 			if err != nil {
 				t.Fatalf("GetSession: %v", err)
 			}
+
 			if snapshot.Parameters["input"] != "value" {
 				t.Fatalf("parameters = %#v, want input value", snapshot.Parameters)
 			}
 
 			configurationDone := client.request("configurationDone")
 			client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 			if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 				t.Fatalf("configurationDone response = %#v", response)
 			}
+
 			if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 				t.Fatalf("launch response = %#v", response)
 			}
+
 			if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
 				t.Fatalf("stopped event = %#v", stopped)
 			}
@@ -477,6 +494,7 @@ func TestDAPLaunchUnknownMetadataPreservesSupportedArgumentValidation(t *testing
 			initializeDAP(t, client)
 
 			client.sendRawRequest("launch", test.arguments)
+
 			response, ok := client.read().(*protocol.ErrorResponse)
 			if !ok || response.Success || !strings.Contains(response.Message, test.want) {
 				t.Fatalf("launch response = %#v, want failure containing %q", response, test.want)
@@ -502,10 +520,12 @@ func TestDAPSetBreakpointsAcceptsEquivalentSourcePaths(t *testing.T) {
 			Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
 		},
 	})
+
 	relativeResponse, ok := client.read().(*protocol.SetBreakpointsResponse)
 	if !ok || !relativeResponse.Success || len(relativeResponse.Body.Breakpoints) != 1 {
 		t.Fatalf("relative setBreakpoints response = %#v", relativeResponse)
 	}
+
 	relativeBreakpoint := relativeResponse.Body.Breakpoints[0]
 	if !relativeBreakpoint.Verified || relativeBreakpoint.Id == 0 ||
 		relativeBreakpoint.Source == nil || relativeBreakpoint.Source.Path != program {
@@ -520,10 +540,12 @@ func TestDAPSetBreakpointsAcceptsEquivalentSourcePaths(t *testing.T) {
 			Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
 		},
 	})
+
 	absoluteResponse, ok := client.read().(*protocol.SetBreakpointsResponse)
 	if !ok || !absoluteResponse.Success || len(absoluteResponse.Body.Breakpoints) != 1 {
 		t.Fatalf("absolute setBreakpoints response = %#v", absoluteResponse)
 	}
+
 	if got := absoluteResponse.Body.Breakpoints[0]; got.Id != relativeBreakpoint.Id ||
 		got.Source == nil || got.Source.Path != program {
 		t.Fatalf("absolute breakpoint = %#v, want stable ID %d", got, relativeBreakpoint.Id)
@@ -531,12 +553,15 @@ func TestDAPSetBreakpointsAcceptsEquivalentSourcePaths(t *testing.T) {
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
 	}
+
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
 		t.Fatalf("stopped event = %#v", stopped)
 	}
@@ -547,6 +572,7 @@ func TestDAPSetBreakpointsAcceptsEquivalentSourcePaths(t *testing.T) {
 func TestDAPSetBreakpointsReturnsUnverifiedForUnownedSource(t *testing.T) {
 	root := t.TempDir()
 	program := writeDAPProgram(t, root, "RETURN 1")
+
 	other := filepath.Join(root, "other.fql")
 	if err := os.WriteFile(other, []byte("RETURN 2"), 0o600); err != nil {
 		t.Fatal(err)
@@ -568,10 +594,12 @@ func TestDAPSetBreakpointsReturnsUnverifiedForUnownedSource(t *testing.T) {
 			Breakpoints: requested,
 		},
 	})
+
 	response, ok := client.read().(*protocol.SetBreakpointsResponse)
 	if !ok || !response.Success || len(response.Body.Breakpoints) != 2 {
 		t.Fatalf("setBreakpoints response = %#v", response)
 	}
+
 	for index, breakpoint := range response.Body.Breakpoints {
 		requestedBreakpoint := requested[index]
 		if breakpoint.Verified || breakpoint.Id != 0 || breakpoint.Message != "breakpoints are only supported for the launched program" ||
@@ -585,6 +613,7 @@ func TestDAPSetBreakpointsReturnsUnverifiedForUnownedSource(t *testing.T) {
 	stableCount := len(client.server.stableBreakpoints)
 	debuggerCount := len(client.server.debuggerBreakpoints)
 	client.server.breakpointMu.Unlock()
+
 	if stableCount != 0 || debuggerCount != 0 {
 		t.Fatalf(
 			"unowned source created breakpoint state: stable=%d debugger=%d",
@@ -613,10 +642,12 @@ func TestDAPSetBreakpointsReturnsUnverifiedForUnavailableSource(t *testing.T) {
 			Breakpoints: []protocol.SourceBreakpoint{{Line: 7}},
 		},
 	})
+
 	response, ok := client.read().(*protocol.SetBreakpointsResponse)
 	if !ok || !response.Success || len(response.Body.Breakpoints) != 1 {
 		t.Fatalf("setBreakpoints response = %#v", response)
 	}
+
 	breakpoint := response.Body.Breakpoints[0]
 	if breakpoint.Verified || breakpoint.Message != "breakpoint source is unavailable" || breakpoint.Source == nil ||
 		breakpoint.Source.Path != missing || breakpoint.Line != 7 {
@@ -665,9 +696,11 @@ func TestDAPSetBreakpointsRejectsMalformedSourceForms(t *testing.T) {
 					ColumnsStartAt1: true,
 				},
 			})
+
 			if response, ok := client.read().(*protocol.InitializeResponse); !ok || !response.Success {
 				t.Fatalf("initialize response = %#v", response)
 			}
+
 			launchDAP(t, client, program, root, true)
 
 			setBreakpoints := client.request("setBreakpoints")
@@ -678,6 +711,7 @@ func TestDAPSetBreakpointsRejectsMalformedSourceForms(t *testing.T) {
 					Breakpoints: []protocol.SourceBreakpoint{{Line: 1}},
 				},
 			})
+
 			response, ok := client.read().(*protocol.ErrorResponse)
 			if !ok || response.Success || !strings.Contains(response.Message, test.want) {
 				t.Fatalf("setBreakpoints response = %#v, want failure containing %q", response, test.want)
@@ -702,10 +736,12 @@ FUNC outer(p) {
   RETURN result
 }
 RETURN outer(@input) + box.value`)
+
 	typedProgramURI, err := source.URIFromPath(program)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	programURI := typedProgramURI.String()
 
 	client := newTestClient(t)
@@ -719,6 +755,7 @@ RETURN outer(@input) + box.value`)
 			PathFormat:      "uri",
 		},
 	})
+
 	initializeResponse, ok := client.read().(*protocol.InitializeResponse)
 	if !ok || !initializeResponse.Success || !initializeResponse.Body.SupportsConfigurationDoneRequest ||
 		!initializeResponse.Body.SupportsTerminateRequest || !initializeResponse.Body.SupportsEvaluateForHovers ||
@@ -735,14 +772,18 @@ RETURN outer(@input) + box.value`)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	launch := client.request("launch")
 	client.send(&protocol.LaunchRequest{Request: launch, Arguments: launchBody})
+
 	if _, ok := client.read().(*protocol.InitializedEvent); !ok {
 		t.Fatal("expected initialized event")
 	}
+
 	client.server.stateMu.Lock()
 	debugID := client.server.owned.debug
 	client.server.stateMu.Unlock()
+
 	debugSnapshot, err := client.server.debugs.GetSession(context.Background(), debugID)
 	if err != nil || debugSnapshot.State != debug.StateCreated {
 		t.Fatalf("debug Session before configurationDone = %+v, %v", debugSnapshot, err)
@@ -756,14 +797,17 @@ RETURN outer(@input) + box.value`)
 			Breakpoints: []protocol.SourceBreakpoint{{Line: 3}},
 		},
 	})
+
 	breakpointResponse, ok := client.read().(*protocol.SetBreakpointsResponse)
 	if !ok || !breakpointResponse.Success || len(breakpointResponse.Body.Breakpoints) != 1 {
 		t.Fatalf("setBreakpoints response = %#v", breakpointResponse)
 	}
+
 	breakpoint := breakpointResponse.Body.Breakpoints[0]
 	if !breakpoint.Verified || breakpoint.Id == 0 || breakpoint.Line != 4 || breakpoint.Column < 0 || breakpoint.Source.Path != programURI {
 		t.Fatalf("breakpoint = %#v", breakpoint)
 	}
+
 	replaceBreakpoints := client.request("setBreakpoints")
 	client.send(&protocol.SetBreakpointsRequest{
 		Request: replaceBreakpoints,
@@ -772,6 +816,7 @@ RETURN outer(@input) + box.value`)
 			Breakpoints: []protocol.SourceBreakpoint{{Line: 3}},
 		},
 	})
+
 	replacedResponse, ok := client.read().(*protocol.SetBreakpointsResponse)
 	if !ok || len(replacedResponse.Body.Breakpoints) != 1 || replacedResponse.Body.Breakpoints[0].Id != breakpoint.Id {
 		t.Fatalf("replacement breakpoint response = %#v", replacedResponse)
@@ -779,13 +824,16 @@ RETURN outer(@input) + box.value`)
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	message := client.read()
 	if response, ok := message.(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", message)
 	}
+
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
+
 	entry, ok := client.read().(*protocol.StoppedEvent)
 	if !ok || entry.Body.Reason != "entry" || entry.Body.ThreadId != threadID {
 		t.Fatalf("entry event = %#v", entry)
@@ -793,6 +841,7 @@ RETURN outer(@input) + box.value`)
 
 	threads := client.request("threads")
 	client.send(&protocol.ThreadsRequest{Request: threads})
+
 	threadResponse, ok := client.read().(*protocol.ThreadsResponse)
 	if !ok || len(threadResponse.Body.Threads) != 1 || threadResponse.Body.Threads[0].Id != threadID {
 		t.Fatalf("threads response = %#v", threadResponse)
@@ -803,9 +852,11 @@ RETURN outer(@input) + box.value`)
 		Request:   continueRequest,
 		Arguments: protocol.ContinueArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.ContinueResponse); !ok || !response.Success || !response.Body.AllThreadsContinued {
 		t.Fatalf("continue response = %#v", response)
 	}
+
 	breakpointEvent, ok := client.read().(*protocol.StoppedEvent)
 	if !ok || breakpointEvent.Body.Reason != "breakpoint" || len(breakpointEvent.Body.HitBreakpointIds) != 1 ||
 		breakpointEvent.Body.HitBreakpointIds[0] != breakpoint.Id {
@@ -817,10 +868,12 @@ RETURN outer(@input) + box.value`)
 		Request:   stackTrace,
 		Arguments: protocol.StackTraceArguments{ThreadId: threadID},
 	})
+
 	stackResponse, ok := client.read().(*protocol.StackTraceResponse)
 	if !ok || len(stackResponse.Body.StackFrames) != 3 || stackResponse.Body.TotalFrames != 3 {
 		t.Fatalf("stackTrace response = %#v", stackResponse)
 	}
+
 	if stackResponse.Body.StackFrames[0].Name != "inner" || stackResponse.Body.StackFrames[2].Source.Path != programURI {
 		t.Fatalf("stack frames = %#v", stackResponse.Body.StackFrames)
 	}
@@ -834,6 +887,7 @@ RETURN outer(@input) + box.value`)
 			Levels:     2,
 		},
 	})
+
 	pagedStackResponse, ok := client.read().(*protocol.StackTraceResponse)
 	if !ok || !pagedStackResponse.Success || len(pagedStackResponse.Body.StackFrames) != 2 ||
 		pagedStackResponse.Body.TotalFrames != 3 {
@@ -843,6 +897,7 @@ RETURN outer(@input) + box.value`)
 	for offset, frame := range pagedStackResponse.Body.StackFrames {
 		wantIndex := 1 + offset
 		wantFrame := stackResponse.Body.StackFrames[wantIndex]
+
 		wantFrame.Id = frame.Id
 		if !reflect.DeepEqual(frame, wantFrame) {
 			t.Fatalf("paged frame = %+v, want %+v", frame, wantFrame)
@@ -862,6 +917,7 @@ RETURN outer(@input) + box.value`)
 			Levels:     1,
 		},
 	})
+
 	finalStackResponse, ok := client.read().(*protocol.StackTraceResponse)
 	if !ok || !finalStackResponse.Success || len(finalStackResponse.Body.StackFrames) != 1 ||
 		finalStackResponse.Body.TotalFrames != 3 {
@@ -870,6 +926,7 @@ RETURN outer(@input) + box.value`)
 
 	finalFrame := finalStackResponse.Body.StackFrames[0]
 	wantFinalFrame := stackResponse.Body.StackFrames[2]
+
 	wantFinalFrame.Id = finalFrame.Id
 	if !reflect.DeepEqual(finalFrame, wantFinalFrame) {
 		t.Fatalf("final page frame = %+v, want %+v", finalFrame, wantFinalFrame)
@@ -884,6 +941,7 @@ RETURN outer(@input) + box.value`)
 		Request:   scopes,
 		Arguments: protocol.ScopesArguments{FrameId: pagedStackResponse.Body.StackFrames[0].Id},
 	})
+
 	scopesResponse, ok := client.read().(*protocol.ScopesResponse)
 	if !ok || len(scopesResponse.Body.Scopes) != 2 || scopesResponse.Body.Scopes[0].Name != "Locals" ||
 		scopesResponse.Body.Scopes[1].Name != "Parameters" {
@@ -897,6 +955,7 @@ RETURN outer(@input) + box.value`)
 			VariablesReference: scopesResponse.Body.Scopes[0].VariablesReference,
 		},
 	})
+
 	variablesResponse, ok := client.read().(*protocol.VariablesResponse)
 	if !ok || !protocolVariablesContain(variablesResponse.Body.Variables, "caller", "2") {
 		t.Fatalf("variables response = %#v", variablesResponse)
@@ -911,6 +970,7 @@ RETURN outer(@input) + box.value`)
 			Context:    "hover",
 		},
 	})
+
 	evaluateResponse, ok := client.read().(*protocol.EvaluateResponse)
 	if !ok || evaluateResponse.Body.Result != "4" || evaluateResponse.Body.Type != "Float" {
 		t.Fatalf("evaluate response = %#v", evaluateResponse)
@@ -922,6 +982,7 @@ RETURN outer(@input) + box.value`)
 			Request:   mainScopes,
 			Arguments: protocol.ScopesArguments{FrameId: mainFrame.Id},
 		})
+
 		mainScopesResponse, ok := client.read().(*protocol.ScopesResponse)
 		if !ok || len(mainScopesResponse.Body.Scopes) != 2 {
 			t.Fatalf("main scopes response = %#v", mainScopesResponse)
@@ -934,6 +995,7 @@ RETURN outer(@input) + box.value`)
 				VariablesReference: mainScopesResponse.Body.Scopes[0].VariablesReference,
 			},
 		})
+
 		mainVariablesResponse, ok := client.read().(*protocol.VariablesResponse)
 		if !ok {
 			t.Fatalf("main variables response = %#v", mainVariablesResponse)
@@ -957,6 +1019,7 @@ RETURN outer(@input) + box.value`)
 				VariablesReference: boxReference,
 			},
 		})
+
 		boxVariablesResponse, ok := client.read().(*protocol.VariablesResponse)
 		if !ok || !protocolVariablesContain(boxVariablesResponse.Body.Variables, "value", "10") {
 			t.Fatalf("box variables response = %#v", boxVariablesResponse)
@@ -971,6 +1034,7 @@ RETURN outer(@input) + box.value`)
 				Context:    "hover",
 			},
 		})
+
 		mainEvaluateResponse, ok := client.read().(*protocol.EvaluateResponse)
 		if !ok || !mainEvaluateResponse.Success || mainEvaluateResponse.Body.Result != "10" ||
 			mainEvaluateResponse.Body.Type != "Int" {
@@ -983,9 +1047,11 @@ RETURN outer(@input) + box.value`)
 		Request:   next,
 		Arguments: protocol.NextArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.NextResponse); !ok || !response.Success {
 		t.Fatalf("next response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "step" {
 		t.Fatalf("next stopped event = %#v", stopped)
 	}
@@ -995,6 +1061,7 @@ RETURN outer(@input) + box.value`)
 		Request:   staleScopes,
 		Arguments: protocol.ScopesArguments{FrameId: pagedStackResponse.Body.StackFrames[0].Id},
 	})
+
 	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
 		len(response.Body.Scopes) != 0 {
 		t.Fatalf("stale scopes response = %#v", response)
@@ -1005,16 +1072,20 @@ RETURN outer(@input) + box.value`)
 		Request:   continueRequest,
 		Arguments: protocol.ContinueArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.ContinueResponse); !ok || !response.Success {
 		t.Fatalf("final continue response = %#v", response)
 	}
+
 	outputEvent, ok := client.read().(*protocol.OutputEvent)
 	if !ok || outputEvent.Body.Category != "stdout" || outputEvent.Body.Output == "" {
 		t.Fatalf("output event = %#v", outputEvent)
 	}
+
 	if exited, ok := client.read().(*protocol.ExitedEvent); !ok || exited.Body.ExitCode != 0 {
 		t.Fatalf("exited event = %#v", exited)
 	}
+
 	if _, ok := client.read().(*protocol.TerminatedEvent); !ok {
 		t.Fatal("expected terminated event")
 	}
@@ -1044,10 +1115,12 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 		Request:   stackTrace,
 		Arguments: protocol.StackTraceArguments{ThreadId: threadID},
 	})
+
 	stackResponse, ok := client.read().(*protocol.StackTraceResponse)
 	if !ok || len(stackResponse.Body.StackFrames) != 1 {
 		t.Fatalf("entry stackTrace response = %#v", stackResponse)
 	}
+
 	oldFrameID := stackResponse.Body.StackFrames[0].Id
 
 	scopes := client.request("scopes")
@@ -1055,10 +1128,12 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 		Request:   scopes,
 		Arguments: protocol.ScopesArguments{FrameId: oldFrameID},
 	})
+
 	scopesResponse, ok := client.read().(*protocol.ScopesResponse)
 	if !ok || len(scopesResponse.Body.Scopes) != 2 {
 		t.Fatalf("entry scopes response = %#v", scopesResponse)
 	}
+
 	oldScopeID := scopesResponse.Body.Scopes[0].VariablesReference
 
 	stepIn := client.request("stepIn")
@@ -1066,9 +1141,11 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 		Request:   stepIn,
 		Arguments: protocol.StepInArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.StepInResponse); !ok || !response.Success {
 		t.Fatalf("stepIn response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "step" {
 		t.Fatalf("stepIn stopped event = %#v", stopped)
 	}
@@ -1078,6 +1155,7 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 		Request:   lateScopes,
 		Arguments: protocol.ScopesArguments{FrameId: oldFrameID},
 	})
+
 	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
 		len(response.Body.Scopes) != 0 {
 		t.Fatalf("late scopes response = %#v", response)
@@ -1090,6 +1168,7 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 			VariablesReference: oldScopeID,
 		},
 	})
+
 	if response, ok := client.read().(*protocol.VariablesResponse); !ok || !response.Success ||
 		len(response.Body.Variables) != 0 {
 		t.Fatalf("late variables response = %#v", response)
@@ -1105,6 +1184,7 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 				Context:    contextName,
 			},
 		})
+
 		response, ok := client.read().(*protocol.EvaluateResponse)
 		if !ok || !response.Success || response.Body.Result != "" ||
 			response.Body.VariablesReference != 0 {
@@ -1139,18 +1219,22 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 		Request:   newStackTrace,
 		Arguments: protocol.StackTraceArguments{ThreadId: threadID},
 	})
+
 	newStackResponse, ok := client.read().(*protocol.StackTraceResponse)
 	if !ok || len(newStackResponse.Body.StackFrames) < 2 {
 		t.Fatalf("new stackTrace response = %#v", newStackResponse)
 	}
+
 	newFrameIDs := make(map[int]struct{}, len(newStackResponse.Body.StackFrames))
 	for _, frame := range newStackResponse.Body.StackFrames {
 		if frame.Id == oldFrameID {
 			t.Fatalf("old frame handle %d reused by new stack: %#v", oldFrameID, newStackResponse.Body.StackFrames)
 		}
+
 		if _, exists := newFrameIDs[frame.Id]; exists {
 			t.Fatalf("recursive stack frame handle %d is duplicated: %#v", frame.Id, newStackResponse.Body.StackFrames)
 		}
+
 		newFrameIDs[frame.Id] = struct{}{}
 	}
 
@@ -1159,6 +1243,7 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 		Request:   lateScopesAfterStack,
 		Arguments: protocol.ScopesArguments{FrameId: oldFrameID},
 	})
+
 	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
 		len(response.Body.Scopes) != 0 {
 		t.Fatalf("late scopes response after new stack = %#v", response)
@@ -1169,6 +1254,7 @@ func TestDAPLateInspectionHandlesStayStaleAcrossRecursiveStops(t *testing.T) {
 		Request:   newScopes,
 		Arguments: protocol.ScopesArguments{FrameId: newStackResponse.Body.StackFrames[0].Id},
 	})
+
 	if response, ok := client.read().(*protocol.ScopesResponse); !ok || !response.Success ||
 		len(response.Body.Scopes) != 2 {
 		t.Fatalf("new scopes response = %#v", response)
@@ -1272,10 +1358,12 @@ func TestDAPEvaluateEmptyExpressionsReturnEmptyResult(t *testing.T) {
 		Request:   stackTrace,
 		Arguments: protocol.StackTraceArguments{ThreadId: threadID},
 	})
+
 	stackResponse, ok := client.read().(*protocol.StackTraceResponse)
 	if !ok || len(stackResponse.Body.StackFrames) == 0 {
 		t.Fatalf("stackTrace response = %#v", stackResponse)
 	}
+
 	frameID := stackResponse.Body.StackFrames[0].Id
 
 	tests := []struct {
@@ -1304,6 +1392,7 @@ func TestDAPEvaluateEmptyExpressionsReturnEmptyResult(t *testing.T) {
 				Context:    test.context,
 			},
 		})
+
 		response, ok := client.read().(*protocol.EvaluateResponse)
 		if !ok || !response.Success || response.Command != "evaluate" ||
 			response.Body.Result != "" || response.Body.Type != "" ||
@@ -1323,6 +1412,7 @@ func TestDAPEvaluateEmptyExpressionsReturnEmptyResult(t *testing.T) {
 			Context:    "repl",
 		},
 	})
+
 	response, ok := client.read().(*protocol.EvaluateResponse)
 	if !ok || !response.Success || response.Body.Result != "2" {
 		t.Fatalf("non-empty evaluate response = %#v", response)
@@ -1337,6 +1427,7 @@ func TestDAPEvaluateEmptyExpressionsReturnEmptyResult(t *testing.T) {
 			Context:    "watch",
 		},
 	})
+
 	failure, ok := client.read().(*protocol.ErrorResponse)
 	if !ok || failure.Success || failure.Command != "evaluate" || failure.Message == "" ||
 		failure.Body.Error == nil || !failure.Body.Error.ShowUser {
@@ -1355,18 +1446,22 @@ func TestDAPSuppressesEntryRuntimeErrorsAndUnsupportedRequests(t *testing.T) {
 
 	attach := client.request("attach")
 	client.send(&protocol.AttachRequest{Request: attach, Arguments: json.RawMessage(`{}`)})
+
 	if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success {
 		t.Fatalf("attach response = %#v", response)
 	}
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
 	}
+
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
+
 	runtimeError, ok := client.read().(*protocol.StoppedEvent)
 	if !ok || runtimeError.Body.Reason != "exception" || runtimeError.Body.Description == "" {
 		t.Fatalf("runtime error event = %#v", runtimeError)
@@ -1377,15 +1472,19 @@ func TestDAPSuppressesEntryRuntimeErrorsAndUnsupportedRequests(t *testing.T) {
 		Request:   continueRequest,
 		Arguments: protocol.ContinueArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.ContinueResponse); !ok || !response.Success {
 		t.Fatalf("continue response = %#v", response)
 	}
+
 	if output, ok := client.read().(*protocol.OutputEvent); !ok || output.Body.Category != "stderr" {
 		t.Fatalf("failure output = %#v", output)
 	}
+
 	if exited, ok := client.read().(*protocol.ExitedEvent); !ok || exited.Body.ExitCode != 1 {
 		t.Fatalf("failure exit = %#v", exited)
 	}
+
 	if _, ok := client.read().(*protocol.TerminatedEvent); !ok {
 		t.Fatal("expected failure terminated event")
 	}
@@ -1398,6 +1497,7 @@ func TestDAPRejectsOutOfOrderInitialization(t *testing.T) {
 
 	launch := client.request("launch")
 	client.send(&protocol.LaunchRequest{Request: launch, Arguments: json.RawMessage(`{"program":"query.fql"}`)})
+
 	if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success {
 		t.Fatalf("launch-before-initialize response = %#v", response)
 	}
@@ -1405,6 +1505,7 @@ func TestDAPRejectsOutOfOrderInitialization(t *testing.T) {
 	initializeDAP(t, client)
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success {
 		t.Fatalf("configurationDone-before-launch response = %#v", response)
 	}
@@ -1425,10 +1526,12 @@ func TestDAPConfigurationStartFailureResolvesPendingLaunch(t *testing.T) {
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	message := client.read()
 	if response, ok := message.(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", message)
 	}
+
 	if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success || response.Command != "launch" {
 		t.Fatalf("pending launch response = %#v", response)
 	}
@@ -1446,9 +1549,11 @@ func TestDAPEarlyDisconnectAndTerminateResolvePendingLaunch(t *testing.T) {
 
 		disconnect := client.request("disconnect")
 		client.send(&protocol.DisconnectRequest{Request: disconnect})
+
 		if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success || response.Command != "launch" {
 			t.Fatalf("pending launch response = %#v", response)
 		}
+
 		if response, ok := client.read().(*protocol.DisconnectResponse); !ok || !response.Success {
 			t.Fatalf("disconnect response = %#v", response)
 		}
@@ -1465,12 +1570,15 @@ func TestDAPEarlyDisconnectAndTerminateResolvePendingLaunch(t *testing.T) {
 
 		terminate := client.request("terminate")
 		client.send(&protocol.TerminateRequest{Request: terminate})
+
 		if response, ok := client.read().(*protocol.ErrorResponse); !ok || response.Success || response.Command != "launch" {
 			t.Fatalf("pending launch response = %#v", response)
 		}
+
 		if response, ok := client.read().(*protocol.TerminateResponse); !ok || !response.Success {
 			t.Fatalf("terminate response = %#v", response)
 		}
+
 		if _, ok := client.read().(*protocol.TerminatedEvent); !ok {
 			t.Fatal("expected terminated event")
 		}
@@ -1488,12 +1596,15 @@ func TestDAPDisconnectWhileRunningCleansUp(t *testing.T) {
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
 	}
+
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
+
 	if entry, ok := client.read().(*protocol.StoppedEvent); !ok || entry.Body.Reason != "entry" {
 		t.Fatalf("entry event = %#v", entry)
 	}
@@ -1522,12 +1633,15 @@ RETURN FOR i IN 1..10000000
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
 	}
+
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
+
 	if entry, ok := client.read().(*protocol.StoppedEvent); !ok || entry.Body.Reason != "entry" {
 		t.Fatalf("entry event = %#v", entry)
 	}
@@ -1537,9 +1651,11 @@ RETURN FOR i IN 1..10000000
 		Request:   stepIn,
 		Arguments: protocol.StepInArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.StepInResponse); !ok || !response.Success {
 		t.Fatalf("stepIn response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "step" {
 		t.Fatalf("stepIn event = %#v", stopped)
 	}
@@ -1549,9 +1665,11 @@ RETURN FOR i IN 1..10000000
 		Request:   stepOut,
 		Arguments: protocol.StepOutArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.StepOutResponse); !ok || !response.Success {
 		t.Fatalf("stepOut response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "step" {
 		t.Fatalf("stepOut event = %#v", stopped)
 	}
@@ -1561,6 +1679,7 @@ RETURN FOR i IN 1..10000000
 		Request:   continueRequest,
 		Arguments: protocol.ContinueArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.ContinueResponse); !ok || !response.Success {
 		t.Fatalf("continue response = %#v", response)
 	}
@@ -1570,18 +1689,22 @@ RETURN FOR i IN 1..10000000
 		Request:   pause,
 		Arguments: protocol.PauseArguments{ThreadId: threadID},
 	})
+
 	if response, ok := client.read().(*protocol.PauseResponse); !ok || !response.Success {
 		t.Fatalf("pause response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "pause" {
 		t.Fatalf("pause event = %#v", stopped)
 	}
 
 	terminate := client.request("terminate")
 	client.send(&protocol.TerminateRequest{Request: terminate})
+
 	if response, ok := client.read().(*protocol.TerminateResponse); !ok || !response.Success {
 		t.Fatalf("terminate response = %#v", response)
 	}
+
 	if _, ok := client.read().(*protocol.TerminatedEvent); !ok {
 		t.Fatal("expected terminated event")
 	}
@@ -1602,6 +1725,7 @@ func initializeDAP(t *testing.T, client *testClient) {
 			PathFormat:      "path",
 		},
 	})
+
 	if response, ok := client.read().(*protocol.InitializeResponse); !ok || !response.Success {
 		t.Fatalf("initialize response = %#v", response)
 	}
@@ -1614,8 +1738,10 @@ func launchDAP(t *testing.T, client *testClient, program, root string, stopOnEnt
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	launch := client.request("launch")
 	client.send(&protocol.LaunchRequest{Request: launch, Arguments: arguments})
+
 	if _, ok := client.read().(*protocol.InitializedEvent); !ok {
 		t.Fatal("expected initialized event")
 	}
@@ -1626,12 +1752,15 @@ func completePendingDAPLaunch(t *testing.T, client *testClient) {
 
 	configurationDone := client.request("configurationDone")
 	client.send(&protocol.ConfigurationDoneRequest{Request: configurationDone})
+
 	if response, ok := client.read().(*protocol.ConfigurationDoneResponse); !ok || !response.Success {
 		t.Fatalf("configurationDone response = %#v", response)
 	}
+
 	if response, ok := client.read().(*protocol.LaunchResponse); !ok || !response.Success {
 		t.Fatalf("launch response = %#v", response)
 	}
+
 	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
 		t.Fatalf("stopped event = %#v", stopped)
 	}

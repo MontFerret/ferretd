@@ -36,6 +36,7 @@ func listenLocal(endpoint Endpoint) (net.Listener, error) {
 	listener, err := net.Listen("unix", endpoint.Address)
 	if err != nil {
 		if errors.Is(err, syscall.EADDRINUSE) {
+			//nolint:errorlint // Preserve endpoint contention as the sole error classification.
 			return nil, fmt.Errorf("%w: %v", ErrEndpointInUse, err)
 		}
 
@@ -55,6 +56,7 @@ func listenLocal(endpoint Endpoint) (net.Listener, error) {
 func (l *cleanupListener) Close() error {
 	l.once.Do(func() {
 		closeErr := l.Listener.Close()
+
 		removeErr := os.Remove(l.path)
 		if errors.Is(removeErr, os.ErrNotExist) {
 			removeErr = nil

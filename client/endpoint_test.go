@@ -85,6 +85,7 @@ func TestDialOptionsValidateAuthenticationForResolvedEndpoint(t *testing.T) {
 			}
 
 			endpoint, err := configuration.resolvedEndpoint()
+
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("resolvedEndpoint error = %v, want %v", err, tt.wantErr)
