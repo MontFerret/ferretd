@@ -8,7 +8,6 @@ semantic tokens, and full-document formatting. It never executes documents.
 Build the server:
 
 ```sh
-make install-lint
 make build
 ```
 

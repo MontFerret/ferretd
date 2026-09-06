@@ -4,7 +4,8 @@ NAME = ferretd
 BUF = go run github.com/bufbuild/buf/cmd/buf@v1.72.0
 GOLANGCI_LINT_VERSION = v2.13.2
 GOLANGCI_LINT_DIR = $(DIR_BIN)/tools/golangci-lint/$(GOLANGCI_LINT_VERSION)
-GOLANGCI_LINT = $(GOLANGCI_LINT_DIR)/golangci-lint
+GOLANGCI_LINT_SUFFIX := $(if $(filter windows,$(shell go env GOHOSTOS)),.exe)
+GOLANGCI_LINT = $(GOLANGCI_LINT_DIR)/golangci-lint$(GOLANGCI_LINT_SUFFIX)
 STDLIB_REF = go run -mod=readonly ./tools/stdlibref
 STDLIB_REF_PATH = ./internal/language/stdlib/api.json
 
@@ -19,7 +20,9 @@ install-tools: install-lint
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12 && \
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
 
-install-lint:
+install-lint: $(GOLANGCI_LINT)
+
+$(GOLANGCI_LINT):
 	@set -eu; \
 	lint_installer=$$(mktemp); \
 	trap 'rm -f "$$lint_installer"' 0; \
@@ -52,10 +55,10 @@ check-generate:
 	git diff --exit-code -- gen $(STDLIB_REF_PATH) && \
 	test -z "$$(git status --porcelain --untracked-files=all -- gen $(STDLIB_REF_PATH))"
 
-fmt:
+fmt: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) fmt ./...
 
-lint:
+lint: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) config verify && \
 	$(GOLANGCI_LINT) run ./...
 

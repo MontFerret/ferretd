@@ -42,13 +42,18 @@ validation and update CI when ongoing coverage is required.
 
 ### Go linting and formatting
 
-Run `make install-lint` before the first lint or build, and again after the
-Makefile's golangci-lint version changes. The target downloads the installer
-from that release tag and uses its checksum verification to install the official
-binary under `bin/tools/golangci-lint/<version>/`. It requires curl and a POSIX
-shell; Windows contributors can use Git Bash. `make install-tools` includes this
-step along with protobuf tool installation. Local commands and the CI quality
-job use the same version and configuration.
+`make fmt` and `make lint` automatically install the pinned golangci-lint binary
+when it is missing; `make build` does so through its lint prerequisite. Existing
+installations are reused, and changing the Makefile's version pin selects a new
+installation path. `make install-lint` optionally installs the tool ahead of
+time, and `make install-tools` includes it along with protobuf tool installation.
+
+Installation downloads the installer from the pinned release tag and uses its
+checksum verification to install the official binary under
+`bin/tools/golangci-lint/<version>/`. It requires download access, curl, and a
+POSIX shell; Windows contributors can use Git Bash. The executable suffix is
+selected for the host platform, independently of cross-compilation settings.
+Local commands and the CI quality job use the same version and configuration.
 
 `make lint` validates `.golangci.yml` and runs the complete configured analysis
 without rewriting source or module dependencies. Checks cover errors, resource
