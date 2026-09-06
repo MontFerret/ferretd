@@ -83,7 +83,8 @@ func (w *workspaceWatcher) AddDirectory(relativePath string) error {
 	current, err := watcherDirectoryInfo(absolute, key == ".")
 	if err != nil || !os.SameFile(info, current) {
 		removeErr := w.backend.Remove(absolute)
-		if errors.Is(removeErr, fsnotify.ErrNonExistentWatch) || isOnlyNotExist(removeErr) {
+		if errors.Is(removeErr, fsnotify.ErrNonExistentWatch) || isOnlyNotExist(removeErr) ||
+			isInvalidatedWatchRemoval(removeErr) {
 			removeErr = nil
 		}
 
@@ -175,7 +176,7 @@ func (w *workspaceWatcher) ReplaceSubtree(relativePath string, directories []str
 
 		if err := w.backend.Remove(watched); err != nil &&
 			!errors.Is(err, fsnotify.ErrNonExistentWatch) && !errors.Is(err, fsnotify.ErrClosed) &&
-			!isOnlyNotExist(err) {
+			!isOnlyNotExist(err) && !isInvalidatedWatchRemoval(err) {
 			result = errors.Join(result, err)
 		}
 
