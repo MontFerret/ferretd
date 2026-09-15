@@ -532,7 +532,7 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 			ExecutionID("admitted-execution"),
 			newExecutionRuntime(parent.runtimeTarget(), input),
 		)
-		manager.executions.add(admitted)
+		manager.executions.add(admitted, parent)
 	}()
 
 	if err := <-closed; err != nil {

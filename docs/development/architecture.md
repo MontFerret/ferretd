@@ -94,8 +94,10 @@ than access to protected state.
   Executions, watches, cancellation, lazy debug Plans, and debugger-runtime
   leases.
 * `internal/ferretapi` provisionally adapts a caller-constructed native Ferret
-  engine and its Plan, Session, debugger Session, source, option, output, and
-  diagnostic contracts to the Universal API. Composition may construct the
+  engine and its Plan and Session interfaces to the Universal API. It converts
+  indexed source representations, output pointer/value ownership, and diagnostics.
+  Portable coordinates, output, and debugger data are API-owned native aliases;
+  options target the native owner directly. Composition may construct the
   native engine, but no other package translates between the runtime APIs.
 * `internal/debug` owns retained DebugSessions, commands, paused-state
   inspection, event streams, and cleanup.
@@ -128,8 +130,9 @@ exposes that session's debugger capability and owns the debug-Plan lease through
 the common runtime's one-time session close attempt. `internal/debug` layers
 DebugSession identity, commands, presentation scopes, events, and state on that
 DebugRuntime while consuming Universal debugger and source values directly.
-Only `internal/ferretapi` translates those values to or from native Ferret
-debugger types. Ordinary Executions and DebugSessions remain sibling resources
+`internal/ferretapi` forwards canonical debugger values and projects diagnostics
+while copying event/output data where caller ownership requires it. Ordinary
+Executions and DebugSessions remain sibling resources
 with distinct observable state machines. Closing a parent stops new runtime
 creation, settles both child kinds, releases leases, and only then closes its
 Plans. Composition cleanup then clears workspaces and closes the shared runtime
@@ -169,3 +172,4 @@ then the appropriate adapter and public documentation.
 * [Execution model](execution.md)
 * [Debugging model](debugging.md)
 * [Build and release](release.md)
+* [Native Universal adapter audit](ferretapi-audit.md)

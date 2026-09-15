@@ -48,8 +48,7 @@ The concrete debug Session implementation is package-private; adapters consume
 
 Resolved breakpoint identities and reported hits use `debugger.BreakpointID`;
 DAP owns the projection from those session-scoped identities to stable protocol
-breakpoint IDs. Unknown binding modes are rejected by the native adapter rather
-than interpreted as the default.
+breakpoint IDs. Unknown binding modes are rejected by native Ferret.
 
 Supported commands include start, continue, pause, step-in, step-over, step-out,
 and terminate. Inspection includes threads, stack frames, scopes, variables, and
@@ -59,8 +58,10 @@ canonical Universal debugger reasons, locations, and breakpoint identities while
 adding daemon state, output/failure materialization, parameters, and options.
 Locals and Parameters remain presentation scopes derived from the canonical
 variable `Param` flag. The provisional `internal/ferretapi` adapter is the only
-package that translates native Ferret debugger values into these Universal API
-contracts.
+bridge to native Ferret. The debugger uses API-owned portable types directly;
+bytecode table identities stay native and are converted when constructing frames
+and breakpoints. The adapter projects native diagnostics using each diagnostic's
+source and preserves causes through standard Go error traversal.
 
 Debug watches publish current and future ordered events through bounded buffers.
 Lagging subscribers disconnect without blocking the session. Commands that run

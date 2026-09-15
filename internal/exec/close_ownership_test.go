@@ -267,6 +267,41 @@ func TestConcurrentCloseExecutionRetainsCleanupFailureForParent(t *testing.T) {
 	}
 }
 
+func TestSessionCloseRetainsCompletedChildWhileWaitingForCreation(t *testing.T) {
+	want := errors.New("runtime Session close failed")
+	fixture := newCloseOwnershipFixtureWithRuntimeCloseError(t, want)
+
+	creation, err := fixture.manager.sessions.beginRuntimeCreate(fixture.sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	finishCreation := sync.OnceFunc(creation.finish)
+	t.Cleanup(finishCreation)
+
+	childResult := make(chan error, 1)
+	go func() {
+		childResult <- fixture.manager.CloseExecution(context.Background(), fixture.executionID)
+	}()
+	waitForSignal(t, fixture.runtimeCloseStarted, "runtime Session close")
+
+	parentResult := make(chan error, 1)
+	go func() {
+		parentResult <- fixture.manager.CloseSession(context.Background(), fixture.sessionID)
+	}()
+	waitForSessionClosing(t, fixture.session)
+
+	fixture.releaseClose()
+	waitForExpectedError(t, childResult, "child close before creation settles", want)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, true)
+	assertNoSignal(t, fixture.planCloseStarted, "Plan close before creation settles")
+
+	finishCreation()
+	waitForExpectedError(t, parentResult, "parent Session close", want)
+	assertExecutionOwnership(t, fixture.manager, fixture.execution, false)
+	assertCloseCounts(t, fixture)
+}
+
 func TestConcurrentCloseSessionSharesFailureAndOneOwner(t *testing.T) {
 	const waiters = 8
 

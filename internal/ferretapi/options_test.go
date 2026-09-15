@@ -34,7 +34,7 @@ func TestRuntimeOptimizationOptions(t *testing.T) {
 			} {
 				plan, err := compile(context.Background(), api.NewAnonymousSource("RETURN 1"), api.WithOptimizationLevel(level))
 
-				wantSuccess := debug && level == api.OptimizationNone
+				wantSuccess := (debug && level == api.OptimizationNone) || (!debug && level >= api.OptimizationNone && level <= api.OptimizationFull)
 				if (err == nil) != wantSuccess || (plan != nil) != wantSuccess {
 					t.Fatalf("native=%v debug=%t option=%v: plan=%v error=%v", nativeLevel, debug, level, plan, err)
 				}

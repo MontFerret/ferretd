@@ -3,8 +3,6 @@ package ferretapi
 
 import (
 	"context"
-	"errors"
-	"sync"
 
 	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferret/v2"
@@ -14,9 +12,6 @@ import (
 // closes the Runtime rather than closing the wrapped engine independently.
 type Runtime struct {
 	engine *ferret.Engine
-
-	closeOnce sync.Once
-	closeErr  error
 }
 
 var _ api.Runtime = (*Runtime)(nil)
@@ -32,99 +27,31 @@ func New(engine *ferret.Engine) *Runtime {
 }
 
 // Run compiles and executes source in a fresh session, releasing all transient resources.
-func (r *Runtime) Run(
-	ctx context.Context,
-	source api.Source,
-	options ...api.SessionOption,
-) (output api.Output, resultErr error) {
-	compiled, err := r.Compile(ctx, source)
-	if err != nil {
-		return api.Output{}, err
-	}
+func (r *Runtime) Run(ctx context.Context, source api.Source, options ...api.SessionOption) (api.Output, error) {
+	output, err := r.engine.Run(ctx, ferret.NewSource(source.Name, source.Content), options...)
 
-	defer func() {
-		resultErr = errors.Join(resultErr, compiled.Close())
-	}()
-
-	created, err := compiled.NewSession(ctx, options...)
-	if err != nil {
-		return api.Output{}, err
-	}
-
-	defer func() {
-		resultErr = errors.Join(resultErr, created.Close())
-	}()
-
-	return created.Run(ctx)
+	return convertOutput(output), wrapDiagnosticError(err)
 }
 
-// Compile creates a reusable ordinary execution plan.
-func (r *Runtime) Compile(
-	ctx context.Context,
-	source api.Source,
-	options ...api.PlanOption,
-) (api.Plan, error) {
-	parsedOptions, err := newPlanOptions(options)
+// Compile creates a reusable compiled plan using engine defaults or per-plan options.
+func (r *Runtime) Compile(ctx context.Context, source api.Source, options ...api.PlanOption) (api.Plan, error) {
+	compiled, err := r.engine.Compile(ctx, ferret.NewSource(source.Name, source.Content), options...)
 	if err != nil {
-		return nil, err
+		return nil, wrapDiagnosticError(err)
 	}
 
-	if err := parsedOptions.validate(false); err != nil {
-		return nil, err
-	}
-
-	compiled, err := r.engine.Compile(ctx, ferret.NewSource(source.Name, source.Content))
-	if err != nil {
-		if compiled != nil {
-			err = errors.Join(err, compiled.Close())
-		}
-
-		return nil, wrapDiagnosticError(source, err)
-	}
-
-	if compiled == nil {
-		return nil, errors.New("native runtime returned no plan")
-	}
-
-	return &plan{plan: compiled, source: source}, nil
+	return &plan{plan: compiled}, nil
 }
 
-// CompileDebug creates a reusable debugger-instrumented plan.
-func (r *Runtime) CompileDebug(
-	ctx context.Context,
-	source api.Source,
-	options ...api.PlanOption,
-) (api.Plan, error) {
-	parsedOptions, err := newPlanOptions(options)
+// CompileDebug creates a reusable plan carrying native debugger instrumentation.
+func (r *Runtime) CompileDebug(ctx context.Context, source api.Source, options ...api.PlanOption) (api.Plan, error) {
+	compiled, err := r.engine.CompileDebug(ctx, ferret.NewSource(source.Name, source.Content), options...)
 	if err != nil {
-		return nil, err
+		return nil, wrapDiagnosticError(err)
 	}
 
-	if err := parsedOptions.validate(true); err != nil {
-		return nil, err
-	}
-
-	compiled, err := r.engine.CompileDebug(ctx, ferret.NewSource(source.Name, source.Content))
-	if err != nil {
-		if compiled != nil {
-			err = errors.Join(err, compiled.Close())
-		}
-
-		return nil, wrapDiagnosticError(source, err)
-	}
-
-	if compiled == nil {
-		return nil, errors.New("native runtime returned no debug plan")
-	}
-
-	return &plan{plan: compiled, source: source}, nil
+	return &plan{plan: compiled}, nil
 }
 
-// Close releases the owned native Ferret engine exactly once.
-func (r *Runtime) Close() error {
-	r.closeOnce.Do(func() {
-		r.closeErr = r.engine.Close()
-	})
-
-	return r.closeErr
-}
+// Close releases the owned native engine after callers close their children.
+func (r *Runtime) Close() error { return r.engine.Close() }

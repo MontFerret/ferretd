@@ -18,6 +18,7 @@ type (
 	}
 
 	executionGroup struct {
+		parent  *session
 		state   registryState
 		entries map[ExecutionID]*executionEntry
 	}
@@ -35,7 +36,7 @@ func newExecutionRegistry() *executionRegistry {
 	}
 }
 
-func (r *executionRegistry) add(execution *execution) {
+func (r *executionRegistry) add(execution *execution, parent *session) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -49,6 +50,7 @@ func (r *executionRegistry) add(execution *execution) {
 	group := r.bySession[execution.runtime.target.sessionID]
 	if group == nil {
 		group = &executionGroup{
+			parent:  parent,
 			state:   registryStateActive,
 			entries: make(map[ExecutionID]*executionEntry),
 		}
@@ -137,6 +139,13 @@ func (r *executionRegistry) finishClose(entry *executionEntry) {
 		return
 	}
 
+	// A parent may have stopped admission while its close worker is still
+	// waiting for creators. Retain the completed child until that worker has
+	// collected its cleanup result, even after the child leaves public lookup.
+	if group.state == registryStateActive && group.parent.closeStarted() {
+		return
+	}
+
 	if group.entries[execution.id] == entry {
 		delete(group.entries, execution.id)
 	}
@@ -146,4 +155,13 @@ func (r *executionRegistry) finishClose(entry *executionEntry) {
 	if group.state == registryStateClosing && len(group.entries) == 0 {
 		delete(r.bySession, execution.runtime.target.sessionID)
 	}
+}
+
+func (r *executionRegistry) finishSessionClose(id SessionID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Parent cleanup has observed every retained child, including children that
+	// completed between admission closing and beginSessionClose.
+	delete(r.bySession, id)
 }

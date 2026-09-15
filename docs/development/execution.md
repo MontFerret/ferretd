@@ -82,10 +82,11 @@ retains it as the existing asynchronous session-creation failure category;
 JSON/protobuf validation at public transport boundaries is unchanged.
 
 Normal compilation omits optimization options and uses the wrapped engine's
-configuration. The provisional adapter rejects every explicit normal-plan
-optimization level because the native engine cannot apply or report per-plan
-levels. Debug compilation guarantees `OptimizationNone`, accepting omission or
-that explicit value and rejecting other levels.
+configuration. Native per-plan options accept explicit `OptimizationNone`,
+`OptimizationBasic`, or `OptimizationFull` without changing shared compiler
+configuration; `OptimizationAggressive` is unsupported. Debug compilation accepts
+omission or `OptimizationNone` only. Non-nil session options run once in order
+against the native owner, joining validation failures before acquiring resources.
 
 Each Execution owns that runtime plus its ordinary one-shot state, ordered
 lifecycle events, and terminal result or failure. The fresh Universal runtime
@@ -138,6 +139,9 @@ entries only.
 Each Session owns the gate that admits ordinary and debug runtime creation.
 Session close stops that gate, waits for every admitted creator to publish or
 leave, then marks the ordinary child set closing and invokes debug child cleanup.
+A completed Execution remains in its Session group while that parent is closing,
+including while the parent waits for admitted creators. This preserves child
+cleanup errors until the parent has collected them.
 No Session-registry lock is held while entering the Execution registry, and no
 registry lock is held during compilation, hooks, runtime cleanup, Plan closure,
 or lifecycle waits.
@@ -183,5 +187,6 @@ contention, goroutine lifetime, and retained resources.
 
 Orchestration tests use API fakes with explicit results and hooks. Native
 compilation, filesystem, and execution integration tests and their unchanged
-benchmarks live under `internal/ferretapi`; debug lifecycle benchmarks remain
-with the debug manager.
+benchmarks live under the test-only `internal/integration` package. Adapter
+contract tests and direct benchmarks remain independently movable under
+`internal/ferretapi`; debug lifecycle benchmarks remain with the debug manager.

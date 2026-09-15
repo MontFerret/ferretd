@@ -71,7 +71,7 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 				continue
 			}
 
-			if adapter {
+			if adapter || (testFile && relative == "internal/integration/execution_fixture_test.go" && name == native+"/v2") {
 				continue
 			}
 

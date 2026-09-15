@@ -1,107 +1,67 @@
 package ferretapi
 
 import (
-	"errors"
-	"iter"
-
 	"github.com/MontFerret/api"
 	apidiagnostics "github.com/MontFerret/api/diagnostics"
-	apisource "github.com/MontFerret/api/source"
 	ferretdiagnostics "github.com/MontFerret/ferret/v2/pkg/diagnostics"
-	ferretsource "github.com/MontFerret/ferret/v2/pkg/source"
-	"github.com/MontFerret/ferret/v2/pkg/vm"
 )
 
-// The native aggregate implementation is internal to vm; its exported iterator
-// is the available boundary for preserving every runtime diagnostic.
-type runtimeErrorSet interface {
-	Errors() iter.Seq2[int, *vm.RuntimeError]
-}
-
-func wrapDiagnosticError(source api.Source, err error) error {
+func wrapDiagnosticError(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	values := extractDiagnostics(err)
+	var values apidiagnostics.Diagnostics
+	seen := make(map[*ferretdiagnostics.Diagnostic]struct{})
+	var visit func(error)
+	visit = func(current error) {
+		if current == nil {
+			return
+		}
+
+		// Inspect this node only: errors.As would select the first descendant
+		// and hide later branches or change diagnostic ordering.
+		if diagnostic, ok := current.(*ferretdiagnostics.Diagnostic); ok { //nolint:errorlint // Explicit error-tree traversal requires a node-local assertion.
+			if diagnostic == nil {
+				return
+			}
+
+			if _, exists := seen[diagnostic]; exists {
+				return
+			}
+
+			seen[diagnostic] = struct{}{}
+			values = append(values, convertDiagnostic(diagnostic))
+		}
+
+		switch current := current.(type) { //nolint:errorlint // Traverse immediate children in their original order.
+		case interface{ Unwrap() []error }:
+			for _, child := range current.Unwrap() {
+				visit(child)
+			}
+		case interface{ Unwrap() error }:
+			visit(current.Unwrap())
+		}
+	}
+	visit(err)
+
 	if len(values) == 0 {
 		return err
 	}
 
-	diagnostics := make(apidiagnostics.Diagnostics, len(values))
-	for index := range values {
-		diagnostics[index] = convertDiagnostic(source, values[index])
-	}
-
-	return newDiagnosticError(err, diagnostics)
+	return newDiagnosticError(err, values)
 }
 
-func extractDiagnostics(err error) []*ferretdiagnostics.Diagnostic {
-	var runtimeSet runtimeErrorSet
-	if errors.As(err, &runtimeSet) {
-		var result []*ferretdiagnostics.Diagnostic
-		for _, item := range runtimeSet.Errors() {
-			if item != nil && item.Diagnostic != nil {
-				result = append(result, item.Diagnostic)
-			}
-		}
-
-		return result
-	}
-
-	var runtimeError *vm.RuntimeError
-	if errors.As(err, &runtimeError) && runtimeError != nil && runtimeError.Diagnostic != nil {
-		return []*ferretdiagnostics.Diagnostic{runtimeError.Diagnostic}
-	}
-
-	var set *ferretdiagnostics.DiagnosticSet
-	if errors.As(err, &set) && set != nil {
-		result := make([]*ferretdiagnostics.Diagnostic, 0, set.Size())
-		for _, item := range set.Errors() {
-			result = append(result, item)
-		}
-
-		return result
-	}
-
-	var single *ferretdiagnostics.Diagnostic
-	if errors.As(err, &single) && single != nil {
-		return []*ferretdiagnostics.Diagnostic{single}
-	}
-
-	return nil
-}
-
-func convertDiagnostic(source api.Source, value *ferretdiagnostics.Diagnostic) apidiagnostics.Diagnostic {
+func convertDiagnostic(value *ferretdiagnostics.Diagnostic) apidiagnostics.Diagnostic {
 	result := apidiagnostics.Diagnostic{
-		Source: source,
+		Source:  api.NewSource(value.Source.Name(), value.Source.Content()),
+		Kind:    apidiagnostics.Kind(value.Kind.String()),
+		Message: value.Message, Hint: value.Hint, Note: value.Note,
+		Annotations: make([]apidiagnostics.Annotation, len(value.Spans)),
 	}
-
-	if value == nil {
-		result.Kind = apidiagnostics.UnexpectedError
-
-		return result
-	}
-
-	result.Kind = apidiagnostics.Kind(value.Kind.String())
-	result.Message = value.Message
-	result.Hint = value.Hint
-	result.Note = value.Note
-	nativeSource := ferretsource.New(source.Name, source.Content)
-	result.Annotations = make([]apidiagnostics.Annotation, len(value.Spans))
-	for index := range value.Spans {
-		span := value.Spans[index]
-		position := nativeSource.PositionAt(span.Span)
+	for index, span := range value.Spans {
 		result.Annotations[index] = apidiagnostics.Annotation{
-			Range: apisource.Range{
-				Location: apisource.Location{
-					Position:   apisource.Position{Line: position.Line, Column: position.Column},
-					SourceName: source.Name,
-				},
-				Span: apisource.Span{Start: span.Span.Start, End: span.Span.End},
-			},
-			Message: span.Label,
-			Primary: span.Main,
+			Range: value.Source.RangeAt(span.Span), Message: span.Label, Primary: span.Main,
 		}
 	}
 

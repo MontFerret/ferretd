@@ -228,7 +228,7 @@ func (m *Manager) CreateExecution(
 	parent := creation.session()
 	runtime := newExecutionRuntime(parent.runtimeTarget(), input)
 	execution := newExecution(id, runtime)
-	m.executions.add(execution)
+	m.executions.add(execution, parent)
 
 	return execution.snapshot(), nil
 }
@@ -343,6 +343,8 @@ func (m *Manager) finishSessionClose(entry *sessionEntry) {
 	for _, closing := range children {
 		result = errors.Join(result, closing.entry.execution.close.Wait(context.Background()))
 	}
+
+	m.executions.finishSessionClose(session.id)
 
 	for _, hook := range m.sessionCloseHooks() {
 		result = errors.Join(result, hook(context.Background(), session.id))

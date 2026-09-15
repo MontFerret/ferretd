@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync/atomic"
 	"testing"
 
@@ -198,16 +199,15 @@ func TestDebuggerEventTranslation(t *testing.T) {
 		ContentType: "application/json",
 		Content:     []byte(`{"result":1}`),
 	}
-	session := &debugSession{source: api.NewSource("/workspace/query.fql", "RETURN 1")}
-	event := session.convertEvent(&ferret.DebugEvent{
+	event := convertEvent(&ferret.DebugEvent{
 		Error:            wantErr,
 		Output:           nativeOutput,
 		Reason:           ferret.DebugReasonBreakpoint,
 		HitBreakpointIDs: []ferret.DebugBreakpointID{7, 8},
 		Location: ferret.Range{
 			Location: ferret.Location{
-				File:     "/workspace/query.fql",
-				Position: ferret.Position{Line: 3, Column: 4},
+				SourceName: "/workspace/query.fql",
+				Position:   ferret.Position{Line: 3, Column: 4},
 			},
 			Span: ferret.Span{Start: 10, End: 20},
 		},
@@ -259,56 +259,10 @@ func TestRuntimeConvertsDiagnosticsAndPreservesNativeCause(t *testing.T) {
 	}
 }
 
-func TestDebuggerValueAndBreakpointTranslation(t *testing.T) {
-	breakpoint := convertBreakpoint(ferret.DebugBreakpoint{
-		ID:         7,
-		PointID:    8,
-		FunctionID: 9,
-		RequestedLocation: ferret.Location{
-			File:     "/workspace/query.fql",
-			Position: ferret.Position{Line: 2, Column: 3},
-		},
-		Location: ferret.Range{
-			Location: ferret.Location{
-				File:     "/workspace/query.fql",
-				Position: ferret.Position{Line: 4, Column: 5},
-			},
-			Span: ferret.Span{Start: 10, End: 20},
-		},
-		BindingMode: ferret.DebugBreakpointBindExact,
-		Bound:       true,
-	})
-	if breakpoint.ID != 7 || breakpoint.RequestedLocation.SourceName != "/workspace/query.fql" ||
-		breakpoint.RequestedLocation.Line != 2 || breakpoint.Location.Line != 4 ||
-		breakpoint.Location.Span.Start != 10 || breakpoint.PointID != 8 ||
-		breakpoint.FunctionID != 9 || breakpoint.BindingMode != apidebugger.BreakpointBindExact ||
-		!breakpoint.Bound {
-		t.Fatalf("breakpoint = %+v", breakpoint)
-	}
-
-	variables := convertVariables([]ferret.DebugVariable{{
-		Name: "value",
-		Value: ferret.DebugValue{
-			Type:      "array",
-			Display:   "[1]",
-			Reference: 9,
-		},
-		Mutable: true,
-		Param:   true,
-	}})
-	if len(variables) != 1 || variables[0].Name != "value" ||
-		variables[0].Value.Reference != 9 || !variables[0].Mutable || !variables[0].Param {
-		t.Fatalf("variables = %+v", variables)
-	}
-
-	mode, err := nativeBreakpointMode(apidebugger.BreakpointBindNextExecutableInSource)
-	if err != nil || mode != ferret.DebugBreakpointBindNextExecutableInFile {
-		t.Fatal("default breakpoint mode was not translated to native in-file binding")
-	}
-
-	if convertBreakpointMode(ferret.DebugBreakpointBindNextExecutableInFunction) !=
-		apidebugger.BreakpointBindNextExecutableInFunction {
-		t.Fatal("native in-function breakpoint mode was not translated")
+func TestDebuggerUsesCanonicalValues(t *testing.T) {
+	if reflect.TypeFor[apidebugger.Breakpoint]() != reflect.TypeFor[ferret.DebugBreakpoint]() ||
+		reflect.TypeFor[apidebugger.Value]() != reflect.TypeFor[ferret.DebugValue]() {
+		t.Fatal("native debugger data must use the canonical API types")
 	}
 }
 
