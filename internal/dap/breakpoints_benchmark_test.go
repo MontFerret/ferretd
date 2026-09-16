@@ -18,12 +18,12 @@ func BenchmarkDAPBreakpointReplacement(b *testing.B) {
 	for _, name := range []string{"unchanged", "alternating", "clear_readd"} {
 		b.Run(name, func(b *testing.B) {
 			server, program := benchmarkBreakpointServer(b)
-			request := &protocol.SetBreakpointsRequest{
+			request := &sourceBreakpointsRequest{SetBreakpointsRequest: protocol.SetBreakpointsRequest{
 				Request: protocol.Request{Command: "setBreakpoints"},
 				Arguments: protocol.SetBreakpointsArguments{
 					Source: protocol.Source{Path: program},
 				},
-			}
+			}}
 			sets := [][]protocol.SourceBreakpoint{{{Line: 2}}, {{Line: 2}}}
 
 			switch name {
@@ -88,6 +88,7 @@ func benchmarkBreakpointServer(b *testing.B) (*Server, string) {
 	}
 
 	server.owned.session = session.ID
+	server.owned.coordinates = newSourceCoordinates(session.Text, server.client)
 
 	debug, err := server.debugs.CreateSession(ctx, session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {

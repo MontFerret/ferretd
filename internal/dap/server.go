@@ -64,6 +64,7 @@ type (
 		program         string
 		programIdentity sourceIdentity
 		stopOnEntry     bool
+		coordinates     *sourceCoordinates
 	}
 )
 
@@ -147,7 +148,7 @@ func (s *Server) dispatch(
 		return s.handleLaunch(ctx, typed)
 	case *protocol.ConfigurationDoneRequest:
 		return s.handleConfigurationDone(ctx, typed)
-	case *protocol.SetBreakpointsRequest:
+	case *sourceBreakpointsRequest:
 		return s.handleSetBreakpoints(ctx, typed)
 	case *protocol.ContinueRequest:
 		return s.handleContinue(ctx, typed)

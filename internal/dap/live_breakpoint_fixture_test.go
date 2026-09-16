@@ -46,7 +46,7 @@ func newLiveBreakpointFixture(t *testing.T, stopOnEntry bool, initial ...int) *l
 
 	f.client = newTestClientWithRuntime(t, Options{}, runtime)
 	root := t.TempDir()
-	f.program = writeDAPProgram(t, root, "RETURN FOR i IN 1..3\n LET gate = GATE()\n\n LET x = i + gate\n LET y = x + 1\n RETURN y")
+	f.program = writeDAPProgram(t, root, "RETURN FOR i IN 1..3\n LET gate = GATE()\n\n LET x = i + gate\n LET y = x + 1\n RETURN y\n")
 	initializeDAP(t, f.client)
 	launchDAP(t, f.client, f.program, root, stopOnEntry)
 	f.replace(initial...)

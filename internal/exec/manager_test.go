@@ -106,7 +106,7 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 	}
 
 	compiled, debugCompiled := runtime.sources()
-	if len(compiled) != 1 || compiled[0].Name != sourcePath || compiled[0].Content != "RETURN @value" {
+	if len(compiled) != 1 || compiled[0].Name != sourcePath || compiled[0].Content != "RETURN @value" || snapshot.Text != compiled[0].Content {
 		t.Fatalf("compiled sources = %+v", compiled)
 	}
 
@@ -165,6 +165,15 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 
 	if overrideOptions.fsRoot != canonicalOverride {
 		t.Fatalf("override FS root = %q, want %q", overrideOptions.fsRoot, canonicalOverride)
+	}
+
+	if err := os.WriteFile(sourcePath, []byte("RETURN 99"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	retained, err := manager.GetSession(t.Context(), snapshot.ID)
+	if err != nil || retained.Text != snapshot.Text {
+		t.Fatalf("session text after editing file = %q, error = %v", retained.Text, err)
 	}
 
 	debugRuntime, err := manager.CreateDebugRuntime(

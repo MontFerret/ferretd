@@ -169,35 +169,3 @@ func (s *Server) clientPath(path string) (string, error) {
 
 	return filepath.Clean(path), nil
 }
-
-func (s *Server) fromClientLine(value int) int {
-	if s.client.linesStartAt1 {
-		return value
-	}
-
-	return value + 1
-}
-
-func (s *Server) fromClientColumn(value int) int {
-	if value == 0 || s.client.columnsStartAt1 {
-		return value
-	}
-
-	return value + 1
-}
-
-func (s *Server) toClientLine(value int) int {
-	if value == 0 || s.client.linesStartAt1 {
-		return value
-	}
-
-	return value - 1
-}
-
-func (s *Server) toClientColumn(value int) int {
-	if value == 0 || s.client.columnsStartAt1 {
-		return value
-	}
-
-	return value - 1
-}

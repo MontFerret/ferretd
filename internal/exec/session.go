@@ -61,6 +61,7 @@ func (s *session) snapshot() SessionSnapshot {
 	return SessionSnapshot{
 		ID:         s.id,
 		Source:     s.source,
+		Text:       s.text,
 		Parameters: append([]string(nil), s.parameters...),
 	}
 }

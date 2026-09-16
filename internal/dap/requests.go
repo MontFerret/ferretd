@@ -12,7 +12,6 @@ import (
 	"github.com/rs/zerolog"
 
 	apidebugger "github.com/MontFerret/api/debugger"
-	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/debug"
 )
 
@@ -178,6 +177,7 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		program:         paths.program,
 		programIdentity: paths.identity,
 		stopOnEntry:     arguments.StopOnEntry,
+		coordinates:     newSourceCoordinates(session.Text, s.client),
 	}
 	s.attachSessionLogger(s.owned)
 	s.watch = watch
@@ -289,7 +289,7 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 	return s.resolvePendingLaunch()
 }
 
-func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.SetBreakpointsRequest) error {
+func (s *Server) handleSetBreakpoints(ctx context.Context, request *sourceBreakpointsRequest) error {
 	breakpointFields := func(event *zerolog.Event) {
 		event.
 			Str("source", request.Arguments.Source.Path).
@@ -361,7 +361,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 	}
 
 	requests := make([]apidebugger.BreakpointRequest, 0, len(request.Arguments.Breakpoints))
-	for _, breakpoint := range request.Arguments.Breakpoints {
+	for index, breakpoint := range request.Arguments.Breakpoints {
 		if breakpoint.Condition != "" || breakpoint.HitCondition != "" || breakpoint.LogMessage != "" {
 			return s.sendFailure(
 				request.GetRequest(),
@@ -372,13 +372,16 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 			)
 		}
 
-		line := s.fromClientLine(breakpoint.Line)
-		column := s.fromClientColumn(breakpoint.Column)
+		column, err := request.column(index)
+		if err != nil {
+			return s.sendFailure(request.GetRequest(), err, breakpointFields)
+		}
 
-		if line < 1 || column < 0 {
+		position, err := s.owned.coordinates.fromClient(breakpoint.Line, column)
+		if err != nil {
 			return s.sendFailure(
 				request.GetRequest(),
-				errors.New("breakpoint line or column is invalid"),
+				err,
 				func(event *zerolog.Event) {
 					event.
 						Str("source", path).
@@ -389,7 +392,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		}
 
 		requests = append(requests, apidebugger.BreakpointRequest{
-			Position: apisource.Position{Line: line, Column: column},
+			Position: position,
 			Options:  apidebugger.BreakpointOptions{BindingMode: apidebugger.BreakpointBindNextExecutableInSource},
 		})
 	}
@@ -414,16 +417,31 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 
 	s.breakpoints.replace(s.owned.program, requests, breakpoints)
 
-	result := make([]protocol.Breakpoint, len(breakpoints))
+	result := make([]sourceBreakpoint, len(breakpoints))
 
 	for index, breakpoint := range breakpoints {
-		stableID := s.breakpoints.id(breakpoint.ID)
-		result[index] = protocol.Breakpoint{
-			Id:       stableID,
-			Verified: breakpoint.Bound,
-			Source:   &protocol.Source{Name: filepath.Base(identity.path), Path: clientPath},
-			Line:     s.toClientLine(breakpoint.Location.Line),
-			Column:   s.toClientColumn(breakpoint.Location.Column),
+		location := breakpoint.RequestedLocation
+		if breakpoint.Bound {
+			location = breakpoint.Location.Location
+		}
+
+		position, err := s.owned.coordinates.toClient(location.Position)
+		if err != nil {
+			return s.sendFailure(request.GetRequest(), fmt.Errorf("convert native breakpoint position: %w", err), breakpointFields)
+		}
+
+		if breakpoint.Bound && position.column == nil {
+			return s.sendFailure(request.GetRequest(), errors.New("native bound breakpoint position has no column"), breakpointFields)
+		}
+
+		result[index] = sourceBreakpoint{
+			Breakpoint: protocol.Breakpoint{
+				Id:       s.breakpoints.id(breakpoint.ID),
+				Verified: breakpoint.Bound,
+				Source:   &protocol.Source{Name: filepath.Base(identity.path), Path: clientPath},
+			},
+			Line:   &position.line,
+			Column: position.column,
 		}
 	}
 
@@ -431,17 +449,17 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
-		return &protocol.SetBreakpointsResponse{
-			Response: response,
-			Body:     protocol.SetBreakpointsResponseBody{Breakpoints: result},
-		}
+		message := &sourceBreakpointsResponse{Response: response}
+		message.Body.Breakpoints = result
+
+		return message
 	}, func(event *zerolog.Event) {
 		event.Int("count", len(result))
 	})
 }
 
 func (s *Server) sendUnverifiedBreakpoints(
-	request *protocol.SetBreakpointsRequest,
+	request *sourceBreakpointsRequest,
 	path string,
 	message string,
 ) error {
@@ -455,14 +473,21 @@ func (s *Server) sendUnverifiedBreakpoints(
 		sourceValue.Name = filepath.Base(path)
 	}
 
-	result := make([]protocol.Breakpoint, len(request.Arguments.Breakpoints))
+	result := make([]sourceBreakpoint, len(request.Arguments.Breakpoints))
 	for index, breakpoint := range request.Arguments.Breakpoints {
-		result[index] = protocol.Breakpoint{
-			Verified: false,
-			Message:  message,
-			Source:   &sourceValue,
-			Line:     breakpoint.Line,
-			Column:   breakpoint.Column,
+		column, err := request.column(index)
+		if err != nil {
+			return s.sendFailure(request.GetRequest(), err)
+		}
+
+		result[index] = sourceBreakpoint{
+			Breakpoint: protocol.Breakpoint{
+				Verified: false,
+				Message:  message,
+				Source:   &sourceValue,
+			},
+			Line:   &breakpoint.Line,
+			Column: column,
 		}
 	}
 
@@ -470,10 +495,10 @@ func (s *Server) sendUnverifiedBreakpoints(
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
-		return &protocol.SetBreakpointsResponse{
-			Response: response,
-			Body:     protocol.SetBreakpointsResponseBody{Breakpoints: result},
-		}
+		message := &sourceBreakpointsResponse{Response: response}
+		message.Body.Breakpoints = result
+
+		return message
 	}, func(event *zerolog.Event) {
 		event.Int("count", len(result))
 	})
@@ -673,6 +698,15 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 			)
 		}
 
+		position, err := s.owned.coordinates.toClient(frame.Location.Position)
+		if err != nil {
+			return s.sendFailure(request.GetRequest(), fmt.Errorf("convert native frame position: %w", err), stackFields)
+		}
+
+		if position.column == nil {
+			return s.sendFailure(request.GetRequest(), errors.New("native frame position has no column"), stackFields)
+		}
+
 		// Universal frame indices address positions in the complete current Frames() result.
 		frameIndex := start + offset
 		frameID := s.handles.Frame(frameIndex)
@@ -684,8 +718,8 @@ func (s *Server) handleStackTrace(ctx context.Context, request *protocol.StackTr
 			Id:     frameID,
 			Name:   frame.Name,
 			Source: &protocol.Source{Name: filepath.Base(frame.Location.SourceName), Path: path},
-			Line:   s.toClientLine(frame.Location.Line),
-			Column: s.toClientColumn(frame.Location.Column),
+			Line:   position.line,
+			Column: *position.column,
 		})
 	}
 

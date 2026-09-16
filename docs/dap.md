@@ -152,6 +152,37 @@ stop reports stderr output, exit code 1, and termination. Successful completion
 emits the encoded result as stdout output, exit code 0, and termination.
 Explicit termination emits termination without an exit event.
 
+## Source coordinates
+
+Ferret and the Universal API preserve native one-based lines and one-based
+UTF-8 byte columns, with zero-based half-open byte spans. DAP columns count
+UTF-16 code units. The adapter converts in both directions at the DAP boundary;
+`linesStartAt1` and `columnsStartAt1` independently select the client bases
+and default to one-based.
+
+Conversion uses an immutable index of the exact source bytes compiled at launch.
+Editing the file does not change active-session coordinates; relaunch to debug
+the edited source. No source remapping or hot recompilation is performed.
+
+An omitted breakpoint column remains a line-only request. An explicit zero is
+the first column for a zero-based client and is invalid for a one-based client.
+Out-of-range positions, columns inside surrogate pairs, and native positions
+inside valid UTF-8 sequences are rejected rather than rounded. Valid positions
+may subsequently bind to a later executable location under Ferret's existing
+breakpoint policy. Unbound breakpoints retain their requested coordinates.
+
+Emoji and other supplementary characters occupy two UTF-16 units. Tabs occupy
+one unit, and combining sequences count their code units rather than displayed
+glyphs. LF determines native source lines; CRLF terminators do not contribute
+logical columns. Standalone CR and Unicode separators retain native Ferret
+column behavior.
+
+Malformed UTF-8 follows Ferret's existing decoding: each invalid byte consumes
+exactly one original byte and contributes one replacement rune, hence one UTF-16
+unit. Both conversion directions use those same boundaries. The retained bytes
+are never normalized, rewritten, or rejected solely for malformed encoding.
+DAP JSON transport remains UTF-8 independently of source-coordinate units.
+
 ## Exclusions
 
 DAP is stdio-only and owns one launched session. It does not connect to

@@ -18,6 +18,7 @@ type (
 	}
 	breakpointDebugger struct {
 		apidebugger.Session
+		framesFn   func(context.Context) ([]apidebugger.Frame, error)
 		continueFn func(context.Context) (*apidebugger.Event, error)
 		replaceFn  func(context.Context, string, []apidebugger.BreakpointRequest) ([]apidebugger.Breakpoint, error)
 	}
@@ -53,4 +54,12 @@ func (d *breakpointDebugger) ReplaceBreakpoints(ctx context.Context, source stri
 	}
 
 	return d.Session.ReplaceBreakpoints(ctx, source, requests)
+}
+
+func (d *breakpointDebugger) Frames(ctx context.Context) ([]apidebugger.Frame, error) {
+	if d.framesFn != nil {
+		return d.framesFn(ctx)
+	}
+
+	return d.Session.Frames(ctx)
 }
