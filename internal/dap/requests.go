@@ -14,7 +14,6 @@ import (
 	apidebugger "github.com/MontFerret/api/debugger"
 	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/debug"
-	"github.com/MontFerret/ferretd/internal/exec"
 )
 
 func (s *Server) handleInitialize(
@@ -87,14 +86,22 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 			func(event *zerolog.Event) {
 				event.Str("program", arguments.Program).Str("cwd", arguments.CWD)
 			},
+			arguments.logWorkingDirectory,
 		)
+	}
+
+	runtimeOptions, err := arguments.runtimeOptions()
+	if err != nil {
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("program", paths.program).Str("root", paths.root)
+		}, arguments.logWorkingDirectory)
 	}
 
 	opened, err := s.workspaces.Open(ctx, paths.root)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
 			event.Str("program", paths.program).Str("root", paths.root)
-		})
+		}, arguments.logWorkingDirectory)
 	}
 
 	session, err := s.executions.CreateSession(ctx, opened.ID(), paths.relativePath)
@@ -110,6 +117,7 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 					Str("root", paths.root).
 					Str("workspace_id", opened.ID().String())
 			},
+			arguments.logWorkingDirectory,
 		)
 	}
 
@@ -117,7 +125,7 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		ctx,
 		session.ID,
 		arguments.Parameters,
-		exec.RuntimeOptions{},
+		runtimeOptions,
 	)
 	if err != nil {
 		_ = s.executions.CloseSession(context.Background(), session.ID)
@@ -133,6 +141,7 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 					Str("workspace_id", opened.ID().String()).
 					Str("execution_session_id", session.ID.String())
 			},
+			arguments.logWorkingDirectory,
 		)
 	}
 
@@ -152,6 +161,10 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 					Str("workspace_id", opened.ID().String()).
 					Str("execution_session_id", session.ID.String()).
 					Str("debug_session_id", debugSession.ID.String())
+
+				if directory := debugSession.Options.WorkingDirectory; directory != "" {
+					event.Str("working_directory", directory)
+				}
 			},
 		)
 	}
@@ -173,11 +186,16 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 	s.suppressEntry = !arguments.StopOnEntry
 	s.stateMu.Unlock()
 
-	s.logger.Info().
+	event := s.logger.Info().
 		Str("program", paths.program).
 		Str("root", paths.root).
-		Bool("stop_on_entry", arguments.StopOnEntry).
-		Msg("DAP debug session created")
+		Bool("stop_on_entry", arguments.StopOnEntry)
+
+	if directory := debugSession.Options.WorkingDirectory; directory != "" {
+		event.Str("working_directory", directory)
+	}
+
+	event.Msg("DAP debug session created")
 
 	if err := s.sendEvent(eventInitialized, func(base protocol.ProtocolMessage) protocol.Message {
 		return &protocol.InitializedEvent{Event: protocol.Event{ProtocolMessage: base, Event: eventInitialized}}
