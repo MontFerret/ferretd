@@ -161,7 +161,8 @@ func (m *Manager) StepOutSession(ctx context.Context, id SessionID) (SessionSnap
 	return session.stepOut(ctx)
 }
 
-// ReplaceBreakpoints replaces all breakpoints for one source.
+// ReplaceBreakpoints atomically replaces one source's breakpoints before execution,
+// while stopped, or while running. Empty locations clear the source's set.
 func (m *Manager) ReplaceBreakpoints(
 	ctx context.Context,
 	id SessionID,

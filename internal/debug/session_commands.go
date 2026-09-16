@@ -49,7 +49,7 @@ func (d *session) pause(ctx context.Context) (SessionSnapshot, error) {
 
 	d.mu.Unlock()
 
-	if err := d.runtime.Debugger().Pause(); err != nil {
+	if err := d.runtime.Debugger().Pause(ctx); err != nil {
 		return SessionSnapshot{}, err
 	}
 
@@ -140,6 +140,10 @@ func (d *session) runCommand(command func() (*apidebugger.Event, error), runtime
 	}
 
 	if err != nil {
+		if event != nil {
+			d.output = cloneOutput(event.Output)
+		}
+
 		if d.terminating {
 			d.state = StateTerminated
 			d.publishLocked(EventTerminated, true)

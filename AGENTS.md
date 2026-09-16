@@ -51,8 +51,8 @@ translate; they do not become alternate owners of domain behavior.
 * `cmd/ferretd` owns process startup, Cobra command behavior, signal handling,
   process-facing output, and top-level composition.
 * `internal/daemon` owns long-running service lifecycle and coordination. Its
-  composition constructs the native Ferret engine and wraps it as the shared
-  Universal runtime.
+  composition constructs and owns the shared Universal runtime with Ferret's
+  `uapi.New`.
 * `internal/transport` owns local endpoint discovery, listening, and dialing.
 * `internal/grpc` and `internal/lsp` own their protocol translation, framing,
   handles, and transport-facing state.
@@ -67,12 +67,12 @@ translate; they do not become alternate owners of domain behavior.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
   events, and debug child cleanup.
 * `internal/dap` owns DAP composition as well as protocol translation. Its
-  composition constructs the native Ferret engine and wraps it as the shared
-  Universal runtime.
-* `internal/ferretapi` is the provisional and sole bridge between the
-  Universal Runtime API and native Ferret runtime, Plan, Session, debugger, and
-  diagnostic types. It adapts a caller-constructed native engine rather than
-  deciding how that engine is configured.
+  composition constructs and owns the shared Universal runtime with Ferret's
+  `uapi.New`.
+* Ferret's upstream `github.com/MontFerret/ferret/v2/uapi` package is the sole
+  bridge from the Universal Runtime API to native runtime, Plan, Session,
+  debugger, and diagnostic types. Composition uses its owning constructor;
+  do not recreate a local runtime adapter.
 * `internal/source`, `internal/diagnostic`, and `internal/lifecycle` own their
   protocol-neutral shared concepts. Do not move those semantics into adapters
   or process setup.
@@ -82,13 +82,14 @@ translate; they do not become alternate owners of domain behavior.
   checked-in generated output and must not be edited manually.
 * The Ferret dependency owns language, compiler, runtime, VM, standard-library,
   and core debugger semantics. Execution and debug domain packages use the
-  Universal API; native runtime translation stays in `internal/ferretapi`.
-  Change Ferret semantics in Ferret rather than copying or redefining them here.
+  Universal API; native runtime translation stays in Ferret's upstream `uapi`
+  package. Change Ferret semantics in Ferret rather than copying or redefining
+  them here.
 
 Keep dependency direction clear: commands compose adapters and services;
 adapters depend on protocol-neutral services; execution and debug consume the
-Universal API; native runtime translation stays in `internal/ferretapi`. Do not
-export internal APIs merely to share implementation across packages.
+Universal API; native runtime translation stays in Ferret's upstream `uapi`
+package. Do not export internal APIs merely to share implementation across packages.
 
 ## Compatibility and observable behavior
 

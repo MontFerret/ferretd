@@ -23,8 +23,8 @@ type planSpy struct {
 
 var _ api.Plan = (*planSpy)(nil)
 
-func (p *planSpy) Params() []string {
-	return p.runtime.parameters
+func (p *planSpy) Params() ([]string, error) {
+	return p.runtime.parameters, p.runtime.paramsErr
 }
 
 func (p *planSpy) NewSession(

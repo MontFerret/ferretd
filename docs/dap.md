@@ -85,7 +85,11 @@ Example launch configuration:
 The adapter supports source breakpoints, continue, pause, next, step-in,
 step-out, threads, stack traces, scopes, variables, frame-scoped evaluation,
 terminate, and disconnect. Breakpoints replace all prior breakpoints for the
-launched source and bind to Ferret's next executable location in that file.
+launched source atomically and bind to Ferret's next executable location in that
+file. Replacement is supported before execution, while paused, and while running;
+an empty set clears the source's breakpoints. A failed replacement leaves the
+previous set intact. Updating breakpoints does not pause or resume execution,
+and a stop already decided against the previous set remains inspectable.
 Relative breakpoint paths are resolved against launch `cwd`; clean, symlinked,
 and platform-equivalent paths for the launched file share one source identity.
 

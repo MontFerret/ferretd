@@ -13,7 +13,8 @@ import (
 
 func TestDebugFramePositionsAddressLocalsAndEvaluation(t *testing.T) {
 	fixture := newDebugFixture(t, "RETURN 1")
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
 
 	created, err := fixture.manager.CreateSession(ctx, fixture.session.ID, nil, exec.RuntimeOptions{})
 	if err != nil {
@@ -66,7 +67,7 @@ func TestDebugFramePositionsAddressLocalsAndEvaluation(t *testing.T) {
 		t.Fatalf("Frames = %+v, want %+v", frames, wantFrames)
 	}
 
-	wantCommands := []debuggerCommand{{name: "start"}, {name: "frames"}}
+	wantCommands := []debuggerCommand{{name: "start"}, {ctx: ctx, name: "frames"}}
 	for index := range frames {
 		scopes, err := fixture.manager.Scopes(ctx, created.ID, index)
 		if err != nil {
@@ -96,8 +97,8 @@ func TestDebugFramePositionsAddressLocalsAndEvaluation(t *testing.T) {
 		}
 
 		wantCommands = append(wantCommands,
-			debuggerCommand{name: "frame locals", frame: index},
-			debuggerCommand{name: "evaluate frame", frame: index, expression: "marker"},
+			debuggerCommand{ctx: ctx, name: "frame locals", frame: index},
+			debuggerCommand{ctx: ctx, name: "evaluate frame", frame: index, expression: "marker"},
 		)
 	}
 

@@ -67,8 +67,8 @@ func TestExecutionRetainsOutputBeforeSessionClose(t *testing.T) {
 
 				return nil
 			}))
-			runtime.run = func(context.Context, sessionOptionsSpy) (api.Output, error) {
-				return api.Output{ContentType: "text/plain", Content: content}, test.err
+			runtime.run = func(context.Context, sessionOptionsSpy) (*api.Output, error) {
+				return &api.Output{ContentType: "text/plain", Content: content}, test.err
 			}
 
 			created, err := manager.CreateExecution(context.Background(), snapshot.ID, nil, RuntimeOptions{})
@@ -103,7 +103,7 @@ func TestSessionOwnsDeclaredParameterNames(t *testing.T) {
 	runtime := newRuntimeSpy()
 	runtime.parameters = []string{"value"}
 	plan := &planSpy{runtime: runtime}
-	created := newSession("session", workspace.SourceSnapshot{}, plan, "", "", nil)
+	created := newSession("session", workspace.SourceSnapshot{}, plan, runtime.parameters, "", "", nil)
 	runtime.parameters[0] = "changed"
 
 	if names := created.snapshot().Parameters; len(names) != 1 || names[0] != "value" {

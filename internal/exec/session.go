@@ -38,6 +38,7 @@ func newSession(
 	id SessionID,
 	source workspace.SourceSnapshot,
 	plan api.Plan,
+	parameters []string,
 	text string,
 	fsRoot string,
 	compileDebug func(context.Context) (api.Plan, error),
@@ -45,7 +46,7 @@ func newSession(
 	return &session{
 		id:           id,
 		source:       source,
-		parameters:   append([]string(nil), plan.Params()...),
+		parameters:   append([]string(nil), parameters...),
 		text:         text,
 		fsRoot:       fsRoot,
 		compileDebug: compileDebug,

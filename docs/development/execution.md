@@ -2,8 +2,8 @@
 
 `internal/exec` coordinates compiled Universal API Plans and one common per-run
 execution state used by ordinary execution and debugging. It borrows the
-composition-owned `api.Runtime`; Ferret remains the implementation behind the
-provisional `internal/ferretapi` adapter. The execution manager owns long-lived
+composition-owned `api.Runtime`; Ferret remains the implementation through its
+upstream `uapi` adapter. The execution manager owns long-lived
 identity, option preparation, cancellation, lifecycle, observation, and cleanup.
 
 The resource hierarchy is:
@@ -29,8 +29,10 @@ content. Load, syntax, or compiler failures are returned as structured
 compilation diagnostics without publishing a Session.
 
 A published Session owns one immutable normal `api.Plan`, its workspace and source
-identity, source revision, and declared parameter names. Later disk refreshes do
-not mutate existing Sessions. The same Session can create multiple isolated
+identity, source revision, and declared parameter names. Parameter metadata is
+retrieved through fallible `Plan.Params()` before publication. Metadata failure
+closes the unpublished Plan and retains both retrieval and cleanup errors.
+Later disk refreshes do not mutate existing Sessions. The same Session can create multiple isolated
 Executions.
 
 The Session also coordinates lazy construction of one matching debug Plan. That
@@ -57,8 +59,10 @@ materialization, and idempotent session cleanup. Both normal and debug creation
 use the same preparation and cloning semantics.
 
 Ordinary output is copied before closing the Universal session, so cleanup
-cannot invalidate retained bytes. Debug output is retained by the debug Session.
-Both snapshot APIs copy mutable fields once for each caller.
+cannot invalidate retained bytes. A nil output means absent output; a non-nil
+empty output remains present, including when execution or cleanup also fails.
+Debug output is retained by the debug Session. Both snapshot APIs copy mutable
+fields once for each caller.
 
 Runtime options also retain an optional canonical working directory. Validation
 requires a nonblank absolute path that resolves to an accessible directory and
@@ -82,10 +86,13 @@ retains it as the existing asynchronous session-creation failure category;
 JSON/protobuf validation at public transport boundaries is unchanged.
 
 Normal compilation omits optimization options and uses the wrapped engine's
-configuration. The provisional adapter rejects every explicit normal-plan
-optimization level because the native engine cannot apply or report per-plan
-levels. Debug compilation guarantees `OptimizationNone`, accepting omission or
-that explicit value and rejecting other levels.
+configuration. Native per-plan options accept explicit `OptimizationNone`,
+`OptimizationBasic`, or `OptimizationFull` without changing shared compiler
+configuration; `OptimizationAggressive` is unsupported. Debug compilation accepts
+omission or `OptimizationNone` only. Non-nil Universal option callbacks run once
+in order and their errors are joined. The upstream adapter queues native options;
+native validation occurs when settings are applied or used. In particular, output
+codec availability may fail during encoding after query execution.
 
 Each Execution owns that runtime plus its ordinary one-shot state, ordered
 lifecycle events, and terminal result or failure. The fresh Universal runtime
@@ -138,6 +145,9 @@ entries only.
 Each Session owns the gate that admits ordinary and debug runtime creation.
 Session close stops that gate, waits for every admitted creator to publish or
 leave, then marks the ordinary child set closing and invokes debug child cleanup.
+A completed Execution remains in its Session group while that parent is closing,
+including while the parent waits for admitted creators. This preserves child
+cleanup errors until the parent has collected them.
 No Session-registry lock is held while entering the Execution registry, and no
 registry lock is held during compilation, hooks, runtime cleanup, Plan closure,
 or lifecycle waits.
@@ -183,5 +193,7 @@ contention, goroutine lifetime, and retained resources.
 
 Orchestration tests use API fakes with explicit results and hooks. Native
 compilation, filesystem, and execution integration tests and their unchanged
-benchmarks live under `internal/ferretapi`; debug lifecycle benchmarks remain
-with the debug manager.
+benchmarks live under the test-only `internal/integration` package. Dependency
+integration tests cover the upstream adapter's source coordinates, debugger
+operations, diagnostics, and live breakpoint replacement. Debug lifecycle
+benchmarks remain with the debug manager.

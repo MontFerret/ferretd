@@ -25,7 +25,6 @@ type session struct {
 	hitBreakpointIDs []apidebugger.BreakpointID
 	output           *api.Output
 	failure          *exec.RuntimeFailure
-	breakpoints      map[string][]apidebugger.Breakpoint
 	terminating      bool
 	close            lifecycle.CloseOperation
 	terminalDone     chan struct{}
@@ -43,7 +42,6 @@ func newSession(
 		id:           id,
 		runtime:      runtime,
 		state:        StateCreated,
-		breakpoints:  make(map[string][]apidebugger.Breakpoint),
 		terminalDone: make(chan struct{}),
 		watchers:     make(map[uint64]*debugEventWatcher),
 	}
@@ -52,15 +50,11 @@ func newSession(
 	return result
 }
 
-func (d *session) requireInspectable() error {
+func (d *session) requireActive() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.state == StateRunning {
-		return ErrSessionRunning
-	}
-
-	if d.state.Terminal() || d.close.Started() {
+	if d.state.Terminal() || d.terminating || d.close.Started() {
 		return ErrSessionTerminal
 	}
 

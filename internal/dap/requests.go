@@ -372,6 +372,10 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		locations = append(locations, apisource.Position{Line: line, Column: column})
 	}
 
+	// Publish ID mappings and the response before any stop from this replacement.
+	s.eventMu.Lock()
+	defer s.eventMu.Unlock()
+
 	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, s.owned.program, locations)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
@@ -387,7 +391,6 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 	}
 
 	result := make([]protocol.Breakpoint, len(breakpoints))
-	s.clearDebuggerBreakpoints(s.owned.program)
 
 	for index, breakpoint := range breakpoints {
 		stableID := s.bindBreakpointID(s.owned.program, locations[index], breakpoint.ID)
@@ -470,21 +473,8 @@ func (s *Server) bindBreakpointID(
 	}
 
 	s.debuggerBreakpoints[debuggerID] = stableID
-	s.debuggerBreakpointSources[debuggerID] = sourceName
 
 	return stableID
-}
-
-func (s *Server) clearDebuggerBreakpoints(sourceName string) {
-	s.breakpointMu.Lock()
-	defer s.breakpointMu.Unlock()
-
-	for id, existingSource := range s.debuggerBreakpointSources {
-		if existingSource == sourceName {
-			delete(s.debuggerBreakpointSources, id)
-			delete(s.debuggerBreakpoints, id)
-		}
-	}
 }
 
 func (s *Server) dapBreakpointID(debuggerID apidebugger.BreakpointID) int {

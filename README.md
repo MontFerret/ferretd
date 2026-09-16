@@ -13,10 +13,9 @@ semantics remain owned by the main Ferret project.
 
 Execution uses the
 [Universal Runtime API](https://github.com/MontFerret/api). Each daemon or DAP
-service graph constructs one native Ferret engine, wraps it with the provisional
-`internal/ferretapi` adapter, and owns that shared runtime. Execution Sessions
-own reusable plans, individual runs own runtime sessions, and the execution
-manager borrows the composition runtime.
+service graph constructs and owns one shared runtime through Ferret's upstream
+`uapi.New()` adapter. Execution Sessions own reusable plans, individual runs own
+runtime sessions, and the execution manager borrows the composition runtime.
 
 ## Build
 

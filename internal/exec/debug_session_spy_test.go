@@ -37,15 +37,16 @@ func (s *debugSessionSpy) StepOut(ctx context.Context) (*apidebugger.Event, erro
 	return s.Continue(ctx)
 }
 
-func (s *debugSessionSpy) Pause() error {
+func (s *debugSessionSpy) Pause(context.Context) error {
 	return nil
 }
 
-func (s *debugSessionSpy) SetBreakpoint(location apisource.Location) (apidebugger.Breakpoint, error) {
-	return s.SetBreakpointAt(location, apidebugger.BreakpointOptions{})
+func (s *debugSessionSpy) SetBreakpoint(ctx context.Context, location apisource.Location) (apidebugger.Breakpoint, error) {
+	return s.SetBreakpointAt(ctx, location, apidebugger.BreakpointOptions{})
 }
 
 func (s *debugSessionSpy) SetBreakpointAt(
+	_ context.Context,
 	location apisource.Location,
 	options apidebugger.BreakpointOptions,
 ) (apidebugger.Breakpoint, error) {
@@ -56,27 +57,27 @@ func (s *debugSessionSpy) SetBreakpointAt(
 	}, nil
 }
 
-func (s *debugSessionSpy) DeleteBreakpoint(apidebugger.BreakpointID) error {
+func (s *debugSessionSpy) DeleteBreakpoint(context.Context, apidebugger.BreakpointID) error {
 	return nil
 }
 
-func (s *debugSessionSpy) Breakpoints() []apidebugger.Breakpoint {
-	return nil
-}
-
-func (s *debugSessionSpy) Frames() ([]apidebugger.Frame, error) {
+func (s *debugSessionSpy) Breakpoints(context.Context) ([]apidebugger.Breakpoint, error) {
 	return nil, nil
 }
 
-func (s *debugSessionSpy) Locals() ([]apidebugger.Variable, error) {
+func (s *debugSessionSpy) Frames(context.Context) ([]apidebugger.Frame, error) {
 	return nil, nil
 }
 
-func (s *debugSessionSpy) FrameLocals(int) ([]apidebugger.Variable, error) {
+func (s *debugSessionSpy) Locals(context.Context) ([]apidebugger.Variable, error) {
 	return nil, nil
 }
 
-func (s *debugSessionSpy) Variables(apidebugger.ValueReference) ([]apidebugger.Variable, error) {
+func (s *debugSessionSpy) FrameLocals(context.Context, int) ([]apidebugger.Variable, error) {
+	return nil, nil
+}
+
+func (s *debugSessionSpy) Variables(context.Context, apidebugger.ValueReference) ([]apidebugger.Variable, error) {
 	return nil, nil
 }
 
@@ -96,4 +97,8 @@ func (s *debugSessionSpy) Close() error {
 	})
 
 	return s.closeErr
+}
+
+func (s *debugSessionSpy) ReplaceBreakpoints(context.Context, string, []apidebugger.BreakpointRequest) ([]apidebugger.Breakpoint, error) {
+	return nil, nil
 }

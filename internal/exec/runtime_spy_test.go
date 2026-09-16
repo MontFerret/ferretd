@@ -19,11 +19,12 @@ type (
 		sessionClose        func() error
 		planClose           func() error
 		compileErr          error
+		paramsErr           error
 		compilePlan         api.Plan
 		compileSources      []api.Source
 		compileDebugSources []api.Source
 		parameters          []string
-		run                 func(context.Context, sessionOptionsSpy) (api.Output, error)
+		run                 func(context.Context, sessionOptionsSpy) (*api.Output, error)
 
 		compileCalls      atomic.Int64
 		compileDebugCalls atomic.Int64
@@ -70,17 +71,17 @@ func (r *runtimeSpy) Run(
 	ctx context.Context,
 	source api.Source,
 	options ...api.SessionOption,
-) (api.Output, error) {
+) (*api.Output, error) {
 	plan, err := r.Compile(ctx, source)
 	if err != nil {
-		return api.Output{}, err
+		return nil, err
 	}
 
 	defer func() { _ = plan.Close() }()
 
 	session, err := plan.NewSession(ctx, options...)
 	if err != nil {
-		return api.Output{}, err
+		return nil, err
 	}
 
 	defer func() { _ = session.Close() }()

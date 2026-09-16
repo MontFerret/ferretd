@@ -16,8 +16,8 @@ type runtimeOwnershipPlan struct {
 
 var _ api.Plan = (*runtimeOwnershipPlan)(nil)
 
-func (p *runtimeOwnershipPlan) Params() []string {
-	return nil
+func (p *runtimeOwnershipPlan) Params() ([]string, error) {
+	return nil, nil
 }
 
 func (p *runtimeOwnershipPlan) NewSession(

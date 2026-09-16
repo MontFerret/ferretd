@@ -1,4 +1,4 @@
-package ferretapi_test
+package integration_test
 
 import (
 	"context"
@@ -6,9 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2/uapi"
 	"github.com/MontFerret/ferretd/internal/exec"
-	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -22,12 +21,10 @@ type executionFixture struct {
 func mustNewManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
 	t.Helper()
 
-	engine, err := ferret.New()
+	runtime, err := uapi.New()
 	if err != nil {
-		t.Fatalf("ferret.New: %v", err)
+		t.Fatalf("uapi.New: %v", err)
 	}
-
-	runtime := ferretapi.New(engine)
 
 	manager, err := exec.New(workspaces, runtime)
 	if err != nil {

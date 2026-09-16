@@ -117,6 +117,7 @@ func newHookedManager(
 		SessionID("session"),
 		snapshot,
 		plan,
+		runtime.parameters,
 		query,
 		"/",
 		func(ctx context.Context) (api.Plan, error) {
@@ -216,14 +217,14 @@ func runAndObserve(t *testing.T, manager *Manager, id ExecutionID) (ExecutionSna
 	return terminal, events
 }
 
-func parameterOutput(_ context.Context, options sessionOptionsSpy) (api.Output, error) {
+func parameterOutput(_ context.Context, options sessionOptionsSpy) (*api.Output, error) {
 	content, err := json.Marshal(options.params["value"])
 
-	return api.Output{ContentType: options.contentType, Content: content}, err
+	return &api.Output{ContentType: options.contentType, Content: content}, err
 }
 
-func canceledOutput(ctx context.Context, _ sessionOptionsSpy) (api.Output, error) {
+func canceledOutput(ctx context.Context, _ sessionOptionsSpy) (*api.Output, error) {
 	<-ctx.Done()
 
-	return api.Output{}, ctx.Err()
+	return nil, ctx.Err()
 }

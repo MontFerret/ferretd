@@ -16,8 +16,8 @@ type runtimeLifecyclePlan struct {
 
 var _ api.Plan = (*runtimeLifecyclePlan)(nil)
 
-func (p *runtimeLifecyclePlan) Params() []string {
-	return nil
+func (p *runtimeLifecyclePlan) Params() ([]string, error) {
+	return nil, nil
 }
 
 func (p *runtimeLifecyclePlan) NewSession(

@@ -4,26 +4,26 @@ go 1.26.1
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/MontFerret/api v1.0.0-alpha.13
-	github.com/MontFerret/ferret/v2 v2.0.0-alpha.53
+	github.com/MontFerret/api v1.0.0-alpha.19
+	github.com/MontFerret/ferret/v2 v2.0.0-alpha.55
 	github.com/MontFerret/specs v1.12.0
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/go-dap v0.12.0
 	github.com/google/uuid v1.6.0
 	github.com/rs/zerolog v1.35.1
-	github.com/sourcegraph/jsonrpc2 v0.2.2
+	github.com/sourcegraph/jsonrpc2 v0.2.3
 	github.com/spf13/cobra v1.10.2
 	github.com/tliron/glsp v0.2.2
-	golang.org/x/mod v0.39.0
-	golang.org/x/sys v0.47.0
-	google.golang.org/grpc v1.83.0
+	golang.org/x/mod v0.41.0
+	golang.org/x/sys v0.48.0
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
-	github.com/gobwas/glob v0.2.3 // indirect
+	github.com/gobwas/glob v1.0.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -33,9 +33,9 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	github.com/ziflex/go-options v1.3.1 // indirect
-	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754 // indirect
+	github.com/ziflex/go-options v1.6.1 // indirect
+	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260911204522-f61a6ca850bd // indirect
 )
