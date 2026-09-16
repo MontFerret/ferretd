@@ -69,6 +69,14 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 				continue
 			}
 
+			// This test composition registers a channel-controlled host function to
+			// prove DAP mutation during native execution without sleeps or network
+			// fixtures. Adapter and domain operations still use the Universal API.
+			if relative == "internal/dap/live_breakpoint_fixture_test.go" &&
+				(name == native+"/v2" || name == native+"/v2/pkg/runtime") {
+				continue
+			}
+
 			if (directory == "internal/daemon" || directory == "internal/dap") &&
 				(testFile || filepath.Base(relative) == "composition.go") && name == native+"/v2/uapi" {
 				continue

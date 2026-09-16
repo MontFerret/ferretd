@@ -15,14 +15,19 @@ import (
 )
 
 func TestDAPReplacementOrdersResponseAndPreservesConcurrentHitIDs(t *testing.T) {
-	for _, oldHit := range []bool{false, true} {
-		name := "new hit"
-
-		if oldHit {
-			name = "already decided hit"
-		}
-
-		t.Run(name, func(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		oldHit bool
+		clear  bool
+		edits  bool
+	}{
+		{name: "new hit"},
+		{name: "already decided hit", oldHit: true},
+		{name: "already decided hit after clear", oldHit: true, clear: true},
+		{name: "already decided hit after several edits", oldHit: true, clear: true, edits: true},
+	} {
+		oldHit := test.oldHit
+		t.Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			t.Cleanup(cancel)
 
@@ -63,11 +68,17 @@ func TestDAPReplacementOrdersResponseAndPreservesConcurrentHitIDs(t *testing.T) 
 			initializeDAP(t, client)
 			launchDAP(t, client, program, root, true)
 			set := func(line int) {
+				var requested []protocol.SourceBreakpoint
+
+				if line != 0 {
+					requested = []protocol.SourceBreakpoint{{Line: line}}
+				}
+
 				client.send(&protocol.SetBreakpointsRequest{
 					Request: client.request("setBreakpoints"),
 					Arguments: protocol.SetBreakpointsArguments{
 						Source:      protocol.Source{Path: program},
-						Breakpoints: []protocol.SourceBreakpoint{{Line: line}},
+						Breakpoints: requested,
 					},
 				})
 			}
@@ -87,10 +98,15 @@ func TestDAPReplacementOrdersResponseAndPreservesConcurrentHitIDs(t *testing.T) 
 			}
 
 			t.Cleanup(subscription.Cancel)
+			finalReplacement := !test.edits
 			d.replaceFn = func(requestCtx context.Context, source string, requests []apidebugger.BreakpointRequest) ([]apidebugger.Breakpoint, error) {
 				bound, err := d.Session.ReplaceBreakpoints(requestCtx, source, requests)
 				if err != nil {
 					return nil, err
+				}
+
+				if !finalReplacement {
+					return bound, nil
 				}
 
 				close(gate)
@@ -121,17 +137,36 @@ func TestDAPReplacementOrdersResponseAndPreservesConcurrentHitIDs(t *testing.T) 
 				t.Fatal(ctx.Err())
 			}
 
-			set(3)
+			if test.edits {
+				for _, line := range []int{3, 2, 3} {
+					set(line)
+
+					if response, ok := client.read().(*protocol.SetBreakpointsResponse); !ok || !response.Success {
+						t.Fatalf("intermediate replacement = %#v", response)
+					}
+				}
+
+				finalReplacement = true
+			}
+
+			expectedCount := 1
+
+			if test.clear {
+				set(0)
+				expectedCount = 0
+			} else {
+				set(3)
+			}
 
 			replaced, ok := client.read().(*protocol.SetBreakpointsResponse)
-			if !ok || !replaced.Success || len(replaced.Body.Breakpoints) != 1 {
+			if !ok || !replaced.Success || len(replaced.Body.Breakpoints) != expectedCount {
 				t.Fatalf("replacement must precede stop: %#v", replaced)
 			}
 
-			wantID := replaced.Body.Breakpoints[0].Id
+			wantID := oldID
 
-			if oldHit {
-				wantID = oldID
+			if !oldHit {
+				wantID = replaced.Body.Breakpoints[0].Id
 			}
 
 			stopped, ok := client.read().(*protocol.StoppedEvent)
@@ -139,6 +174,14 @@ func TestDAPReplacementOrdersResponseAndPreservesConcurrentHitIDs(t *testing.T) 
 				t.Fatalf("concurrent stop = %#v, want ID %d", stopped, wantID)
 			}
 
+			client.server.eventMu.Lock()
+
+			ids := client.server.breakpoints
+			if len(ids.active) != expectedCount || len(ids.retired) != 0 || ids.pending != 0 {
+				t.Errorf("unsettled breakpoint identities: %+v", ids)
+			}
+
+			client.server.eventMu.Unlock()
 			client.disconnect()
 		})
 	}

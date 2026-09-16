@@ -31,6 +31,7 @@ type (
 		variables   map[apidebugger.ValueReference][]apidebugger.Variable
 		values      map[int]map[string]apidebugger.Value
 
+		framesFn   func(context.Context) ([]apidebugger.Frame, error)
 		startFn    func(context.Context) (*apidebugger.Event, error)
 		continueFn func(context.Context) (*apidebugger.Event, error)
 		stepInFn   func(context.Context) (*apidebugger.Event, error)
@@ -190,6 +191,10 @@ func (s *debuggerSessionSpy) Breakpoints(ctx context.Context) ([]apidebugger.Bre
 
 func (s *debuggerSessionSpy) Frames(ctx context.Context) ([]apidebugger.Frame, error) {
 	s.record(debuggerCommand{ctx: ctx, name: "frames"})
+
+	if s.framesFn != nil {
+		return s.framesFn(ctx)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

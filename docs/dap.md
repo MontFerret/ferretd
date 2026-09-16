@@ -88,8 +88,10 @@ terminate, and disconnect. Breakpoints replace all prior breakpoints for the
 launched source atomically and bind to Ferret's next executable location in that
 file. Replacement is supported before execution, while paused, and while running;
 an empty set clears the source's breakpoints. A failed replacement leaves the
-previous set intact. Updating breakpoints does not pause or resume execution,
-and a stop already decided against the previous set remains inspectable.
+previous set intact. Updates apply immediately without pausing or resuming
+execution. A stop already decided against the previous set remains inspectable
+and reports the original DAP breakpoint IDs, even if those breakpoints have since
+been removed.
 Relative breakpoint paths are resolved against launch `cwd`; clean, symlinked,
 and platform-equivalent paths for the launched file share one source identity.
 
