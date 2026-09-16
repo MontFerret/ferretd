@@ -621,10 +621,10 @@ func TestDAPSetBreakpointsReturnsUnverifiedForUnownedSource(t *testing.T) {
 		}
 	}
 
-	client.server.breakpointMu.Lock()
-	stableCount := len(client.server.stableBreakpoints)
-	debuggerCount := len(client.server.debuggerBreakpoints)
-	client.server.breakpointMu.Unlock()
+	client.server.eventMu.Lock()
+	stableCount := len(client.server.breakpoints.stable)
+	debuggerCount := len(client.server.breakpoints.active)
+	client.server.eventMu.Unlock()
 
 	if stableCount != 0 || debuggerCount != 0 {
 		t.Fatalf(

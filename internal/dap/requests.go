@@ -261,6 +261,7 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 		return errors.Join(result, s.cleanup())
 	}
 
+	s.breakpoints.commandStarted()
 	s.invalidateHandles("configurationDone")
 	s.stateMu.Lock()
 	s.configured = true
@@ -341,7 +342,7 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 		)
 	}
 
-	locations := make([]apisource.Position, 0, len(request.Arguments.Breakpoints))
+	requests := make([]apidebugger.BreakpointRequest, 0, len(request.Arguments.Breakpoints))
 	for _, breakpoint := range request.Arguments.Breakpoints {
 		if breakpoint.Condition != "" || breakpoint.HitCondition != "" || breakpoint.LogMessage != "" {
 			return s.sendFailure(
@@ -369,31 +370,36 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *protocol.Set
 			)
 		}
 
-		locations = append(locations, apisource.Position{Line: line, Column: column})
-	}
-
-	// Publish ID mappings and the response before any stop from this replacement.
-	s.eventMu.Lock()
-	defer s.eventMu.Unlock()
-
-	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, s.owned.program, locations)
-	if err != nil {
-		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
-			event.Str("source", path).Int("count", len(locations))
+		requests = append(requests, apidebugger.BreakpointRequest{
+			Position: apisource.Position{Line: line, Column: column},
+			Options:  apidebugger.BreakpointOptions{BindingMode: apidebugger.BreakpointBindNextExecutableInSource},
 		})
 	}
 
 	clientPath, err := s.clientPath(identity.path)
 	if err != nil {
 		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
-			event.Str("source", path).Int("count", len(locations))
+			event.Str("source", path).Int("count", len(requests))
 		})
 	}
+
+	// Publish ID mappings and the response before any stop from this replacement.
+	s.eventMu.Lock()
+	defer s.eventMu.Unlock()
+
+	breakpoints, err := s.debugs.ReplaceBreakpoints(ctx, debugID, s.owned.program, requests)
+	if err != nil {
+		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
+			event.Str("source", path).Int("count", len(requests))
+		})
+	}
+
+	s.breakpoints.replace(s.owned.program, requests, breakpoints)
 
 	result := make([]protocol.Breakpoint, len(breakpoints))
 
 	for index, breakpoint := range breakpoints {
-		stableID := s.bindBreakpointID(s.owned.program, locations[index], breakpoint.ID)
+		stableID := s.breakpoints.id(breakpoint.ID)
 		result[index] = protocol.Breakpoint{
 			Id:       stableID,
 			Verified: breakpoint.Bound,
@@ -453,35 +459,6 @@ func (s *Server) sendUnverifiedBreakpoints(
 	}, func(event *zerolog.Event) {
 		event.Int("count", len(result))
 	})
-}
-
-func (s *Server) bindBreakpointID(
-	sourceName string,
-	requested apisource.Position,
-	debuggerID apidebugger.BreakpointID,
-) int {
-	s.breakpointMu.Lock()
-	defer s.breakpointMu.Unlock()
-
-	key := breakpointKey{sourceName: sourceName, position: requested}
-
-	stableID := s.stableBreakpoints[key]
-	if stableID == 0 {
-		stableID = s.nextBreakpointID
-		s.nextBreakpointID++
-		s.stableBreakpoints[key] = stableID
-	}
-
-	s.debuggerBreakpoints[debuggerID] = stableID
-
-	return stableID
-}
-
-func (s *Server) dapBreakpointID(debuggerID apidebugger.BreakpointID) int {
-	s.breakpointMu.Lock()
-	defer s.breakpointMu.Unlock()
-
-	return s.debuggerBreakpoints[debuggerID]
 }
 
 func (s *Server) handleContinue(ctx context.Context, request *protocol.ContinueRequest) error {
@@ -584,6 +561,7 @@ func (s *Server) handleResume(
 		return s.sendFailure(request, err, threadFields)
 	}
 
+	s.breakpoints.commandStarted()
 	s.invalidateHandles(request.Command)
 
 	return s.sendResponse(request, func(base protocol.ProtocolMessage) protocol.Message {

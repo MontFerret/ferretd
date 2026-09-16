@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	apidebugger "github.com/MontFerret/api/debugger"
-	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
 )
 
@@ -162,19 +161,20 @@ func (m *Manager) StepOutSession(ctx context.Context, id SessionID) (SessionSnap
 }
 
 // ReplaceBreakpoints atomically replaces one source's breakpoints before execution,
-// while stopped, or while running. Empty locations clear the source's set.
+// while stopped, or while running. Empty requests clear the source's set.
+// Request ordering and binding options are preserved for the underlying debugger.
 func (m *Manager) ReplaceBreakpoints(
 	ctx context.Context,
 	id SessionID,
 	sourceName string,
-	locations []apisource.Position,
+	requests []apidebugger.BreakpointRequest,
 ) ([]apidebugger.Breakpoint, error) {
 	session, err := m.session(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	return session.replaceBreakpoints(ctx, sourceName, locations)
+	return session.replaceBreakpoints(ctx, sourceName, requests)
 }
 
 // Frames returns the current-to-caller paused frame stack.

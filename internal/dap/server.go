@@ -13,8 +13,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/MontFerret/api"
-	apidebugger "github.com/MontFerret/api/debugger"
-	apisource "github.com/MontFerret/api/source"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
@@ -36,31 +34,26 @@ type (
 		// stateMu protects owned resources, client options, the watch, pending launch,
 		// and request/event lifecycle flags.
 		stateMu sync.Mutex
-		// breakpointMu protects stable and debugger breakpoint identity state.
-		breakpointMu sync.Mutex
 
-		workspaces        *workspace.Manager
-		executions        *exec.Manager
-		debugs            *debug.Manager
-		runtime           api.Runtime
-		logger            zerolog.Logger
-		handles           *handleTable
-		owned             ownedSession
-		client            clientOptions
-		watch             debug.Subscription
-		pendingLaunch     *protocol.Request
-		sequence          int
-		initialized       bool
-		launched          bool
-		configured        bool
-		disconnected      bool
-		suppressEntry     bool
-		nextBreakpointID  int
-		stableBreakpoints map[breakpointKey]int
-		// Keep retired IDs for queued stops decided before a replacement.
-		debuggerBreakpoints map[apidebugger.BreakpointID]int
-		cleanupOnce         sync.Once
-		cleanupErr          error
+		workspaces    *workspace.Manager
+		executions    *exec.Manager
+		debugs        *debug.Manager
+		runtime       api.Runtime
+		logger        zerolog.Logger
+		handles       *handleTable
+		owned         ownedSession
+		client        clientOptions
+		watch         debug.Subscription
+		pendingLaunch *protocol.Request
+		sequence      int
+		initialized   bool
+		launched      bool
+		configured    bool
+		disconnected  bool
+		suppressEntry bool
+		breakpoints   *breakpointIDs
+		cleanupOnce   sync.Once
+		cleanupErr    error
 	}
 
 	ownedSession struct {
@@ -71,11 +64,6 @@ type (
 		program         string
 		programIdentity sourceIdentity
 		stopOnEntry     bool
-	}
-
-	breakpointKey struct {
-		sourceName string
-		position   apisource.Position
 	}
 )
 

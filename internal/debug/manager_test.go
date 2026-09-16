@@ -234,7 +234,7 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 		context.Background(),
 		created.ID,
 		program,
-		[]apisource.Position{{Line: 2, Column: 3}},
+		[]apidebugger.BreakpointRequest{{Position: apisource.Position{Line: 2, Column: 3}, Options: apidebugger.BreakpointOptions{BindingMode: apidebugger.BreakpointBindNextExecutableInSource}}},
 	)
 	if err != nil {
 		t.Fatalf("ReplaceBreakpoints first: %v", err)
@@ -248,7 +248,7 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 		context.Background(),
 		created.ID,
 		program,
-		[]apisource.Position{{Line: 3, Column: 4}},
+		[]apidebugger.BreakpointRequest{{Position: apisource.Position{Line: 3, Column: 4}, Options: apidebugger.BreakpointOptions{BindingMode: apidebugger.BreakpointBindNextExecutableInSource}}},
 	)
 	if err != nil {
 		t.Fatalf("ReplaceBreakpoints second: %v", err)

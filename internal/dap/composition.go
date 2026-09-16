@@ -8,7 +8,6 @@ import (
 	"io"
 
 	"github.com/MontFerret/api"
-	apidebugger "github.com/MontFerret/api/debugger"
 	"github.com/MontFerret/ferret/v2/uapi"
 
 	"github.com/MontFerret/ferretd/internal/debug"
@@ -59,18 +58,16 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 	readerClose, _ := input.(io.Closer)
 
 	return &Server{
-		reader:              bufio.NewReader(input),
-		readerClose:         readerClose,
-		writer:              output,
-		workspaces:          workspaces,
-		executions:          executions,
-		debugs:              debugs,
-		runtime:             runtime,
-		logger:              options.Logger.With().Str("component", "dap").Logger(),
-		handles:             newHandleTable(),
-		nextBreakpointID:    1,
-		stableBreakpoints:   make(map[breakpointKey]int),
-		debuggerBreakpoints: make(map[apidebugger.BreakpointID]int),
+		reader:      bufio.NewReader(input),
+		readerClose: readerClose,
+		writer:      output,
+		workspaces:  workspaces,
+		executions:  executions,
+		debugs:      debugs,
+		runtime:     runtime,
+		logger:      options.Logger.With().Str("component", "dap").Logger(),
+		handles:     newHandleTable(),
+		breakpoints: newBreakpointIDs(),
 		client: clientOptions{
 			pathFormat:      pathFormatPath,
 			linesStartAt1:   true,

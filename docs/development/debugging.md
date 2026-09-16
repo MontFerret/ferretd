@@ -66,7 +66,10 @@ inspection calls receive the request context; asynchronous execution commands
 retain their manager-owned lifetime context.
 
 Breakpoint replacement delegates one complete source set to Universal
-`ReplaceBreakpoints`, including while running. Ferret owns atomic publication,
+`ReplaceBreakpoints` before execution, while stopped, and while running. DAP
+constructs the ordered requests with next-executable-in-source binding; the debug
+manager forwards their positions and options unchanged. Updates apply immediately
+without automatically pausing execution. Ferret owns atomic publication,
 unchanged IDs, unresolved bindings, and cancellation before publication. The
 debug manager retains no duplicate breakpoint set and rejects replacement once
 termination or close begins. A published success is not revoked by a later
@@ -114,11 +117,16 @@ remain errors.
 
 The adapter retains one canonical filesystem identity for the launched source
 alongside its user-facing path. Replacement, DAP ID publication, and response
-emission share the adapter's event-ordering lock. Native-to-DAP ID mappings remain
-available for the adapter session so a stop already decided against a replaced
-set still reports its original hit IDs. Breakpoint paths are resolved against the
-launch root and compared by canonical path or operating-system file identity, while
-debugger calls continue using the launched spelling. VS Code configures stored
+emission remain ordered with debugger events. Requests are dispatched sequentially,
+so the final successful replacement determines the active set. Stable DAP IDs use
+the requested source and position, independently of resolved locations. Removed
+native-to-DAP mappings remain available until all outstanding execution commands
+have had their stop events processed, preserving already-decided hits. They are
+then discarded; terminal events and watch completion release remaining native
+mappings. Requested-location identities last for the adapter session so removing
+and re-adding a breakpoint preserves its DAP identity. Breakpoint paths are resolved
+against the launch root and compared by canonical path or operating-system file
+identity, while debugger calls continue using the launched spelling. VS Code configures stored
 breakpoints from other workspace files during startup; the adapter reports those
 and unavailable local sources as unverified without transferring ownership or
 mutating debugger state.
@@ -179,7 +187,10 @@ transitions, event ordering, watcher lag, paused-state inspection, terminal
 retention, parent cleanup, and concurrent close. DAP tests own initialization
 defaults, launch sequencing, coordinate conversion, breakpoints,
 request/response/event ordering, handle invalidation, output and termination
-behavior, framing, and cleanup.
+behavior, framing, and cleanup. The DAP live-breakpoint test composition fixture
+registers one channel-controlled native host function to gate actual execution;
+all adapter operations still use the Universal API. Native imports for this
+fixture are confined to runtime construction and host-function registration.
 
 Concurrency tests should use deterministic debugger hooks or events rather than
 sleeps. Performance-sensitive changes should examine debug Session creation,

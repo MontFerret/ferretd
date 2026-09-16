@@ -32,6 +32,12 @@ const (
 )
 
 func (s *Server) watchDebugSession(subscription debug.Subscription) {
+	defer func() {
+		s.eventMu.Lock()
+		s.breakpoints.finish()
+		s.eventMu.Unlock()
+	}()
+
 	for event := range subscription.Events {
 		s.eventMu.Lock()
 		s.handleDebugEvent(event)
@@ -75,6 +81,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 		s.stateMu.Unlock()
 
 		if suppress {
+			s.breakpoints.commandStopped()
 			s.logger.Info().
 				Str("reason", stopReasonEntry).
 				Int("thread_id", threadID).
@@ -92,6 +99,8 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 				if sendErr := s.sendTerminated(); sendErr != nil {
 					s.logger.Error().Err(sendErr).Msg("send DAP terminated event failed")
 				}
+			} else {
+				s.breakpoints.commandStarted()
 			}
 
 			return
@@ -100,7 +109,10 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 		if err := s.sendStopped(snapshot); err != nil {
 			s.logger.Error().Err(err).Msg("send DAP stopped event failed")
 		}
+
+		s.breakpoints.commandStopped()
 	case debug.StateCompleted:
+		defer s.breakpoints.finish()
 		s.invalidateHandles("completed")
 		s.logger.Info().Msg("DAP execution completed")
 
@@ -118,6 +130,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 			s.logger.Error().Err(err).Msg("send DAP terminated event failed")
 		}
 	case debug.StateFailed:
+		defer s.breakpoints.finish()
 		s.invalidateHandles("failed")
 
 		if snapshot.Output != nil && len(snapshot.Output.Content) > 0 {
@@ -146,6 +159,7 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 			s.logger.Error().Err(err).Msg("send DAP terminated event failed")
 		}
 	case debug.StateTerminated:
+		defer s.breakpoints.finish()
 		s.invalidateHandles("terminated")
 
 		s.logger.Info().Msg("DAP execution terminated")
@@ -178,7 +192,7 @@ func (s *Server) sendStopped(snapshot debug.SessionSnapshot) error {
 
 	hitIDs := make([]int, len(snapshot.HitBreakpointIDs))
 	for index, id := range snapshot.HitBreakpointIDs {
-		hitIDs[index] = s.dapBreakpointID(id)
+		hitIDs[index] = s.breakpoints.id(id)
 	}
 
 	s.logger.Info().
