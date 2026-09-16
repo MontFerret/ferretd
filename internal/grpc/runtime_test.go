@@ -15,10 +15,10 @@ type unusedRuntime struct {
 
 var _ api.Runtime = (*unusedRuntime)(nil)
 
-func (r *unusedRuntime) Run(context.Context, api.Source, ...api.SessionOption) (api.Output, error) {
+func (r *unusedRuntime) Run(context.Context, api.Source, ...api.SessionOption) (*api.Output, error) {
 	r.t.Fatal("unexpected runtime Run")
 
-	return api.Output{}, nil
+	return nil, nil
 }
 
 func (r *unusedRuntime) Compile(context.Context, api.Source, ...api.PlanOption) (api.Plan, error) {

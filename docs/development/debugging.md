@@ -35,7 +35,7 @@ not expose mutable Session maps, locks, or child state.
 
 `internal/debug` requires an execution manager and registers its Session-child
 cleanup hook during construction. Each DebugSession owns one `exec.DebugRuntime`
-plus breakpoints, authoritative debugger lifecycle state, asynchronous command
+plus authoritative debugger lifecycle state, asynchronous command
 coordination, event watchers, paused-state inspection, and terminal debugger
 data. Breakpoints, frames, variables, values, references, stop reasons, and
 source locations use `github.com/MontFerret/api/debugger` and `api/source`
@@ -57,11 +57,20 @@ stack semantics, values, and runtime behavior. Daemon lifecycle snapshots retain
 canonical Universal debugger reasons, locations, and breakpoint identities while
 adding daemon state, output/failure materialization, parameters, and options.
 Locals and Parameters remain presentation scopes derived from the canonical
-variable `Param` flag. The provisional `internal/ferretapi` adapter is the only
-bridge to native Ferret. The debugger uses API-owned portable types directly;
-bytecode table identities stay native and are converted when constructing frames
-and breakpoints. The adapter projects native diagnostics using each diagnostic's
-source and preserves causes through standard Go error traversal.
+variable `Param` flag. Ferret's upstream `uapi` adapter bridges to native Ferret.
+The debugger uses API-owned portable types directly; bytecode table identities
+stay native and are converted when constructing frames and breakpoints. The
+upstream adapter projects native diagnostics using each diagnostic's source and
+preserves causes through standard Go error traversal. Pause and
+inspection calls receive the request context; asynchronous execution commands
+retain their manager-owned lifetime context.
+
+Breakpoint replacement delegates one complete source set to Universal
+`ReplaceBreakpoints`, including while running. Ferret owns atomic publication,
+unchanged IDs, unresolved bindings, and cancellation before publication. The
+debug manager retains no duplicate breakpoint set and rejects replacement once
+termination or close begins. A published success is not revoked by a later
+cancellation or terminal transition.
 
 Debug watches publish current and future ordered events through bounded buffers.
 Lagging subscribers disconnect without blocking the session. Commands that run
@@ -76,9 +85,9 @@ releasing normal or debug Plans.
 ## DAP composition
 
 The `dap` command runs one protocol-pure server over stdin and stdout. It does
-not connect to `ferretd serve`. DAP composition constructs one native Ferret
-engine, wraps it with `internal/ferretapi`, and owns that Universal runtime plus
-in-process workspace, execution, and debug managers. It also owns one launched
+not connect to `ferretd serve`. DAP composition constructs an owning Universal
+runtime with Ferret's `uapi.New()` plus in-process workspace, execution, and debug
+managers. It also owns one launched
 workspace, execution Session, and DebugSession.
 
 Launch follows the DAP initialization and configuration sequence. The launch
@@ -104,8 +113,11 @@ watch evaluation does the same, while active or unfamiliar evaluation contexts
 remain errors.
 
 The adapter retains one canonical filesystem identity for the launched source
-alongside its user-facing path. Breakpoint paths are resolved against the launch
-root and compared by canonical path or operating-system file identity, while
+alongside its user-facing path. Replacement, DAP ID publication, and response
+emission share the adapter's event-ordering lock. Native-to-DAP ID mappings remain
+available for the adapter session so a stop already decided against a replaced
+set still reports its original hit IDs. Breakpoint paths are resolved against the
+launch root and compared by canonical path or operating-system file identity, while
 debugger calls continue using the launched spelling. VS Code configures stored
 breakpoints from other workspace files during startup; the adapter reports those
 and unavailable local sources as unverified without transferring ownership or
@@ -133,8 +145,10 @@ returned at both layers.
 
 Runtime errors stop as inspectable DAP exceptions. Continuing from that stop
 reports error output and terminal events. Successful completion reports encoded
-result output and successful exit. Explicit termination ends the session without
-inventing a normal process exit.
+result output and successful exit. If a command returns completion output together
+with an error, the debug Session retains both and DAP emits the available result
+before the failure output and unsuccessful exit. Explicit termination ends the
+session without inventing a normal process exit.
 
 Adapter cleanup cancels the active watch, terminates and closes the DebugSession,
 closes its execution Session, closes the workspace, closes each manager, and
@@ -158,9 +172,9 @@ public debug client. DAP work must not create those surfaces as a side effect.
 
 Execution-runtime tests own lazy debug Plan behavior, lease lifetime, shared
 parameter/options semantics, setup rollback, cancellation, output/failure
-conversion, and Universal-session cleanup. `internal/ferretapi` tests own native
-translation and diagnostic identity. Debug-manager tests use Universal debugger
-Session fakes and own commands, state
+conversion, and Universal-session cleanup. Dependency integration tests exercise
+the upstream adapter, live breakpoint publication, and diagnostic identity.
+Debug-manager tests use Universal debugger Session fakes and own commands, state
 transitions, event ordering, watcher lag, paused-state inspection, terminal
 retention, parent cleanup, and concurrent close. DAP tests own initialization
 defaults, launch sequencing, coordinate conversion, breakpoints,

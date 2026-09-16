@@ -201,13 +201,16 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 	program := filepath.Join(fixture.workspace.Root(), "query.fql")
 	var breakpointSequence atomic.Int64
 	breakpointSequence.Store(40)
-	debuggerSession.setFn = func(
-		location apisource.Location,
-		options apidebugger.BreakpointOptions,
-	) (apidebugger.Breakpoint, error) {
+	debuggerSession.replaceFn = func(_ context.Context, sourceName string, requests []apidebugger.BreakpointRequest) ([]apidebugger.Breakpoint, error) {
+		if len(requests) != 1 {
+			t.Fatalf("requests = %+v", requests)
+		}
+
+		location := apisource.Location{SourceName: sourceName, Position: requests[0].Position}
+		options := requests[0].Options
 		id := apidebugger.BreakpointID(breakpointSequence.Add(1))
 
-		return apidebugger.Breakpoint{
+		return []apidebugger.Breakpoint{{
 			Location: apisource.Range{
 				Location: apisource.Location{
 					SourceName: location.SourceName,
@@ -224,7 +227,7 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 			FunctionID:        apidebugger.FunctionID(id + 200),
 			BindingMode:       options.BindingMode,
 			Bound:             true,
-		}, nil
+		}}, nil
 	}
 
 	firstBreakpoints, err := fixture.manager.ReplaceBreakpoints(
@@ -324,7 +327,7 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 	debuggerSession.stepOutFn = func(context.Context) (*apidebugger.Event, error) {
 		return debuggerEvent(apidebugger.ReasonStep, program, 7), nil
 	}
-	debuggerSession.pauseFn = func() error {
+	debuggerSession.pauseFn = func(context.Context) error {
 		pauseOnce.Do(func() { close(pauseRequested) })
 
 		return nil
@@ -445,97 +448,8 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 
 	commands := debuggerSession.recordedCommands()
 	if !debuggerCommandsInclude(commands, "start", "continue", "pause", "step in", "step over", "step out",
-		"set breakpoint", "delete breakpoint", "frames", "frame locals", "variables", "evaluate frame") {
+		"replace breakpoints", "frames", "frame locals", "variables", "evaluate frame") {
 		t.Fatalf("debugger commands = %+v", commands)
-	}
-}
-
-func TestReplaceBreakpointsRetainsCanonicalPartialReplacement(t *testing.T) {
-	fixture := newDebugFixture(t, "RETURN 1")
-
-	created, err := fixture.manager.CreateSession(
-		context.Background(),
-		fixture.session.ID,
-		nil,
-		exec.RuntimeOptions{},
-	)
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-
-	debuggerSession := fixture.runtime.latestDebugger()
-	if debuggerSession == nil {
-		t.Fatal("debugger session was not created")
-	}
-
-	program := filepath.Join(fixture.workspace.Root(), "query.fql")
-	wantErr := errors.New("bind breakpoint")
-	debuggerSession.setFn = func(
-		location apisource.Location,
-		options apidebugger.BreakpointOptions,
-	) (apidebugger.Breakpoint, error) {
-		if location.Line == 4 {
-			return apidebugger.Breakpoint{}, wantErr
-		}
-
-		return apidebugger.Breakpoint{
-			ID:                apidebugger.BreakpointID(location.Line),
-			RequestedLocation: location,
-			Location:          apisource.Range{Location: location},
-			BindingMode:       options.BindingMode,
-			Bound:             true,
-		}, nil
-	}
-
-	if _, err := fixture.manager.ReplaceBreakpoints(
-		context.Background(),
-		created.ID,
-		program,
-		[]apisource.Position{{Line: 2}},
-	); err != nil {
-		t.Fatalf("initial ReplaceBreakpoints: %v", err)
-	}
-
-	_, err = fixture.manager.ReplaceBreakpoints(
-		context.Background(),
-		created.ID,
-		program,
-		[]apisource.Position{{Line: 3}, {Line: 4}},
-	)
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("partial ReplaceBreakpoints error = %v, want %v", err, wantErr)
-	}
-
-	fixture.manager.mu.RLock()
-	session := fixture.manager.sessions[created.ID]
-	fixture.manager.mu.RUnlock()
-	session.mu.Lock()
-	retained := append([]apidebugger.Breakpoint(nil), session.breakpoints[program]...)
-	session.mu.Unlock()
-
-	if len(retained) != 1 || retained[0].ID != 3 || retained[0].RequestedLocation.SourceName != program {
-		t.Fatalf("retained partial breakpoints = %+v", retained)
-	}
-
-	if _, err := fixture.manager.ReplaceBreakpoints(
-		context.Background(),
-		created.ID,
-		program,
-		nil,
-	); err != nil {
-		t.Fatalf("clear partial breakpoints: %v", err)
-	}
-
-	commands := debuggerSession.recordedCommands()
-	deleted := make([]apidebugger.BreakpointID, 0, 2)
-	for _, command := range commands {
-		if command.name == "delete breakpoint" {
-			deleted = append(deleted, command.breakpoint)
-		}
-	}
-
-	if len(deleted) != 2 || deleted[0] != 2 || deleted[1] != 3 {
-		t.Fatalf("deleted breakpoint IDs = %v, want [2 3]", deleted)
 	}
 }
 

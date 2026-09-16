@@ -8,10 +8,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/MontFerret/api"
-	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2/uapi"
 
 	"github.com/MontFerret/ferretd/internal/exec"
-	"github.com/MontFerret/ferretd/internal/ferretapi"
 	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -23,12 +22,10 @@ func New(options Options) (*Daemon, error) {
 		return nil, err
 	}
 
-	engine, err := ferret.New()
+	runtime, err := uapi.New()
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
-
-	runtime := ferretapi.New(engine)
 
 	return newDaemon(options, runtime)
 }

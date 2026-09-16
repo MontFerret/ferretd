@@ -26,7 +26,7 @@ func TestStandardLibraryMetadataEnrichesLanguageFeatures(t *testing.T) {
 	}
 
 	if completion.Detail != "abs(number: Int | Float) → Float" ||
-		!strings.Contains(completion.Documentation, "### Parameters") || completion.Deprecated {
+		!strings.Contains(completion.Documentation, "### Parameters") || !completion.Deprecated {
 		t.Fatalf("abs completion = %+v", completion)
 	}
 

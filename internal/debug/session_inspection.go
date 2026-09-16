@@ -19,7 +19,7 @@ func (d *session) frames(ctx context.Context) ([]apidebugger.Frame, error) {
 		return nil, err
 	}
 
-	return d.runtime.Debugger().Frames()
+	return d.runtime.Debugger().Frames(ctx)
 }
 
 // scopes returns Locals and Parameters for one paused frame.
@@ -35,7 +35,7 @@ func (d *session) scopes(ctx context.Context, frame int) ([]Scope, error) {
 		return nil, err
 	}
 
-	variables, err := d.runtime.Debugger().FrameLocals(frame)
+	variables, err := d.runtime.Debugger().FrameLocals(ctx, frame)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (d *session) variables(
 		return nil, err
 	}
 
-	return d.runtime.Debugger().Variables(reference)
+	return d.runtime.Debugger().Variables(ctx, reference)
 }
 
 // evaluate evaluates a side-effect-free expression in one paused frame.

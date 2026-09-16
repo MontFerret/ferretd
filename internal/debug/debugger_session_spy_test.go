@@ -12,6 +12,7 @@ import (
 type (
 	debuggerCommand struct {
 		name       string
+		ctx        context.Context
 		location   apisource.Location
 		options    apidebugger.BreakpointOptions
 		breakpoint apidebugger.BreakpointID
@@ -35,7 +36,8 @@ type (
 		stepInFn   func(context.Context) (*apidebugger.Event, error)
 		stepOverFn func(context.Context) (*apidebugger.Event, error)
 		stepOutFn  func(context.Context) (*apidebugger.Event, error)
-		pauseFn    func() error
+		pauseFn    func(context.Context) error
+		replaceFn  func(context.Context, string, []apidebugger.BreakpointRequest) ([]apidebugger.Breakpoint, error)
 		setFn      func(apisource.Location, apidebugger.BreakpointOptions) (apidebugger.Breakpoint, error)
 		closeFn    func() error
 
@@ -107,27 +109,29 @@ func (s *debuggerSessionSpy) StepOut(ctx context.Context) (*apidebugger.Event, e
 	return &apidebugger.Event{Reason: apidebugger.ReasonStep}, nil
 }
 
-func (s *debuggerSessionSpy) Pause() error {
-	s.record(debuggerCommand{name: "pause"})
+func (s *debuggerSessionSpy) Pause(ctx context.Context) error {
+	s.record(debuggerCommand{ctx: ctx, name: "pause"})
 
 	if s.pauseFn != nil {
-		return s.pauseFn()
+		return s.pauseFn(ctx)
 	}
 
 	return nil
 }
 
 func (s *debuggerSessionSpy) SetBreakpoint(
+	ctx context.Context,
 	location apisource.Location,
 ) (apidebugger.Breakpoint, error) {
-	return s.SetBreakpointAt(location, apidebugger.BreakpointOptions{})
+	return s.SetBreakpointAt(ctx, location, apidebugger.BreakpointOptions{})
 }
 
 func (s *debuggerSessionSpy) SetBreakpointAt(
+	ctx context.Context,
 	location apisource.Location,
 	options apidebugger.BreakpointOptions,
 ) (apidebugger.Breakpoint, error) {
-	s.record(debuggerCommand{name: "set breakpoint", location: location, options: options})
+	s.record(debuggerCommand{ctx: ctx, name: "set breakpoint", location: location, options: options})
 
 	if s.setFn != nil {
 		breakpoint, err := s.setFn(location, options)
@@ -158,8 +162,8 @@ func (s *debuggerSessionSpy) SetBreakpointAt(
 	return breakpoint, nil
 }
 
-func (s *debuggerSessionSpy) DeleteBreakpoint(id apidebugger.BreakpointID) error {
-	s.record(debuggerCommand{name: "delete breakpoint", breakpoint: id})
+func (s *debuggerSessionSpy) DeleteBreakpoint(ctx context.Context, id apidebugger.BreakpointID) error {
+	s.record(debuggerCommand{ctx: ctx, name: "delete breakpoint", breakpoint: id})
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -175,17 +179,17 @@ func (s *debuggerSessionSpy) DeleteBreakpoint(id apidebugger.BreakpointID) error
 	return nil
 }
 
-func (s *debuggerSessionSpy) Breakpoints() []apidebugger.Breakpoint {
-	s.record(debuggerCommand{name: "breakpoints"})
+func (s *debuggerSessionSpy) Breakpoints(ctx context.Context) ([]apidebugger.Breakpoint, error) {
+	s.record(debuggerCommand{ctx: ctx, name: "breakpoints"})
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return append([]apidebugger.Breakpoint(nil), s.breakpoints...)
+	return append([]apidebugger.Breakpoint(nil), s.breakpoints...), nil
 }
 
-func (s *debuggerSessionSpy) Frames() ([]apidebugger.Frame, error) {
-	s.record(debuggerCommand{name: "frames"})
+func (s *debuggerSessionSpy) Frames(ctx context.Context) ([]apidebugger.Frame, error) {
+	s.record(debuggerCommand{ctx: ctx, name: "frames"})
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -193,8 +197,8 @@ func (s *debuggerSessionSpy) Frames() ([]apidebugger.Frame, error) {
 	return append([]apidebugger.Frame(nil), s.frames...), nil
 }
 
-func (s *debuggerSessionSpy) Locals() ([]apidebugger.Variable, error) {
-	s.record(debuggerCommand{name: "locals"})
+func (s *debuggerSessionSpy) Locals(ctx context.Context) ([]apidebugger.Variable, error) {
+	s.record(debuggerCommand{ctx: ctx, name: "locals"})
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -202,8 +206,8 @@ func (s *debuggerSessionSpy) Locals() ([]apidebugger.Variable, error) {
 	return append([]apidebugger.Variable(nil), s.locals[0]...), nil
 }
 
-func (s *debuggerSessionSpy) FrameLocals(frame int) ([]apidebugger.Variable, error) {
-	s.record(debuggerCommand{name: "frame locals", frame: frame})
+func (s *debuggerSessionSpy) FrameLocals(ctx context.Context, frame int) ([]apidebugger.Variable, error) {
+	s.record(debuggerCommand{ctx: ctx, name: "frame locals", frame: frame})
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -212,9 +216,10 @@ func (s *debuggerSessionSpy) FrameLocals(frame int) ([]apidebugger.Variable, err
 }
 
 func (s *debuggerSessionSpy) Variables(
+	ctx context.Context,
 	reference apidebugger.ValueReference,
 ) ([]apidebugger.Variable, error) {
-	s.record(debuggerCommand{name: "variables", reference: reference})
+	s.record(debuggerCommand{ctx: ctx, name: "variables", reference: reference})
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -234,7 +239,7 @@ func (s *debuggerSessionSpy) EvaluateFrame(
 	frame int,
 	expression string,
 ) (apidebugger.Value, error) {
-	s.record(debuggerCommand{name: "evaluate frame", frame: frame, expression: expression})
+	s.record(debuggerCommand{ctx: ctx, name: "evaluate frame", frame: frame, expression: expression})
 
 	if err := ctx.Err(); err != nil {
 		return apidebugger.Value{}, err
@@ -269,4 +274,24 @@ func (s *debuggerSessionSpy) recordedCommands() []debuggerCommand {
 	defer s.mu.Unlock()
 
 	return append([]debuggerCommand(nil), s.commands...)
+}
+
+func (s *debuggerSessionSpy) ReplaceBreakpoints(ctx context.Context, sourceName string, requests []apidebugger.BreakpointRequest) ([]apidebugger.Breakpoint, error) {
+	s.record(debuggerCommand{name: "replace breakpoints", ctx: ctx})
+
+	if s.replaceFn != nil {
+		return s.replaceFn(ctx, sourceName, requests)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]apidebugger.Breakpoint, len(requests))
+	for index, request := range requests {
+		location := apisource.Location{SourceName: sourceName, Position: request.Position}
+		result[index] = apidebugger.Breakpoint{ID: apidebugger.BreakpointID(index + 1), RequestedLocation: location, Location: apisource.Range{Location: location}, BindingMode: request.Options.BindingMode, Bound: true}
+	}
+
+	return result, nil
 }

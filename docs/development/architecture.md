@@ -27,7 +27,7 @@ ferretd serve
             -> internal/workspace
             -> internal/exec
             -> Universal Runtime API
-                -> internal/ferretapi -> native Ferret
+                -> Ferret uapi -> native Ferret
 
 local daemon client
     -> client
@@ -40,21 +40,21 @@ debug adapter client
     -> internal/dap
     -> internal/workspace + internal/exec + internal/debug
     -> Universal Runtime API
-        -> internal/ferretapi -> native Ferret debugger
+        -> Ferret uapi -> native Ferret debugger
 ```
 
 The `lsp` and `dap` commands compose in-process services independently of
 `ferretd serve`. The daemon exposes workspace and execution behavior over gRPC;
 debugging is not currently a daemon gRPC capability. Daemon and DAP composition
-each construct one native Ferret engine, pass it to `internal/ferretapi`, and
-own the resulting Universal runtime through final cleanup.
+each construct an owning Universal runtime with Ferret's `uapi.New()` and
+retain it through final cleanup.
 
 ## Dependency direction
 
 Commands compose services and adapters. Protocol adapters translate requests,
 responses, events, coordinates, and errors, then delegate to protocol-neutral
 packages. Execution and debug domain packages consume the Universal Runtime API;
-`internal/ferretapi` alone translates that contract to native Ferret runtime
+Ferret's upstream `uapi` package translates that contract to native runtime
 objects.
 
 ```text
@@ -65,7 +65,7 @@ cmd/ferretd dap   -> internal/dap -> internal/workspace + internal/exec
                                     + internal/debug
 
 domain services  -> internal/source + internal/diagnostic + internal/lifecycle
-execution/debug -> github.com/MontFerret/api -> internal/ferretapi -> Ferret
+execution/debug -> github.com/MontFerret/api -> Ferret uapi -> Ferret
 ```
 
 Protocol types do not flow into domain services. Mutable manager or session
@@ -93,12 +93,9 @@ than access to protected state.
   `RuntimeOptions`, copied `api.Output` and `RuntimeFailure` results, one-shot
   Executions, watches, cancellation, lazy debug Plans, and debugger-runtime
   leases.
-* `internal/ferretapi` provisionally adapts a caller-constructed native Ferret
-  engine and its Plan and Session interfaces to the Universal API. It converts
-  indexed source representations, output pointer/value ownership, and diagnostics.
-  Portable coordinates, output, and debugger data are API-owned native aliases;
-  options target the native owner directly. Composition may construct the
-  native engine, but no other package translates between the runtime APIs.
+* Ferret's upstream `uapi` package adapts native runtime objects and diagnostics
+  to the Universal API. Composition constructs an owning runtime with `uapi.New`;
+  no local package translates between the two runtime APIs.
 * `internal/debug` owns retained DebugSessions, commands, paused-state
   inspection, event streams, and cleanup.
 * `internal/dap` adapts workspace, execution, and debug services to one stdio DAP
@@ -116,10 +113,10 @@ than access to protected state.
 
 ## State and resource hierarchy
 
-Each daemon or DAP service graph constructs one native Ferret engine, wraps it
-as one shared Universal runtime, and closes only that wrapper after its child
-services. An open workspace owns retained file and document snapshots, but no
-execution engine.
+Each daemon or DAP service graph constructs one shared Universal runtime with
+`uapi.New()` and closes it after its child services. That runtime owns the
+native engine. An open workspace owns retained file and document snapshots, but
+no execution engine.
 An execution Session is a child of that workspace and owns an immutable
 `api.Plan` compiled by the shared runtime. Each ordinary Execution is a one-shot
 child of a Session and creates a fresh `api.Session`.
@@ -130,9 +127,9 @@ exposes that session's debugger capability and owns the debug-Plan lease through
 the common runtime's one-time session close attempt. `internal/debug` layers
 DebugSession identity, commands, presentation scopes, events, and state on that
 DebugRuntime while consuming Universal debugger and source values directly.
-`internal/ferretapi` forwards canonical debugger values and projects diagnostics
-while copying event/output data where caller ownership requires it. Ordinary
-Executions and DebugSessions remain sibling resources
+Ferret's `uapi` forwards canonical debugger values and projects diagnostics.
+Execution and debug services copy output before cleanup and for each snapshot.
+Ordinary Executions and DebugSessions remain sibling resources
 with distinct observable state machines. Closing a parent stops new runtime
 creation, settles both child kinds, releases leases, and only then closes its
 Plans. Composition cleanup then clears workspaces and closes the shared runtime
@@ -172,4 +169,3 @@ then the appropriate adapter and public documentation.
 * [Execution model](execution.md)
 * [Debugging model](debugging.md)
 * [Build and release](release.md)
-* [Native Universal adapter audit](ferretapi-audit.md)

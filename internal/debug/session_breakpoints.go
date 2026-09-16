@@ -20,49 +20,19 @@ func (d *session) replaceBreakpoints(
 	d.controlMu.Lock()
 	defer d.controlMu.Unlock()
 
-	if err := d.requireInspectable(); err != nil {
+	if err := d.requireActive(); err != nil {
 		return nil, err
 	}
 
-	d.mu.Lock()
-	existing := append([]apidebugger.Breakpoint(nil), d.breakpoints[sourceName]...)
-	d.mu.Unlock()
-
-	for _, breakpoint := range existing {
-		if err := d.runtime.Debugger().DeleteBreakpoint(breakpoint.ID); err != nil {
-			return nil, err
-		}
-	}
-
-	d.mu.Lock()
-	d.breakpoints[sourceName] = nil
-	d.mu.Unlock()
-
-	bound := make([]apidebugger.Breakpoint, 0, len(locations))
-	for _, location := range locations {
-		breakpoint, err := d.runtime.Debugger().SetBreakpointAt(
-			apisource.Location{
-				SourceName: sourceName,
-				Position:   location,
-			},
-			apidebugger.BreakpointOptions{
+	requests := make([]apidebugger.BreakpointRequest, len(locations))
+	for index, location := range locations {
+		requests[index] = apidebugger.BreakpointRequest{
+			Position: location,
+			Options: apidebugger.BreakpointOptions{
 				BindingMode: apidebugger.BreakpointBindNextExecutableInSource,
 			},
-		)
-		if err != nil {
-			d.mu.Lock()
-			d.breakpoints[sourceName] = bound
-			d.mu.Unlock()
-
-			return nil, err
 		}
-
-		bound = append(bound, breakpoint)
 	}
 
-	d.mu.Lock()
-	d.breakpoints[sourceName] = bound
-	d.mu.Unlock()
-
-	return bound, nil
+	return d.runtime.Debugger().ReplaceBreakpoints(ctx, sourceName, requests)
 }

@@ -25,8 +25,8 @@ func (r *runtimeOwnershipSpy) Run(
 	context.Context,
 	api.Source,
 	...api.SessionOption,
-) (api.Output, error) {
-	return api.Output{}, errors.New("not implemented")
+) (*api.Output, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (r *runtimeOwnershipSpy) Compile(

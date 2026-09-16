@@ -18,8 +18,9 @@ import (
 	protocol "github.com/google/go-dap"
 	"github.com/rs/zerolog"
 
+	"github.com/MontFerret/api"
+	"github.com/MontFerret/ferret/v2/uapi"
 	"github.com/MontFerret/ferretd/internal/debug"
-	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -75,7 +76,7 @@ func TestNewConstructsNativeRuntimeAdapter(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	if _, ok := server.runtime.(*ferretapi.Runtime); !ok {
+	if _, ok := server.runtime.(*uapi.Runtime); !ok {
 		t.Fatalf("New runtime = %T, want native Ferret adapter", server.runtime)
 	}
 
@@ -93,11 +94,22 @@ func newTestClient(t *testing.T) *testClient {
 func newTestClientWithOptions(t *testing.T, options Options) *testClient {
 	t.Helper()
 
+	runtime, err := uapi.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return newTestClientWithRuntime(t, options, runtime)
+}
+
+func newTestClientWithRuntime(t *testing.T, options Options, runtime api.Runtime) *testClient {
+	t.Helper()
+
 	serverInput, clientInput := io.Pipe()
 	clientOutput, serverOutput := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	server, err := New(serverInput, serverOutput, options)
+	server, err := newServer(serverInput, serverOutput, options.normalized(), runtime)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

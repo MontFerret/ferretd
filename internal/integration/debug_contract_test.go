@@ -1,4 +1,4 @@
-package ferretapi
+package integration_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	apidiagnostics "github.com/MontFerret/api/diagnostics"
 	"github.com/MontFerret/ferret/v2"
 	"github.com/MontFerret/ferret/v2/pkg/runtime"
+	"github.com/MontFerret/ferret/v2/uapi"
 )
 
 func TestDebugLocationsUseByteCoordinates(t *testing.T) {
@@ -35,7 +36,7 @@ func TestDebugLocationsUseByteCoordinates(t *testing.T) {
 	start := strings.Index(query, "RETURN")
 	location := api.Location{SourceName: src.Name, Position: api.Position{Line: 1, Column: start + 1}}
 
-	breakpoint, err := session.SetBreakpointAt(location, apidebugger.BreakpointOptions{BindingMode: apidebugger.BreakpointBindExact})
+	breakpoint, err := session.SetBreakpointAt(t.Context(), location, apidebugger.BreakpointOptions{BindingMode: apidebugger.BreakpointBindExact})
 	if err != nil || !breakpoint.Bound {
 		t.Fatalf("breakpoint=%+v error=%v", breakpoint, err)
 	}
@@ -83,7 +84,7 @@ RETURN [value, result]`))
 				line = 3
 			}
 
-			breakpoint, err := session.SetBreakpoint(api.Location{SourceName: "buffer://steps", Position: api.Position{Line: line, Column: 1}})
+			breakpoint, err := session.SetBreakpoint(t.Context(), api.Location{SourceName: "buffer://steps", Position: api.Position{Line: line, Column: 1}})
 			if err != nil || !breakpoint.Bound {
 				t.Fatalf("breakpoint=%+v err=%v", breakpoint, err)
 			}
@@ -107,13 +108,13 @@ RETURN [value, result]`))
 
 				reference = value.Reference
 
-				children, err := session.Variables(reference)
+				children, err := session.Variables(t.Context(), reference)
 				if err != nil || len(children) != 2 {
 					t.Fatalf("children=%+v err=%v", children, err)
 				}
 			}
 
-			if err := session.DeleteBreakpoint(breakpoint.ID); err != nil {
+			if err := session.DeleteBreakpoint(t.Context(), breakpoint.ID); err != nil {
 				t.Fatal(err)
 			}
 
@@ -136,7 +137,7 @@ RETURN [value, result]`))
 			}
 
 			if reference.Valid() {
-				if _, err := session.Variables(reference); err == nil {
+				if _, err := session.Variables(t.Context(), reference); err == nil {
 					t.Fatal("resumed session accepted a stale value reference")
 				}
 			}
@@ -156,7 +157,7 @@ func TestDebugPauseAndCancellationReachNativeExecution(t *testing.T) {
 			t.Cleanup(cancel)
 			entered, release := make(chan struct{}), make(chan struct{})
 
-			engine, err := ferret.New(ferret.WithFunctionsRegistrar(func(ns runtime.Namespace) {
+			runtime, err := uapi.New(ferret.WithFunctionsRegistrar(func(ns runtime.Namespace) {
 				ns.Function().A0().Add("WAIT_NATIVE", func(ctx context.Context) (runtime.Value, error) {
 					close(entered)
 					select {
@@ -171,7 +172,6 @@ func TestDebugPauseAndCancellationReachNativeExecution(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			runtime := New(engine)
 			t.Cleanup(func() { _ = runtime.Close() })
 
 			plan, err := runtime.CompileDebug(ctx, api.NewAnonymousSource("LET value = WAIT_NATIVE()\nRETURN value"))
@@ -208,7 +208,7 @@ func TestDebugPauseAndCancellationReachNativeExecution(t *testing.T) {
 
 			switch mode {
 			case "pause":
-				if err := session.Pause(); err != nil {
+				if err := session.Pause(ctx); err != nil {
 					t.Fatal(err)
 				}
 
@@ -265,7 +265,7 @@ func TestDebugRuntimeErrorRemainsInspectable(t *testing.T) {
 		t.Fatalf("event=%+v err=%v diagnostics=%+v", event, err, diagnostics)
 	}
 
-	if frames, err := session.Frames(); err != nil || len(frames) == 0 {
+	if frames, err := session.Frames(t.Context()); err != nil || len(frames) == 0 {
 		t.Fatalf("frames=%+v err=%v", frames, err)
 	}
 }

@@ -154,6 +154,20 @@ func (m *Manager) prepareSession(
 		return nil, errors.Join(err, plan.Close())
 	}
 
+	parameters, err := plan.Params()
+	if err != nil {
+		err = errors.Join(fmt.Errorf("retrieve plan parameters: %w", err), plan.Close())
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+
+		return nil, &CompilationError{
+			Source:      sourceSnapshot,
+			Diagnostics: diagnostic.FromError(sourceSnapshot.URI, text, err),
+			Cause:       err,
+		}
+	}
+
 	id, err := newSessionID()
 	if err != nil {
 		return nil, errors.Join(err, plan.Close())
@@ -163,7 +177,7 @@ func (m *Manager) prepareSession(
 		return m.runtime.CompileDebug(ctx, apiSource)
 	}
 
-	return newSession(id, sourceSnapshot, plan, text, parent.Root(), compileDebug), nil
+	return newSession(id, sourceSnapshot, plan, parameters, text, parent.Root(), compileDebug), nil
 }
 
 // GetSession returns an immutable Session snapshot.

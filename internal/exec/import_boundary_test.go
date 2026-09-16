@@ -13,7 +13,6 @@ import (
 
 func TestUniversalRuntimeImportBoundary(t *testing.T) {
 	const native = "github.com/MontFerret/ferret"
-	const local = "github.com/MontFerret/ferretd/"
 	// These APIs provide editor analysis and retained syntax, outside the
 	// Universal execution/debugger contract.
 	tooling := map[string][]string{
@@ -50,7 +49,6 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 		relative = filepath.ToSlash(relative)
 		directory := filepath.ToSlash(filepath.Dir(relative))
 		testFile := strings.HasSuffix(relative, "_test.go")
-		adapter := directory == "internal/ferretapi"
 
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 		if err != nil {
@@ -63,20 +61,16 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 				return err
 			}
 
-			if adapter && !testFile && strings.HasPrefix(name, local) {
-				t.Errorf("%s imports daemon implementation %q into the native adapter", relative, name)
-			}
-
 			if name != native && !strings.HasPrefix(name, native+"/") {
 				continue
 			}
 
-			if adapter || (testFile && relative == "internal/integration/execution_fixture_test.go" && name == native+"/v2") {
+			if testFile && directory == "internal/integration" {
 				continue
 			}
 
-			if (relative == "internal/daemon/composition.go" || relative == "internal/dap/composition.go") &&
-				name == native+"/v2" {
+			if (directory == "internal/daemon" || directory == "internal/dap") &&
+				(testFile || filepath.Base(relative) == "composition.go") && name == native+"/v2/uapi" {
 				continue
 			}
 
@@ -85,7 +79,7 @@ func TestUniversalRuntimeImportBoundary(t *testing.T) {
 				continue
 			}
 
-			t.Errorf("%s imports native Ferret outside adapter, bootstrap, or documented tooling: %q", relative, name)
+			t.Errorf("%s imports native Ferret outside composition, integration tests, or documented tooling: %q", relative, name)
 		}
 
 		return nil

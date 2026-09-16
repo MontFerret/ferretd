@@ -9,11 +9,10 @@ import (
 
 	"github.com/MontFerret/api"
 	apidebugger "github.com/MontFerret/api/debugger"
-	"github.com/MontFerret/ferret/v2"
+	"github.com/MontFerret/ferret/v2/uapi"
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
-	"github.com/MontFerret/ferretd/internal/ferretapi"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -31,12 +30,10 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 
 	options = options.normalized()
 
-	engine, err := ferret.New()
+	runtime, err := uapi.New()
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
-
-	runtime := ferretapi.New(engine)
 
 	return newServer(input, output, options, runtime)
 }
@@ -62,19 +59,18 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 	readerClose, _ := input.(io.Closer)
 
 	return &Server{
-		reader:                    bufio.NewReader(input),
-		readerClose:               readerClose,
-		writer:                    output,
-		workspaces:                workspaces,
-		executions:                executions,
-		debugs:                    debugs,
-		runtime:                   runtime,
-		logger:                    options.Logger.With().Str("component", "dap").Logger(),
-		handles:                   newHandleTable(),
-		nextBreakpointID:          1,
-		stableBreakpoints:         make(map[breakpointKey]int),
-		debuggerBreakpoints:       make(map[apidebugger.BreakpointID]int),
-		debuggerBreakpointSources: make(map[apidebugger.BreakpointID]string),
+		reader:              bufio.NewReader(input),
+		readerClose:         readerClose,
+		writer:              output,
+		workspaces:          workspaces,
+		executions:          executions,
+		debugs:              debugs,
+		runtime:             runtime,
+		logger:              options.Logger.With().Str("component", "dap").Logger(),
+		handles:             newHandleTable(),
+		nextBreakpointID:    1,
+		stableBreakpoints:   make(map[breakpointKey]int),
+		debuggerBreakpoints: make(map[apidebugger.BreakpointID]int),
 		client: clientOptions{
 			pathFormat:      pathFormatPath,
 			linesStartAt1:   true,

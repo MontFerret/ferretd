@@ -23,8 +23,8 @@ var (
 	_ api.SessionOptions = (*runtimeSessionOptions)(nil)
 )
 
-func (p *planSpy) Params() []string {
-	return nil
+func (p *planSpy) Params() ([]string, error) {
+	return nil, nil
 }
 
 func (p *planSpy) NewSession(
