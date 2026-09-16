@@ -107,8 +107,22 @@ request remains pending while breakpoints are configured. After
 Session, responds to launch, and then emits stopped or terminal events in the
 required order.
 
-`internal/dap` owns client path format, line and column base conversion, message
-sequence numbers, and all integer frame, scope, and variable handles. The
+`internal/dap` owns client path format, byte/UTF-16 source-coordinate and base
+conversion, message sequence numbers, and all integer frame, scope, and variable
+handles. The execution Session snapshot exposes its immutable compiled `Text`;
+DAP retains one `sourceCoordinates` index from those exact bytes alongside the
+owned launch. Index construction records native LF line boundaries and paired
+byte/UTF-16 decoder boundaries, including one-byte replacement decoding for
+malformed UTF-8. Requests and responses use exact boundaries without clamping or
+reading current workspace/disk contents. CRLF terminators are excluded from
+logical columns while original byte offsets remain intact. The LSP mapper has
+different clamping and line semantics and is not used here.
+
+Breakpoint decoding preserves omitted columns separately from explicit zero;
+response serialization preserves real zero coordinates. Bound breakpoints use
+resolved native locations, unbound breakpoints use requested locations, and
+stack frames use the same converter. Native coordinates pass through
+`internal/debug` and the Universal API unchanged. The
 adapter consumes Universal debugger frames, variables, values, source locations,
 and value references directly. It derives frame indexes from Universal frame
 ordering and projects session-scoped breakpoint and value references into DAP

@@ -67,7 +67,7 @@ func TestDAPLiveReplacementRequestOrderAndBinding(t *testing.T) {
 	f := newLiveBreakpointFixture(t, true)
 	f.continueExecution()
 	f.waitVisit()
-	requests := []*protocol.SetBreakpointsRequest{f.replacement(4), f.replacement(5), f.replacement(3, 99)}
+	requests := []*protocol.SetBreakpointsRequest{f.replacement(4), f.replacement(5), f.replacement(3, 7)}
 	sent := make(chan error, 1)
 	go func() {
 		for _, request := range requests {
@@ -100,18 +100,18 @@ func TestDAPLiveReplacementRequestOrderAndBinding(t *testing.T) {
 		t.Fatal("pipelined writer did not finish")
 	}
 
-	if len(final) != 2 || !final[0].Verified || final[0].Line != 4 || final[1].Verified {
+	if len(final) != 2 || !final[0].Verified || final[0].Line != 4 || final[1].Verified || final[1].Line != 7 || final[1].Column != 0 {
 		t.Fatalf("relocated/unverified response = %+v", final)
 	}
 
-	repeated := f.replace(3, 99)
+	repeated := f.replace(3, 7)
 	if repeated[0].Id != final[0].Id || repeated[1].Id != final[1].Id {
 		t.Fatalf("unchanged IDs = %+v, want %+v", repeated, final)
 	}
 
 	f.replace()
 
-	readded := f.replace(3, 99)
+	readded := f.replace(3, 7)
 	if readded[0].Id != final[0].Id || readded[1].Id != final[1].Id {
 		t.Fatalf("re-added requested IDs = %+v, want %+v", readded, final)
 	}
