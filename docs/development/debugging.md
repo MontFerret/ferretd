@@ -93,6 +93,14 @@ runtime with Ferret's `uapi.New()` plus in-process workspace, execution, and deb
 managers. It also owns one launched
 workspace, execution Session, and DebugSession.
 
+Launch `cwd` remains the compilation/workspace root and the base for debugger
+source identity. The optional Ferret-specific `workingDirectory` is passed
+separately through `exec.RuntimeOptions` to debug Session creation. DAP rejects
+explicit null, non-string, and empty values; execution owns normalization and
+filesystem validation. The runtime directory must be absolute and may be outside
+the workspace. Omission preserves the workspace-root runtime default without
+retaining an explicit override or changing source paths.
+
 Launch follows the DAP initialization and configuration sequence. The launch
 request remains pending while breakpoints are configured. After
 `configurationDone`, the adapter acknowledges configuration, starts the debug

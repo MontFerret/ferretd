@@ -185,16 +185,23 @@ func TestDAPDebugTraceSelectsMetadataWithoutSensitiveValues(t *testing.T) {
 	root := t.TempDir()
 	program := writeDAPProgram(t, root, `LET secret = "`+sourceSecret+`"
 RETURN @`+parameterKey)
+
+	workingDirectory, err := json.Marshal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	var diagnostics bytes.Buffer
 	logger := newCaptureLogger(&diagnostics, zerolog.DebugLevel)
 	client := newTestClientWithOptions(t, Options{Logger: logger})
 	initializeDAP(t, client)
 
 	arguments, err := json.Marshal(launchArguments{
-		Program:     program,
-		CWD:         root,
-		Parameters:  map[string]any{parameterKey: parameterSecret},
-		StopOnEntry: true,
+		Program:          program,
+		CWD:              root,
+		WorkingDirectory: workingDirectory,
+		Parameters:       map[string]any{parameterKey: parameterSecret},
+		StopOnEntry:      true,
 	})
 	if err != nil {
 		t.Fatal(err)

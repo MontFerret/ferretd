@@ -11,13 +11,6 @@ import (
 )
 
 type (
-	launchArguments struct {
-		Program     string         `json:"program"`
-		CWD         string         `json:"cwd,omitempty"`
-		Parameters  map[string]any `json:"parameters,omitempty"`
-		StopOnEntry bool           `json:"stopOnEntry,omitempty"`
-	}
-
 	launchPaths struct {
 		root         string
 		program      string

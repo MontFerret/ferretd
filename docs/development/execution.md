@@ -75,9 +75,10 @@ Plan identity.
 
 An empty internal working directory means no explicit override. If neither an
 override nor a workspace root is available, no `api.WithFSRoot` option is sent.
-Only the gRPC boundary distinguishes an omitted wire field from a present empty
-one; it rejects the latter before creating a runtime. Nonempty values, including
-whitespace-only input, go through the domain's existing normalization.
+The gRPC and DAP boundaries distinguish an omitted wire field from a present empty
+one; both reject the latter before creating a runtime. DAP also rejects explicit
+JSON null and non-string values. Nonempty strings, including whitespace-only
+input, go through the domain's existing normalization.
 
 Parameters and output content type are applied with `api.WithParams` and
 `api.WithOutputContentType`. Runtime-specific parameter rejection therefore

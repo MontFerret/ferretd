@@ -30,6 +30,10 @@ Breakpoint-source warnings include the requested and launched display paths plus
 their canonical paths when both sources are available. An unavailable local
 source instead records the underlying path-resolution error.
 
+Launch diagnostics distinguish the source `program`, workspace `root`, and
+explicit runtime `working_directory`. Successful launch records use the
+canonical working directory; the field is omitted when no override was supplied.
+
 Diagnostics never serialize whole DAP payloads. Query contents, parameters,
 environment variables, evaluation expressions and results, source contents, and
 debug output contents are omitted. Output-event diagnostics include only the
@@ -54,8 +58,10 @@ Launch arguments:
 
 * `program` (required): an existing local `.fql` file, absolute or relative to
   `cwd`;
-* `cwd` (optional): an existing workspace root containing `program`; when
-  omitted, the program directory is used;
+* `cwd` (optional): an existing compilation/workspace root containing `program`;
+  when omitted, the program directory is used;
+* `workingDirectory` (optional, Ferret-specific): an absolute path to an
+  accessible directory used as the running program's filesystem root;
 * `parameters` (optional): a JSON object bound as Ferret query parameters;
 * `stopOnEntry` (optional): emit the initial `stopped(entry)` event when `true`;
   the default is `false`, which continues past Ferret's entry stop.
@@ -64,6 +70,19 @@ Launch arguments may contain additional client-supplied properties. The adapter
 ignores properties it does not recognize while continuing to decode and validate
 the supported Ferret arguments above.
 
+`workingDirectory` is independent of `cwd`: it may be outside the workspace,
+and the program does not need to be inside it. Relative filesystem operations
+use this runtime root, while source resolution, breakpoints, and stack-frame
+paths continue to use the workspace and launched source. The adapter does not
+change its process working directory.
+
+Omitting `workingDirectory` preserves the existing workspace-root runtime
+behavior. A supplied value must be a nonblank string containing an absolute
+path; relative paths are not resolved against `cwd`. The execution layer trims
+surrounding whitespace, resolves symlinks, and validates directory access.
+Explicit `null`, empty or whitespace-only strings, non-string values, missing
+paths, regular files, and unresolvable symlinks fail the launch request.
+
 Example launch configuration:
 
 ```json
@@ -71,8 +90,9 @@ Example launch configuration:
   "type": "ferretd",
   "request": "launch",
   "name": "Debug query",
-  "program": "${workspaceFolder}/queries/main.fql",
-  "cwd": "${workspaceFolder}",
+  "program": "/project/queries/main.fql",
+  "cwd": "/project",
+  "workingDirectory": "/project/runtime",
   "parameters": {
     "url": "https://example.com"
   },
