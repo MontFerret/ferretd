@@ -13,7 +13,26 @@ import (
 )
 
 func TestSupportedClientExecutesExplicitExcludedSource(t *testing.T) {
-	root := t.TempDir()
+	for _, name := range []string{"directory", "symlink root"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+
+			if name == "symlink root" {
+				alias := filepath.Join(t.TempDir(), "workspace")
+				if err := os.Symlink(root, alias); err != nil {
+					t.Skipf("create workspace root symlink: %v", err)
+				}
+
+				root = alias
+			}
+
+			assertExplicitSourceExecution(t, root)
+		})
+	}
+}
+
+func assertExplicitSourceExecution(t *testing.T, root string) {
+	t.Helper()
 
 	program := filepath.Join(root, ".tmp", "test.fql")
 	if err := os.Mkdir(filepath.Dir(program), 0o700); err != nil {
@@ -72,12 +91,9 @@ func TestSupportedClientExecutesExplicitExcludedSource(t *testing.T) {
 		t.Fatalf("explicit CreateSession: %v", err)
 	}
 
-	canonical, err := filepath.EvalSymlinks(program)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	uri, err := source.URIFromPath(canonical)
+	// Source identity preserves the selected workspace root's spelling, including
+	// a root symlink or macOS's /var alias for /private/var.
+	uri, err := source.URIFromPath(program)
 	if err != nil {
 		t.Fatal(err)
 	}
