@@ -15,13 +15,14 @@ import (
 
 type (
 	dapProcessClient struct {
-		t        *testing.T
-		command  *exec.Cmd
-		input    io.WriteCloser
-		output   *bufio.Reader
-		stderr   bytes.Buffer
-		sequence int
-		waited   bool
+		t             *testing.T
+		command       *exec.Cmd
+		input         io.WriteCloser
+		output        *bufio.Reader
+		stderr        bytes.Buffer
+		sequence      int
+		stoppedEvents int
+		waited        bool
 	}
 
 	dapProcessMessage struct {
@@ -96,6 +97,10 @@ func (c *dapProcessClient) read() dapProcessMessage {
 	var message dapProcessMessage
 	if err := json.Unmarshal(content, &message); err != nil {
 		c.t.Fatal(err)
+	}
+
+	if message.Type == "event" && message.Event == "stopped" {
+		c.stoppedEvents++
 	}
 
 	return message

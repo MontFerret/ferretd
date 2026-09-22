@@ -105,6 +105,7 @@ func benchmarkBreakpointServer(b *testing.B) (*Server, string) {
 	}
 
 	server.launched = true
+	server.initialStop = &initialStop{}
 
 	return server, program
 }
