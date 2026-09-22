@@ -34,6 +34,7 @@ const (
 func (s *Server) watchDebugSession(subscription debug.Subscription) {
 	defer func() {
 		s.eventMu.Lock()
+		s.initialStop = nil
 		s.breakpoints.finish()
 		s.eventMu.Unlock()
 	}()
@@ -66,19 +67,21 @@ func (s *Server) watchDebugSession(subscription debug.Subscription) {
 
 func (s *Server) handleDebugEvent(event debug.Event) {
 	snapshot := event.Snapshot
+	if snapshot.State.Terminal() {
+		s.initialStop = nil
+	}
+
 	switch snapshot.State {
 	case debug.StateRunning:
 		s.invalidateHandles("running")
 		s.logger.Info().Msg("DAP execution running")
 	case debug.StateStopped:
-		s.stateMu.Lock()
+		suppress := false
 
-		suppress := s.suppressEntry && snapshot.Reason == apidebugger.ReasonEntry
-		if suppress {
-			s.suppressEntry = false
+		if s.initialStop != nil {
+			snapshot, suppress = s.initialStop.resolve(snapshot, s.owned.stopOnEntry, s.breakpoints)
+			s.initialStop = nil
 		}
-
-		s.stateMu.Unlock()
 
 		if suppress {
 			s.breakpoints.commandStopped()

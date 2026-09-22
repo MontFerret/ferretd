@@ -183,7 +183,6 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 	s.watch = watch
 	s.launched = true
 	s.pendingLaunch = request.GetRequest()
-	s.suppressEntry = !arguments.StopOnEntry
 	s.stateMu.Unlock()
 
 	event := s.logger.Info().
@@ -202,6 +201,10 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 	}); err != nil {
 		return err
 	}
+
+	s.eventMu.Lock()
+	s.initialStop = &initialStop{}
+	s.eventMu.Unlock()
 
 	go s.watchDebugSession(watch)
 
@@ -270,6 +273,7 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 	}
 
 	if _, err := s.debugs.StartSession(ctx, debugID); err != nil {
+		s.initialStop = nil
 		result := s.failPendingLaunch(err)
 
 		s.stateMu.Lock()
@@ -279,6 +283,7 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 		return errors.Join(result, s.cleanup())
 	}
 
+	s.initialStop.frozen = true
 	s.breakpoints.commandStarted()
 	s.invalidateHandles("configurationDone")
 	s.stateMu.Lock()
@@ -416,6 +421,10 @@ func (s *Server) handleSetBreakpoints(ctx context.Context, request *sourceBreakp
 	}
 
 	s.breakpoints.replace(s.owned.program, requests, breakpoints)
+
+	if s.initialStop != nil {
+		s.initialStop.replace(breakpoints)
+	}
 
 	result := make([]sourceBreakpoint, len(breakpoints))
 

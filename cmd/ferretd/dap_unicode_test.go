@@ -1,35 +1,16 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestDAPProcessUnicodeCoordinatesAndSnapshot(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "ferretd")
-
-	if runtime.GOOS == "windows" {
-		binary += ".exe"
-	}
-
-	buildContext, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
-	defer cancel()
-
-	// Build the real command with this repository's released Ferret dependency.
-	build := exec.CommandContext(buildContext, "go", "build", "-mod=readonly", "-o", binary, ".")
-	build.Env = append(os.Environ(), "GOWORK=off")
-
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build ferretd: %v\n%s", err, output)
-	}
+	binary := buildDAPProcess(t)
 
 	tests := []struct {
 		name        string

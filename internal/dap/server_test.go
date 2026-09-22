@@ -574,7 +574,8 @@ func TestDAPSetBreakpointsAcceptsEquivalentSourcePaths(t *testing.T) {
 		t.Fatalf("launch response = %#v", response)
 	}
 
-	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "entry" {
+	if stopped, ok := client.read().(*protocol.StoppedEvent); !ok || stopped.Body.Reason != "breakpoint" ||
+		!reflect.DeepEqual(stopped.Body.HitBreakpointIds, []int{relativeBreakpoint.Id}) {
 		t.Fatalf("stopped event = %#v", stopped)
 	}
 

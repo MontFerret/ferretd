@@ -107,6 +107,14 @@ request remains pending while breakpoints are configured. After
 Session, responds to launch, and then emits stopped or terminal events in the
 required order.
 
+DAP temporarily retains the resolved breakpoint bindings configured before
+start. Once start is accepted, those bindings are frozen under the adapter's
+event lock and used only to interpret the initial native entry suspension.
+An exact source/line/byte-column match produces one breakpoint stop with the
+existing DAP IDs, taking priority over `stopOnEntry`. The adapter discards the
+bindings after the initial stop or terminal/watch cleanup. Live replacements
+continue immediately and cannot retroactively change the initial stop.
+
 `internal/dap` owns client path format, byte/UTF-16 source-coordinate and base
 conversion, message sequence numbers, and all integer frame, scope, and variable
 handles. The execution Session snapshot exposes its immutable compiled `Text`;

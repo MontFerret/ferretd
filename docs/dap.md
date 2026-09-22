@@ -63,8 +63,20 @@ Launch arguments:
 * `workingDirectory` (optional, Ferret-specific): an absolute path to an
   accessible directory used as the running program's filesystem root;
 * `parameters` (optional): a JSON object bound as Ferret query parameters;
-* `stopOnEntry` (optional): emit the initial `stopped(entry)` event when `true`;
-  the default is `false`, which continues past Ferret's entry stop.
+* `stopOnEntry` (optional, default `false`): report the synthetic initial entry
+  suspension when `true`. When `false`, suppress only that entry suspension;
+  a real breakpoint bound to the entry location is still reported.
+
+A breakpoint at the initial executable location takes priority over entry:
+with either value of `stopOnEntry`, the adapter emits one `stopped` event with
+reason `breakpoint` and the configured breakpoint IDs. Otherwise, `true` emits
+one `stopped(entry)` event and `false` continues automatically. One native
+suspension never produces duplicate DAP stopped events.
+
+Initial-stop classification uses the resolved breakpoint bindings active when
+start is accepted during `configurationDone`. Later replacements still apply
+immediately to the debugger and govern subsequent execution; they cannot
+retroactively reclassify or suppress that initial stop.
 
 Launch arguments may contain additional client-supplied properties. The adapter
 ignores properties it does not recognize while continuing to decode and validate

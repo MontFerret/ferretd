@@ -29,7 +29,8 @@ type (
 		// writeMu protects the framed writer and outbound sequence. Successful-send
 		// trace records remain inside the same ordering boundary.
 		writeMu sync.Mutex
-		// eventMu preserves ordering between debugger commands and lifecycle events.
+		// eventMu preserves ordering between debugger commands and lifecycle events,
+		// and protects the initial stop's configuration-time bindings.
 		eventMu sync.Mutex
 		// stateMu protects owned resources, client options, the watch, pending launch,
 		// and request/event lifecycle flags.
@@ -50,7 +51,7 @@ type (
 		launched      bool
 		configured    bool
 		disconnected  bool
-		suppressEntry bool
+		initialStop   *initialStop
 		breakpoints   *breakpointIDs
 		cleanupOnce   sync.Once
 		cleanupErr    error
