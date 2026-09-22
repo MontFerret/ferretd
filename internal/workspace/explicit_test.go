@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/fsnotify/fsnotify"
@@ -468,7 +469,7 @@ func TestCanceledExplicitAdmissionRollsBackNewWatches(t *testing.T) {
 	}
 }
 
-func TestExplicitSourceOverflowReplacesOldDirectoryWatch(t *testing.T) {
+func TestExplicitSourceOverflowReplacesInvalidatedDirectoryWatches(t *testing.T) {
 	root := t.TempDir()
 	selected := ".tmp/nested/test.fql"
 	writeWorkspaceSource(t, root, selected, "RETURN 1")
@@ -484,8 +485,17 @@ func TestExplicitSourceOverflowReplacesOldDirectoryWatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The watcher loop is deliberately stopped. Recovery cannot depend on seeing
-	// the rename before the replacement appears at the same path.
+	watcher := workspaceWatcherForTest(t, opened)
+
+	// Simulate native watches disappearing before the stopped workspace loop sees
+	// their events. Keep the cached identities so overflow recovery must replace
+	// them. Closing descendant handles also lets Windows rename the parent.
+	for _, directory := range []string{".tmp/nested", ".tmp"} {
+		if err := watcher.backend.Remove(filepath.Join(opened.Root(), filepath.FromSlash(directory))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	if err := os.Rename(filepath.Join(root, ".tmp"), filepath.Join(root, ".old")); err != nil {
 		t.Fatal(err)
 	}
@@ -501,8 +511,6 @@ func TestExplicitSourceOverflowReplacesOldDirectoryWatch(t *testing.T) {
 		t.Fatalf("replacement source = %v", restored)
 	}
 
-	watcher := workspaceWatcherForTest(t, opened)
-
 	actual, err := os.Stat(filepath.Join(opened.Root(), ".tmp", "nested"))
 	if err != nil {
 		t.Fatal(err)
@@ -514,6 +522,17 @@ func TestExplicitSourceOverflowReplacesOldDirectoryWatch(t *testing.T) {
 
 	if retained == nil || !os.SameFile(retained, actual) {
 		t.Fatal("overflow retained old directory watch identity")
+	}
+
+	watches := watcher.backend.WatchList()
+	for _, directory := range []string{".", ".tmp", ".tmp/nested"} {
+		if !slices.Contains(watches, filepath.Join(opened.Root(), filepath.FromSlash(directory))) {
+			t.Fatalf("overflow did not restore directory watch %q: %v", directory, watches)
+		}
+	}
+
+	if len(watches) != 3 {
+		t.Fatalf("overflow retained unexpected directory watches: %v", watches)
 	}
 
 	if len(opened.Documents()) != 1 {
