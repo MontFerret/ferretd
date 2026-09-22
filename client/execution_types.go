@@ -22,8 +22,9 @@ type (
 		Parameters []string
 	}
 
-	// CreateSessionRequest selects one eligible workspace document to discover or
-	// refresh from disk and compile.
+	// CreateSessionRequest explicitly selects one workspace-relative .fql regular
+	// file to refresh and compile, including beneath discovery-excluded directories.
+	// Workspace containment and nested-symlink restrictions still apply.
 	CreateSessionRequest struct {
 		WorkspaceID  string
 		RelativePath string

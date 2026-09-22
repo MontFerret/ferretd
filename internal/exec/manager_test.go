@@ -302,7 +302,7 @@ func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
 	}
 }
 
-func TestCreateSessionDefensiveDiscoveryEnforcesWorkspaceBoundary(t *testing.T) {
+func TestCreateSessionExplicitAdmissionEnforcesWorkspaceBoundary(t *testing.T) {
 	root := t.TempDir()
 	workspaces := workspace.New()
 	manager := mustNewManager(t, workspaces)
@@ -339,9 +339,13 @@ func TestCreateSessionDefensiveDiscoveryEnforcesWorkspaceBoundary(t *testing.T) 
 		t.Skipf("create directory symlink: %v", err)
 	}
 
+	for _, selected := range []string{"testdata/ignored.fql", "nested/query.fql"} {
+		if _, err := manager.CreateSession(context.Background(), opened.ID(), selected); err != nil {
+			t.Fatalf("explicit CreateSession %q: %v", selected, err)
+		}
+	}
+
 	paths := []string{
-		"testdata/ignored.fql",
-		"nested/query.fql",
 		"linked/outside.fql",
 		"directory.fql",
 		"../outside.fql",

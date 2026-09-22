@@ -330,13 +330,13 @@ func TestRefreshAdmissionLosesToWorkspaceCloseDeterministically(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	writeWorkspaceSource(t, root, "created.fql", "RETURN 1")
+	writeWorkspaceSource(t, root, ".tmp/created.fql", "RETURN 1")
 
 	<-opened.mutationGate
 	refreshContext := newObservedDoneContext(context.Background())
 	refreshed := make(chan error, 1)
 	go func() {
-		_, err := opened.RefreshDocument(refreshContext, "created.fql")
+		_, err := opened.RefreshDocument(refreshContext, ".tmp/created.fql")
 		refreshed <- err
 	}()
 	<-refreshContext.observed
@@ -357,7 +357,7 @@ func TestRefreshAdmissionLosesToWorkspaceCloseDeterministically(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	if _, found := opened.Document("created.fql"); found {
+	if _, found := opened.Document(".tmp/created.fql"); found {
 		t.Fatal("closing workspace admitted a new source")
 	}
 }

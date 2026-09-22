@@ -55,12 +55,18 @@ Each published workspace owns one filesystem watcher. It tracks the same
 eligible directories used by initial discovery, reconciles file events or the
 affected subtree, and performs a root reconciliation only after watcher
 overflow or an unclassifiable error. Nested module-boundary directories remain
-watched so removing their `go.mod` can admit the subtree. The watcher stops and
-joins before workspace child cleanup and retained-state release.
+watched so removing their `go.mod` can admit the subtree. Explicit source selection
+also watches the selected file's necessary ancestor directories. Events from
+these directories do not admit neighboring excluded files or recursively watch
+excluded sibling trees. The watcher stops and joins before workspace child
+cleanup and retained-state release. Watch registration precedes reading selected
+sources so concurrent changes are observed. Failed or canceled admission rolls
+back newly registered watches, and reconciliation checks directory identity to
+replace watches when a pathname now names a different directory.
 
 ## Retained files and documents
 
-The file model stores discovered identity and path information. The document
+The file model stores admitted source identity and path information. The document
 model additionally retains source contents, a typed `workspace.Revision`,
 Ferret source and parse state, and load or syntax diagnostics. Callers receive
 values or copies rather than mutable manager-owned collections.
@@ -82,11 +88,24 @@ owns syntax state, not semantic compilation Plans or runtime state.
 ## Refresh and execution boundary
 
 Session creation asks the workspace to reconcile only the selected document.
-The operation rereads a retained path, defensively admits a missed eligible
-creation, and atomically publishes changed source, syntax state, diagnostics,
-availability, and revision. Unchanged contents retain their revision. Missing
-or newly ineligible paths are removed; an eligible but unreadable regular file
-remains represented with load diagnostics.
+`RefreshDocument` explicitly admits a regular lowercase `.fql` file even beneath
+a discovery-excluded directory or nested Go module. Workspace containment and
+nested-symlink restrictions still apply. Automatic discovery keeps all its
+exclusions; selecting `.tmp/test.fql` does not discover its neighbors.
+
+The workspace records successful explicit admissions separately from retained
+documents. File events, subtree reconciliation, and overflow recovery preserve
+these selections and their necessary ancestor watches. Deletion removes a
+document but keeps its admission until workspace close, allowing same-path
+recreation. A failed or canceled initial selection records no admission. Close
+clears both documents and admissions.
+
+Refresh atomically publishes changed source, syntax state, diagnostics,
+availability, revision, and admission under the existing mutation gate.
+Unchanged contents keep their revision, generation, and syntax. Changed source
+advances revision and generation; deletion/recreation restarts revision at one
+with a fresh, greater generation. Missing or invalid replacements are removed;
+an eligible but unreadable regular file retains load diagnostics.
 
 After refresh, `internal/exec` constructs an `api.Source` from the absolute
 document path and retained content, then compiles normal or debug Plans through

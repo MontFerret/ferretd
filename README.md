@@ -161,7 +161,7 @@ Opening a workspace recursively discovers lowercase `.fql` files, loads their
 contents, and retains daemon-owned documents with Ferret syntax state and
 diagnostics. No Ferret project manifest is required. While the workspace remains
 open, it tracks eligible files and directories created, changed, deleted, or
-renamed on disk. Initial discovery, dynamic tracking, and Session admission all
+renamed on disk. Initial discovery and automatic dynamic tracking
 apply the same root boundary, nested-module, directory-exclusion, and symlink
 rules.
 
@@ -172,9 +172,13 @@ workspace RPC continues to expose identity and lifecycle operations rather than
 documents or parser internals.
 
 Each daemon service graph owns one Universal runtime. `CreateSession` refreshes
-the latest saved contents of one eligible workspace-relative `.fql` document
-and compiles it into an immutable reusable plan. A missed creation notification
-is recovered during this refresh; excluded or escaping paths remain rejected.
+the latest saved contents of one explicitly selected workspace-relative `.fql`
+document and compiles it into an immutable reusable plan. A missed creation notification
+is recovered during this refresh. Explicit selection also admits lowercase `.fql`
+regular files beneath discovery-excluded directories, including `.tmp`, `testdata`,
+and nested Go modules, without discovering neighboring excluded files.
+Containment and nested-symlink restrictions remain. These admissions survive
+watcher reconciliation and same-path recreation until workspace close.
 Existing Sessions keep their original source revision and normal and lazy debug
 Plans. Each `Execution` owns isolated JSON-shaped parameter bindings and a fresh,
 one-shot runtime session. Its filesystem starts at the workspace root; an

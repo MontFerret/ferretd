@@ -93,6 +93,13 @@ runtime with Ferret's `uapi.New()` plus in-process workspace, execution, and deb
 managers. It also owns one launched
 workspace, execution Session, and DebugSession.
 
+Launch explicitly selects its `program` through the same workspace refresh as
+gRPC Session creation. A regular lowercase `.fql` file under `.tmp`, another
+discovery-excluded directory, or a nested Go module is accepted without admitting
+neighboring excluded files. Containment and nested-symlink restrictions remain.
+Breakpoint paths, stack sources, and compiled snapshots keep the original source
+identity; no copied source or substituted workspace is used.
+
 Launch `cwd` remains the compilation/workspace root and the base for debugger
 source identity. The optional Ferret-specific `workingDirectory` is passed
 separately through `exec.RuntimeOptions` to debug Session creation. DAP rejects

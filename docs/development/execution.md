@@ -21,9 +21,11 @@ See [workspace.md](workspace.md) for source refresh and root identity and
 
 ## Compiled Sessions
 
-Creating a Session selects one eligible workspace-relative `.fql` document.
-The workspace refreshes retained contents or defensively admits a missed
-creation using the normal discovery boundaries, then compiles it with the
+Creating a Session explicitly selects one workspace-relative lowercase `.fql`
+regular file. Workspace refresh admits the selected file beneath discovery-excluded
+directories (including `.tmp`, `testdata`, and nested Go modules) while preserving
+containment and nested-symlink restrictions. It does not admit excluded neighbors.
+The execution manager then compiles the refreshed source with the
 shared runtime using `api.NewSource` with the absolute source path and retained
 content. Load, syntax, or compiler failures are returned as structured
 compilation diagnostics without publishing a Session.
