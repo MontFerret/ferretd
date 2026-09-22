@@ -25,12 +25,15 @@ type (
 		mu           sync.RWMutex
 		mutationGate chan struct{}
 
-		id                     ID
-		root                   string
-		state                  State
-		failure                error
-		files                  []File
-		documents              map[string]Document
+		id        ID
+		root      string
+		state     State
+		failure   error
+		files     []File
+		documents map[string]Document
+		// explicitPaths outlives document removal so same-path recreation stays admitted.
+		// It is protected by mu and published under mutationGate with document state.
+		explicitPaths          map[string]struct{}
 		order                  []string
 		nextDocumentGeneration Generation
 		watcher                *workspaceWatcher
@@ -106,7 +109,7 @@ func (w *Workspace) Failure() error {
 	return w.failure
 }
 
-// Files returns deterministic value snapshots of discovered source files.
+// Files returns deterministic value snapshots of discovered and explicitly admitted sources.
 func (w *Workspace) Files() []File {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -188,6 +191,7 @@ func (w *Workspace) setFailed(err error) {
 
 	w.files = nil
 	w.documents = nil
+	w.explicitPaths = nil
 	w.order = nil
 	w.watcher = nil
 	w.failure = err
@@ -221,6 +225,7 @@ func (w *Workspace) close() error {
 	w.watcher = nil
 	w.files = nil
 	w.documents = nil
+	w.explicitPaths = nil
 	w.order = nil
 	w.nextDocumentGeneration = 0
 	w.failure = nil

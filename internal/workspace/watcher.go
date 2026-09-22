@@ -17,7 +17,7 @@ type (
 
 		root      string
 		backend   *fsnotify.Watcher
-		watched   map[string]struct{}
+		watched   map[string]os.FileInfo
 		processed chan watcherResult
 		done      chan struct{}
 		cancel    context.CancelFunc
@@ -44,60 +44,90 @@ func newWorkspaceWatcher(root string) (*workspaceWatcher, error) {
 	return &workspaceWatcher{
 		root:      root,
 		backend:   backend,
-		watched:   make(map[string]struct{}),
+		watched:   make(map[string]os.FileInfo),
 		processed: make(chan watcherResult, 128),
 		done:      make(chan struct{}),
 	}, nil
 }
 
 func (w *workspaceWatcher) AddDirectory(relativePath string) error {
+	_, err := w.addDirectory(relativePath)
+
+	return err
+}
+
+// addDirectory reports whether this call installed a new watch. Callers serialize
+// registration changes with the workspace mutation gate; the watcher lock also
+// protects registration against concurrent close.
+func (w *workspaceWatcher) addDirectory(relativePath string) (bool, error) {
 	key := path.Clean(relativePath)
-	absolute := w.root
-
-	if key != "." {
-		absolute = filepath.Join(w.root, filepath.FromSlash(key))
-	}
-
-	absolute = filepath.Clean(absolute)
+	absolute := filepath.Clean(filepath.Join(w.root, filepath.FromSlash(key)))
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.closed {
-		return ErrClosed
-	}
-
-	if _, ok := w.watched[absolute]; ok {
-		return nil
+		return false, ErrClosed
 	}
 
 	info, err := watcherDirectoryInfo(absolute, key == ".")
 	if err != nil {
-		return err
+		return false, err
+	}
+
+	if previous, ok := w.watched[absolute]; ok {
+		if os.SameFile(previous, info) {
+			return false, nil
+		}
+
+		if err := w.removeDirectoryLocked(absolute); err != nil {
+			return false, err
+		}
 	}
 
 	if err := w.backend.Add(absolute); err != nil {
-		return err
+		return false, err
 	}
 
 	current, err := watcherDirectoryInfo(absolute, key == ".")
 	if err != nil || !os.SameFile(info, current) {
-		removeErr := w.backend.Remove(absolute)
-		if errors.Is(removeErr, fsnotify.ErrNonExistentWatch) || isOnlyNotExist(removeErr) ||
-			isInvalidatedWatchRemoval(removeErr) {
-			removeErr = nil
-		}
+		removeErr := w.removeDirectoryLocked(absolute)
 
 		if err == nil {
 			err = errors.New("directory changed while adding watch")
 		}
 
-		return errors.Join(err, removeErr)
+		return false, errors.Join(err, removeErr)
 	}
 
-	w.watched[absolute] = struct{}{}
+	w.watched[absolute] = current
 
-	return nil
+	return true, nil
+}
+
+func (w *workspaceWatcher) removeDirectories(directories []string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	var result error
+	for _, directory := range directories {
+		absolute := filepath.Clean(filepath.Join(w.root, filepath.FromSlash(directory)))
+		result = errors.Join(result, w.removeDirectoryLocked(absolute))
+	}
+
+	return result
+}
+
+func (w *workspaceWatcher) removeDirectoryLocked(absolute string) error {
+	err := w.backend.Remove(absolute)
+	if errors.Is(err, fsnotify.ErrNonExistentWatch) || errors.Is(err, fsnotify.ErrClosed) ||
+		isOnlyNotExist(err) || isInvalidatedWatchRemoval(err) {
+		err = nil
+	}
+
+	delete(w.watched, absolute)
+
+	return err
 }
 
 func (w *workspaceWatcher) Start(workspace *Workspace) {
@@ -174,13 +204,7 @@ func (w *workspaceWatcher) ReplaceSubtree(relativePath string, directories []str
 			continue
 		}
 
-		if err := w.backend.Remove(watched); err != nil &&
-			!errors.Is(err, fsnotify.ErrNonExistentWatch) && !errors.Is(err, fsnotify.ErrClosed) &&
-			!isOnlyNotExist(err) && !isInvalidatedWatchRemoval(err) {
-			result = errors.Join(result, err)
-		}
-
-		delete(w.watched, watched)
+		result = errors.Join(result, w.removeDirectoryLocked(watched))
 	}
 
 	return result

@@ -82,6 +82,12 @@ Launch arguments may contain additional client-supplied properties. The adapter
 ignores properties it does not recognize while continuing to decode and validate
 the supported Ferret arguments above.
 
+An explicitly selected `program` may be beneath a directory excluded from
+automatic workspace discovery, such as `.tmp`, `testdata`, or a nested Go module.
+It must still be a regular lowercase `.fql` file inside `cwd`, without nested
+symlinks. Selection admits only that file; breakpoints and stack frames keep its
+original source path, and later disk edits do not change the launched snapshot.
+
 `workingDirectory` is independent of `cwd`: it may be outside the workspace,
 and the program does not need to be inside it. Relative filesystem operations
 use this runtime root, while source resolution, breakpoints, and stack-frame

@@ -13,10 +13,11 @@ import (
 )
 
 // RefreshDocument reconciles one workspace-relative source with the filesystem.
-// A currently eligible source is admitted even when it was not present during
-// initial discovery; a missing or ineligible source is removed from retained state.
+// Explicit selection bypasses directory discovery exclusions, but still requires
+// a regular lowercase .fql file beneath the workspace without nested symlinks.
+// Successful admissions persist until close, including across deletion/recreation.
 func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (Document, error) {
-	document, found, err := w.reconcileDocument(ctx, relativePath)
+	document, found, err := w.reconcileDocument(ctx, relativePath, true)
 	if err != nil {
 		return Document{}, err
 	}
@@ -31,7 +32,8 @@ func (w *Workspace) RefreshDocument(ctx context.Context, relativePath string) (D
 func (w *Workspace) reconcileDocument(
 	ctx context.Context,
 	relativePath string,
-) (Document, bool, error) {
+	explicit bool,
+) (document Document, found bool, err error) {
 	if err := w.beginMutation(ctx); err != nil {
 		return Document{}, false, err
 	}
@@ -43,27 +45,17 @@ func (w *Workspace) reconcileDocument(
 		return Document{}, false, nil
 	}
 
-	discovered, err := discoverWorkspaceDocument(ctx, w.root, key)
-	if err != nil {
-		return Document{}, false, err
-	}
-
 	w.mu.RLock()
 	watcher := w.watcher
+	_, admitted := w.explicitPaths[key]
 	w.mu.RUnlock()
 
-	if watcher != nil {
-		for _, directory := range discovered.directories {
-			if err := watcher.AddDirectory(directory); err != nil {
-				if directory != "." && isOnlyNotExist(err) {
-					discovered.found = false
+	registration := watchRegistration{watcher: watcher}
+	defer registration.finish(&err)
 
-					break
-				}
-
-				return Document{}, false, err
-			}
-		}
+	discovered, err := discoverWorkspaceDocument(ctx, w.root, key, explicit || admitted, registration.observe)
+	if err != nil {
+		return Document{}, false, err
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -77,15 +69,31 @@ func (w *Workspace) reconcileDocument(
 		return Document{}, false, ErrClosed
 	}
 
+	if err := ctx.Err(); err != nil {
+		return Document{}, false, err
+	}
+
 	current, exists := w.documents[key]
 
 	if !discovered.found {
+		registration.committed = !explicit || admitted
+
 		if exists {
 			delete(w.documents, key)
 			w.rebuildIndexesLocked()
 		}
 
 		return Document{}, false, nil
+	}
+
+	registration.committed = true
+
+	if explicit {
+		if w.explicitPaths == nil {
+			w.explicitPaths = make(map[string]struct{})
+		}
+
+		w.explicitPaths[key] = struct{}{}
 	}
 
 	next := discovered.document
@@ -108,7 +116,7 @@ func (w *Workspace) reconcileDocument(
 	return next, true, nil
 }
 
-func (w *Workspace) reconcileTree(ctx context.Context, relativePath string) error {
+func (w *Workspace) reconcileTree(ctx context.Context, relativePath string) (err error) {
 	if err := w.beginMutation(ctx); err != nil {
 		return err
 	}
@@ -122,24 +130,35 @@ func (w *Workspace) reconcileTree(ctx context.Context, relativePath string) erro
 
 	w.mu.RLock()
 	watcher := w.watcher
-	w.mu.RUnlock()
-
-	var observe directoryObserver
-
-	if watcher != nil {
-		observe = watcher.AddDirectory
+	var explicitPaths []string
+	for selected := range w.explicitPaths {
+		if workspacePathInSubtree(selected, key) {
+			explicitPaths = append(explicitPaths, selected)
+		}
 	}
 
-	content, err := loadWorkspaceSubtree(ctx, w.root, key, observe)
+	w.mu.RUnlock()
+	sort.Strings(explicitPaths)
+
+	registration := watchRegistration{watcher: watcher}
+	defer registration.finish(&err)
+
+	content, err := loadWorkspaceSubtree(ctx, w.root, key, registration.observe)
 	if err != nil {
 		return err
 	}
 
-	if err := ctx.Err(); err != nil {
+	if err := w.reconcileExplicitPaths(ctx, &content, explicitPaths, registration.observe); err != nil {
 		return err
 	}
 
 	w.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		w.mu.Unlock()
+
+		return err
+	}
+
 	if w.closing.Load() || w.state != StateReady {
 		w.mu.Unlock()
 
@@ -147,6 +166,7 @@ func (w *Workspace) reconcileTree(ctx context.Context, relativePath string) erro
 	}
 
 	w.applyContentLocked(key, content)
+	registration.committed = true
 	w.mu.Unlock()
 
 	if watcher != nil {
@@ -156,6 +176,37 @@ func (w *Workspace) reconcileTree(ctx context.Context, relativePath string) erro
 	}
 
 	return nil
+}
+
+// Reconciliation reads selected files individually; it never walks their excluded
+// neighbors. Existing ancestors remain watched even while a selected file is absent.
+func (w *Workspace) reconcileExplicitPaths(
+	ctx context.Context,
+	content *workspaceContent,
+	explicitPaths []string,
+	observe directoryObserver,
+) error {
+	for _, key := range explicitPaths {
+		if _, found := content.documents[key]; found {
+			continue
+		}
+
+		discovered, err := discoverWorkspaceDocument(ctx, w.root, key, true, observe)
+		if err != nil {
+			return err
+		}
+
+		content.directories = append(content.directories, discovered.directories...)
+
+		if discovered.found {
+			content.documents[key] = discovered.document
+			content.order = append(content.order, key)
+		}
+	}
+
+	sort.Strings(content.order)
+
+	return ctx.Err()
 }
 
 func (w *Workspace) reconcileWatchEvent(
@@ -182,7 +233,7 @@ func (w *Workspace) reconcileWatchEvent(
 	}
 
 	if isWorkspaceSource(base) {
-		_, _, err := w.reconcileDocument(ctx, key)
+		_, _, err := w.reconcileDocument(ctx, key, false)
 
 		return err
 	}

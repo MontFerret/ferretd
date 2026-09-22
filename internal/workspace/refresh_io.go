@@ -24,13 +24,15 @@ func discoverWorkspaceDocument(
 	ctx context.Context,
 	rootPath string,
 	relativePath string,
+	explicit bool,
+	observe directoryObserver,
 ) (discoveredDocument, error) {
 	root, err := os.OpenRoot(rootPath)
 	if err != nil {
 		return discoveredDocument{}, fmt.Errorf("open workspace root: %w", err)
 	}
 
-	result, discoverErr := discoverWorkspaceDocumentRoot(ctx, rootPath, root, relativePath)
+	result, discoverErr := discoverWorkspaceDocumentRoot(ctx, rootPath, root, relativePath, explicit, observe)
 	closeErr := root.Close()
 
 	if discoverErr != nil {
@@ -53,6 +55,8 @@ func discoverWorkspaceDocumentRoot(
 	rootPath string,
 	root *os.Root,
 	relativePath string,
+	explicit bool,
+	observe directoryObserver,
 ) (discoveredDocument, error) {
 	if err := ctx.Err(); err != nil {
 		return discoveredDocument{}, err
@@ -63,7 +67,7 @@ func discoverWorkspaceDocumentRoot(
 		return discoveredDocument{}, nil
 	}
 
-	directories, eligible, err := validateDocumentAncestors(root, key)
+	directories, eligible, err := validateDocumentAncestors(ctx, root, key, explicit, observe)
 	if err != nil {
 		return discoveredDocument{}, err
 	}
@@ -106,12 +110,22 @@ func discoverWorkspaceDocumentRoot(
 	}, nil
 }
 
-func validateDocumentAncestors(root *os.Root, relativePath string) ([]string, bool, error) {
+func validateDocumentAncestors(ctx context.Context, root *os.Root, relativePath string, explicit bool, observe directoryObserver) ([]string, bool, error) {
 	directories := []string{"."}
 	current := "."
 
+	if observe != nil {
+		if err := observe("."); err != nil {
+			return nil, false, err
+		}
+	}
+
 	for _, component := range splitWorkspacePath(path.Dir(relativePath)) {
-		if isExcludedDirectory(component) {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
+
+		if !explicit && isExcludedDirectory(component) {
 			return directories, false, nil
 		}
 
@@ -130,6 +144,22 @@ func validateDocumentAncestors(root *os.Root, relativePath string) ([]string, bo
 			return directories, false, nil
 		}
 
+		if observe != nil {
+			if err := observe(current); err != nil {
+				if isOnlyNotExist(err) {
+					return directories, false, nil
+				}
+
+				return nil, false, err
+			}
+		}
+
+		directories = append(directories, current)
+
+		if explicit {
+			continue
+		}
+
 		entries, err := fs.ReadDir(root.FS(), current)
 		if err != nil {
 			if workspacePathMissing(root.FS(), current, err) {
@@ -138,8 +168,6 @@ func validateDocumentAncestors(root *os.Root, relativePath string) ([]string, bo
 
 			return nil, false, fmt.Errorf("read directory %q: %w", current, err)
 		}
-
-		directories = append(directories, current)
 
 		if containsGoModule(entries) {
 			return directories, false, nil
