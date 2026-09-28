@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/MontFerret/api v1.0.0-alpha.19
-	github.com/MontFerret/ferret/v2 v2.0.0-alpha.55
+	github.com/MontFerret/ferret/v2 v2.0.0-alpha.56
 	github.com/MontFerret/specs v1.12.0
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/fsnotify/fsnotify v1.10.1
@@ -17,7 +17,7 @@ require (
 	github.com/tliron/glsp v0.2.2
 	golang.org/x/mod v0.41.0
 	golang.org/x/sys v0.48.0
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -36,5 +36,5 @@ require (
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260911204522-f61a6ca850bd // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260921155816-b14227669459 // indirect
 )
