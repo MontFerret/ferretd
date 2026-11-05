@@ -154,7 +154,7 @@ func (m *Manager) prepareSession(
 		return nil, errors.Join(err, plan.Close())
 	}
 
-	parameters, err := plan.Params()
+	parameters, err := plan.Params(ctx)
 	if err != nil {
 		err = errors.Join(fmt.Errorf("retrieve plan parameters: %w", err), plan.Close())
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

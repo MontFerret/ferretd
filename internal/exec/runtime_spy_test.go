@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 
@@ -24,7 +25,9 @@ type (
 		compileSources      []api.Source
 		compileDebugSources []api.Source
 		parameters          []string
-		run                 func(context.Context, sessionOptionsSpy) (*api.Output, error)
+		collect             func(context.Context, sessionOptionsSpy) (*api.Content, error)
+		runFn               func(context.Context) (api.Output, error)
+		paramsFn            func(context.Context) ([]string, error)
 
 		compileCalls      atomic.Int64
 		compileDebugCalls atomic.Int64
@@ -67,26 +70,20 @@ func withPlanCloseHook(hook func() error) runtimeSpyOption {
 	}
 }
 
+func (r *runtimeSpy) Version(ctx context.Context) (api.Version, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	return "test", nil
+}
+
 func (r *runtimeSpy) Run(
-	ctx context.Context,
-	source api.Source,
-	options ...api.SessionOption,
-) (*api.Output, error) {
-	plan, err := r.Compile(ctx, source)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() { _ = plan.Close() }()
-
-	session, err := plan.NewSession(ctx, options...)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() { _ = session.Close() }()
-
-	return session.Run(ctx)
+	context.Context,
+	api.Source,
+	...api.SessionOption,
+) (api.Output, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (r *runtimeSpy) Compile(

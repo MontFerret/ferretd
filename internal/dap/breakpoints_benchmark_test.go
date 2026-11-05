@@ -62,7 +62,7 @@ func benchmarkBreakpointServer(b *testing.B) (*Server, string) {
 		b.Fatal(err)
 	}
 
-	runtime, err := uapi.New()
+	runtime, err := uapi.New("test")
 	if err != nil {
 		b.Fatal(err)
 	}

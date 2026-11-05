@@ -94,7 +94,7 @@ func newTestClient(t *testing.T) *testClient {
 func newTestClientWithOptions(t *testing.T, options Options) *testClient {
 	t.Helper()
 
-	runtime, err := uapi.New()
+	runtime, err := uapi.New("test")
 	if err != nil {
 		t.Fatal(err)
 	}

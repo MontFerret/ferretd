@@ -217,13 +217,13 @@ func runAndObserve(t *testing.T, manager *Manager, id ExecutionID) (ExecutionSna
 	return terminal, events
 }
 
-func parameterOutput(_ context.Context, options sessionOptionsSpy) (*api.Output, error) {
+func parameterOutput(_ context.Context, options sessionOptionsSpy) (*api.Content, error) {
 	content, err := json.Marshal(options.params["value"])
 
-	return &api.Output{ContentType: options.contentType, Content: content}, err
+	return &api.Content{Metadata: api.Metadata{ContentType: options.contentType}, Data: content}, err
 }
 
-func canceledOutput(ctx context.Context, _ sessionOptionsSpy) (*api.Output, error) {
+func canceledOutput(ctx context.Context, _ sessionOptionsSpy) (*api.Content, error) {
 	<-ctx.Done()
 
 	return nil, ctx.Err()

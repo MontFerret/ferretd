@@ -17,7 +17,7 @@ type sessionSpy struct {
 
 var _ api.Session = (*sessionSpy)(nil)
 
-func (s *sessionSpy) Run(ctx context.Context) (*api.Output, error) {
+func (s *sessionSpy) Run(ctx context.Context) (api.Output, error) {
 	if s.runtime.beforeRun != nil {
 		var err error
 
@@ -27,11 +27,19 @@ func (s *sessionSpy) Run(ctx context.Context) (*api.Output, error) {
 		}
 	}
 
-	if s.runtime.run != nil {
-		return s.runtime.run(ctx, s.options)
+	if s.runtime.runFn != nil {
+		return s.runtime.runFn(ctx)
 	}
 
-	return &api.Output{ContentType: s.options.contentType, Content: []byte("1")}, nil
+	return &outputSpy{collectFn: func(ctx context.Context) (*api.Content, error) {
+		if s.runtime.collect != nil {
+			content, err := s.runtime.collect(ctx, s.options)
+
+			return cloneContent(content), err
+		}
+
+		return &api.Content{Metadata: api.Metadata{ContentType: s.options.contentType}, Data: []byte("1")}, nil
+	}}, nil
 }
 
 func (s *sessionSpy) Close() error {

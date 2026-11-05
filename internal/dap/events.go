@@ -119,8 +119,8 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 		s.invalidateHandles("completed")
 		s.logger.Info().Msg("DAP execution completed")
 
-		if snapshot.Output != nil && len(snapshot.Output.Content) > 0 {
-			if err := s.sendOutput(outputCategoryStdout, ensureTrailingNewline(string(snapshot.Output.Content))); err != nil {
+		if snapshot.Output != nil && len(snapshot.Output.Data) > 0 {
+			if err := s.sendOutput(outputCategoryStdout, ensureTrailingNewline(string(snapshot.Output.Data))); err != nil {
 				s.logger.Error().Err(err).Msg("send DAP output event failed")
 			}
 		}
@@ -136,8 +136,8 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 		defer s.breakpoints.finish()
 		s.invalidateHandles("failed")
 
-		if snapshot.Output != nil && len(snapshot.Output.Content) > 0 {
-			if err := s.sendOutput(outputCategoryStdout, ensureTrailingNewline(string(snapshot.Output.Content))); err != nil {
+		if snapshot.Output != nil && len(snapshot.Output.Data) > 0 {
+			if err := s.sendOutput(outputCategoryStdout, ensureTrailingNewline(string(snapshot.Output.Data))); err != nil {
 				s.logger.Error().Err(err).Msg("send DAP output event failed")
 			}
 		}

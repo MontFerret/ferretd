@@ -23,7 +23,7 @@ type session struct {
 	reason           apidebugger.Reason
 	location         apisource.Location
 	hitBreakpointIDs []apidebugger.BreakpointID
-	output           *api.Output
+	output           *api.Content
 	failure          *exec.RuntimeFailure
 	terminating      bool
 	close            lifecycle.CloseOperation

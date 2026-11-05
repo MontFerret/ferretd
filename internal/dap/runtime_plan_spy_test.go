@@ -16,7 +16,11 @@ type runtimeOwnershipPlan struct {
 
 var _ api.Plan = (*runtimeOwnershipPlan)(nil)
 
-func (p *runtimeOwnershipPlan) Params() ([]string, error) {
+func (p *runtimeOwnershipPlan) Params(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	return nil, nil
 }
 

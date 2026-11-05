@@ -78,6 +78,11 @@ func TestRuntimeDiscoveryAndNativeExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	version, err := d.runtime.Version(t.Context())
+	if err != nil || version != runtimes.NativeVersion {
+		t.Fatalf("native runtime version = %q, %v", version, err)
+	}
+
 	done := make(chan error, 1)
 	go func() { done <- d.Start(context.Background()) }()
 	t.Cleanup(func() {

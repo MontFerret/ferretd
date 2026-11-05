@@ -18,7 +18,7 @@ import (
 
 // New constructs a daemon and its service boundaries.
 func New(options Options) (*Daemon, error) {
-	return bootstrap(options, func() (api.Runtime, error) { return uapi.New() })
+	return bootstrap(options, func() (api.Runtime, error) { return uapi.New(runtimes.NativeVersion) })
 }
 
 func bootstrap(options Options, createRuntime runtimes.Factory) (*Daemon, error) {
@@ -60,6 +60,7 @@ func newDaemon(options Options, runtime api.Runtime, catalog *runtimes.Catalog) 
 	}
 
 	workspaceManager := workspace.New()
+
 	executionManager, err := exec.New(workspaceManager, runtime)
 	if err != nil {
 		cleanupErr := errors.Join(workspaceManager.Clear(context.Background()), runtime.Close())
@@ -78,6 +79,7 @@ func newDaemon(options Options, runtime api.Runtime, catalog *runtimes.Catalog) 
 		stopDone:   make(chan struct{}),
 		state:      stateNew,
 	}
+
 	grpcServer, err := grpcadapter.New(
 		result.workspaces,
 		result.executions,

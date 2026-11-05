@@ -14,8 +14,10 @@ semantics remain owned by the main Ferret project.
 Execution uses the
 [Universal Runtime API](https://github.com/MontFerret/api). Each daemon or DAP
 service graph constructs and owns one shared runtime through Ferret's upstream
-`uapi.New()` adapter. Execution Sessions own reusable plans, individual runs own
-runtime sessions, and the execution manager borrows the composition runtime.
+`uapi.New` adapter. Execution Sessions own reusable plans, individual runs own
+runtime sessions and live output handles, and the execution manager borrows the
+composition runtime. Runs collect detached content and settle output and session
+cleanup before publishing completion.
 
 ## Build
 
@@ -249,7 +251,10 @@ one-shot runtime session. Its filesystem starts at the workspace root; an
 optional working directory changes only that runtime session's root. Source
 containment and retained state remain workspace-owned.
 `RunExecution` returns the `RUNNING` snapshot immediately; execution then
-continues independently of the triggering RPC context. Clients can observe the
+continues independently of the triggering RPC context. It remains running until
+output collection and owned cleanup settle. Retained output preserves absent
+versus present-empty content and available content alongside failures, using the
+existing public content-type and data fields. Clients can observe the
 latest lifecycle event and subsequent events with `WatchExecution`, cancel an
 active execution, and retrieve terminal output or failure details until they
 explicitly close the resource. Closing a workspace cascades through its Sessions

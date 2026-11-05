@@ -30,6 +30,7 @@ type (
 		ordered     []Definition
 	}
 
+	// Factory constructs an owned runtime after startup configuration validation.
 	Factory func() (api.Runtime, error)
 )
 

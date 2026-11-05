@@ -88,7 +88,7 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 	}
 
 	runtime := newRuntimeSpy()
-	runtime.run = parameterOutput
+	runtime.collect = parameterOutput
 
 	manager, err := New(workspaces, runtime)
 	if err != nil {
@@ -125,7 +125,7 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 	}
 
 	terminal, _ := runAndObserve(t, manager, created.ID)
-	if terminal.State != StateCompleted || terminal.Output == nil || string(terminal.Output.Content) != "7" {
+	if terminal.State != StateCompleted || terminal.Output == nil || string(terminal.Output.Data) != "7" {
 		t.Fatalf("terminal = %+v", terminal)
 	}
 

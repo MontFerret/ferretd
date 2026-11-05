@@ -61,18 +61,20 @@ translate; they do not become alternate owners of domain behavior.
 * `internal/workspace` owns process-local workspace identity, discovery,
   retained source and syntax state, refresh, and close coordination.
 * `internal/exec` owns compiled Sessions, the shared per-run execution state,
-  caller parameters (`Parameters`), one-shot Executions, lazy debug Plans,
+  caller parameters (`Parameters`), live output handles and their settlement,
+  detached retained `api.Content`, one-shot Executions, lazy debug Plans,
   DebugRuntime leases, and execution lifecycle observation. It borrows one
   composition-owned `api.Runtime` and never closes it.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
-  events, and debug child cleanup.
+  events, detached debugger event content, and debug child cleanup.
 * `internal/dap` owns DAP composition as well as protocol translation. Its
   composition constructs and owns the shared Universal runtime with Ferret's
   `uapi.New`.
 * Ferret's upstream `github.com/MontFerret/ferret/v2/uapi` package is the sole
   bridge from the Universal Runtime API to native runtime, Plan, Session,
   debugger, and diagnostic types. Composition uses its owning constructor;
-  do not recreate a local runtime adapter.
+  do not recreate a local runtime adapter. Supply the selected Ferret Core
+  version, independently of the daemon version.
 * `internal/source`, `internal/diagnostic`, and `internal/lifecycle` own their
   protocol-neutral shared concepts. Do not move those semantics into adapters
   or process setup.
@@ -150,6 +152,10 @@ protobuf code changes only through source/configuration changes and regeneration
   mutexes, atomics, channels, and once-guards for the same transition without a
   concrete ordering or performance reason.
 * Preserve ordering between state changes and externally visible events.
+* Successful `Session.Run` acquires a live output handle; ordinary execution
+  completes only after `Collect` and owned output/session cleanup settle. Keep
+  the invocation context alive through settlement. Retain detached content,
+  including present-empty and partial content, and copy mutable observer data.
 * Share lifecycle machinery only when semantics and ownership genuinely match;
   similar execution and debug state does not make one generic session model.
 * Test cancellation, cleanup, stale state, repeated operations, and concurrency

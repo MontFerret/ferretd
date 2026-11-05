@@ -23,7 +23,7 @@ func TestLiveBreakpointReplacementThroughUniversalRuntime(t *testing.T) {
 	t.Cleanup(cancel)
 	entered, release := make(chan struct{}), make(chan struct{})
 
-	runtime, err := uapi.New(ferret.WithFunctionsRegistrar(func(ns ferruntime.Namespace) {
+	runtime, err := uapi.New("test", ferret.WithFunctionsRegistrar(func(ns ferruntime.Namespace) {
 		ns.Function().A0().Add("WAIT_NATIVE", func(runCtx context.Context) (ferruntime.Value, error) {
 			close(entered)
 			select {
@@ -165,7 +165,7 @@ func TestDebugManagerLiveBreakpointReplacement(t *testing.T) {
 	t.Cleanup(cancel)
 	entered, release := make(chan struct{}), make(chan struct{})
 
-	runtime, err := uapi.New(ferret.WithFunctionsRegistrar(func(ns ferruntime.Namespace) {
+	runtime, err := uapi.New("test", ferret.WithFunctionsRegistrar(func(ns ferruntime.Namespace) {
 		ns.Function().A0().Add("GATE", func(ctx context.Context) (ferruntime.Value, error) {
 			select {
 			case entered <- struct{}{}:

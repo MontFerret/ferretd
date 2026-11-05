@@ -247,7 +247,7 @@ func TestDAPRejectsInvalidNativePositions(t *testing.T) {
 		{Line: 2, Column: 1},
 	} {
 		t.Run(fmt.Sprint(position), func(t *testing.T) {
-			native, err := uapi.New()
+			native, err := uapi.New("test")
 			if err != nil {
 				t.Fatal(err)
 			}

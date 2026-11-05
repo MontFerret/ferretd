@@ -21,7 +21,7 @@ type executionFixture struct {
 func mustNewManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
 	t.Helper()
 
-	runtime, err := uapi.New()
+	runtime, err := uapi.New("test")
 	if err != nil {
 		t.Fatalf("uapi.New: %v", err)
 	}
@@ -138,7 +138,7 @@ func runSessionOutput(t *testing.T, manager *exec.Manager, sessionID exec.Sessio
 		t.Fatalf("terminal execution = %+v, want completed output", terminal)
 	}
 
-	return string(terminal.Output.Content)
+	return string(terminal.Output.Data)
 }
 
 func assertFailure(t *testing.T, terminal exec.ExecutionSnapshot, category exec.FailureCategory, wantOutput bool) {

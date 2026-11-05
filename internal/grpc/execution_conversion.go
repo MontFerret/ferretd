@@ -46,8 +46,8 @@ func toProtoExecution(value exec.ExecutionSnapshot) (*executionv1.Execution, err
 
 	if value.Output != nil {
 		result.Output = &executionv1.Output{
-			ContentType: value.Output.ContentType,
-			Data:        append([]byte(nil), value.Output.Content...),
+			ContentType: value.Output.Metadata.ContentType,
+			Data:        append([]byte(nil), value.Output.Data...),
 		}
 	}
 

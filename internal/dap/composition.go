@@ -20,7 +20,7 @@ import (
 // the supplied options. It returns an error when either stream is nil or its
 // owned service graph cannot be constructed.
 func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
-	return bootstrap(input, output, options, func() (api.Runtime, error) { return uapi.New() })
+	return bootstrap(input, output, options, func() (api.Runtime, error) { return uapi.New(runtimes.NativeVersion) })
 }
 
 func bootstrap(input io.Reader, output io.Writer, options Options, createRuntime runtimes.Factory) (*Server, error) {
@@ -48,6 +48,7 @@ func bootstrap(input io.Reader, output io.Writer, options Options, createRuntime
 	}
 
 	options = options.normalized()
+
 	runtime, err := createRuntime()
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
@@ -58,6 +59,7 @@ func bootstrap(input io.Reader, output io.Writer, options Options, createRuntime
 
 func newServer(input io.Reader, output io.Writer, options Options, runtime api.Runtime, catalog *runtimes.Catalog) (*Server, error) {
 	workspaces := workspace.New()
+
 	executions, err := exec.New(workspaces, runtime)
 	if err != nil {
 		cleanupErr := errors.Join(workspaces.Clear(context.Background()), runtime.Close())

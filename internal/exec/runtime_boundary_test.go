@@ -67,8 +67,8 @@ func TestExecutionRetainsOutputBeforeSessionClose(t *testing.T) {
 
 				return nil
 			}))
-			runtime.run = func(context.Context, sessionOptionsSpy) (*api.Output, error) {
-				return &api.Output{ContentType: "text/plain", Content: content}, test.err
+			runtime.collect = func(context.Context, sessionOptionsSpy) (*api.Content, error) {
+				return &api.Content{Metadata: api.Metadata{ContentType: "text/plain"}, Data: content}, test.err
 			}
 
 			created, err := manager.CreateExecution(context.Background(), snapshot.ID, nil, RuntimeOptions{})
@@ -77,7 +77,7 @@ func TestExecutionRetainsOutputBeforeSessionClose(t *testing.T) {
 			}
 
 			terminal, _ := runAndObserve(t, manager, created.ID)
-			if terminal.Output == nil || terminal.Output.ContentType != "text/plain" || string(terminal.Output.Content) != "result" {
+			if terminal.Output == nil || terminal.Output.Metadata.ContentType != "text/plain" || string(terminal.Output.Data) != "result" {
 				t.Fatalf("retained output = %+v", terminal.Output)
 			}
 
@@ -85,14 +85,14 @@ func TestExecutionRetainsOutputBeforeSessionClose(t *testing.T) {
 				assertFailure(t, terminal, FailureRuntime, true)
 			}
 
-			terminal.Output.Content[0] = 'Y'
+			terminal.Output.Data[0] = 'Y'
 
 			retained, err := manager.GetExecution(context.Background(), created.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if string(retained.Output.Content) != "result" {
+			if string(retained.Output.Data) != "result" {
 				t.Fatal("snapshot mutation changed retained output")
 			}
 		})

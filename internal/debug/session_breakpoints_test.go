@@ -143,7 +143,7 @@ func TestDebugCommandRetainsOutputWithFailure(t *testing.T) {
 	failure := errors.New("completion cleanup")
 	debugger := fixture.runtime.latestDebugger()
 	debugger.startFn = func(context.Context) (*apidebugger.Event, error) {
-		return &apidebugger.Event{Reason: apidebugger.ReasonCompleted, Output: &api.Output{Content: content}}, failure
+		return &apidebugger.Event{Reason: apidebugger.ReasonCompleted, Output: &api.Content{Data: content}}, failure
 	}
 	debugger.closeFn = func() error {
 		content[0] = 'x'
@@ -163,18 +163,18 @@ func TestDebugCommandRetainsOutputWithFailure(t *testing.T) {
 	}
 
 	failed := waitForState(t, subscription, StateFailed)
-	if failed.Output == nil || string(failed.Output.Content) != "42" || failed.Failure == nil || failed.Failure.Message != failure.Error() {
+	if failed.Output == nil || string(failed.Output.Data) != "42" || failed.Failure == nil || failed.Failure.Message != failure.Error() {
 		t.Fatalf("failed snapshot = %+v", failed)
 	}
 
-	failed.Output.Content[0] = 'y'
+	failed.Output.Data[0] = 'y'
 
 	if err := debugger.Close(); err != nil {
 		t.Fatal(err)
 	}
 
 	retained, err := fixture.manager.GetSession(t.Context(), created.ID)
-	if err != nil || retained.Output == nil || string(retained.Output.Content) != "42" {
+	if err != nil || retained.Output == nil || string(retained.Output.Data) != "42" {
 		t.Fatalf("retained snapshot = %+v, %v", retained, err)
 	}
 }

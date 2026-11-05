@@ -19,17 +19,18 @@ type (
 		State      State
 		Parameters Parameters
 		Options    RuntimeOptions
-		Output     *api.Output
-		Failure    *Failure
+		// Output is detached content retained after collection and owned cleanup.
+		Output  *api.Content
+		Failure *Failure
 	}
 )
 
 const (
 	// FailureSessionCreation identifies Plan.NewSession failure.
 	FailureSessionCreation FailureCategory = iota + 1
-	// FailureRuntime identifies Universal Session.Run failure.
+	// FailureRuntime identifies Universal Session.Run or output collection failure.
 	FailureRuntime
-	// FailureCleanup identifies Universal Session cleanup failure.
+	// FailureCleanup identifies explicit output or Universal Session cleanup failure.
 	FailureCleanup
 )
 
@@ -38,7 +39,7 @@ const (
 func (s ExecutionSnapshot) Clone() ExecutionSnapshot {
 	result := s
 	result.Parameters = s.Parameters.Clone()
-	result.Output = cloneOutput(s.Output)
+	result.Output = cloneContent(s.Output)
 	result.Failure = s.Failure.Clone()
 
 	return result

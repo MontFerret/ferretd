@@ -15,7 +15,13 @@ type unusedRuntime struct {
 
 var _ api.Runtime = (*unusedRuntime)(nil)
 
-func (r *unusedRuntime) Run(context.Context, api.Source, ...api.SessionOption) (*api.Output, error) {
+func (r *unusedRuntime) Version(context.Context) (api.Version, error) {
+	r.t.Fatal("unexpected runtime Version")
+
+	return "", nil
+}
+
+func (r *unusedRuntime) Run(context.Context, api.Source, ...api.SessionOption) (api.Output, error) {
 	r.t.Fatal("unexpected runtime Run")
 
 	return nil, nil

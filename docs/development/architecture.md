@@ -46,7 +46,7 @@ debug adapter client
 The `lsp` and `dap` commands compose in-process services independently of
 `ferretd serve`. The daemon exposes workspace and execution behavior over gRPC;
 debugging is not currently a daemon gRPC capability. Daemon and DAP composition
-each construct an owning Universal runtime with Ferret's `uapi.New()` and
+each construct an owning Universal runtime with Ferret's `uapi.New` and
 retain it through final cleanup.
 
 Daemon and DAP composition first build independent immutable runtime catalogs
@@ -99,9 +99,9 @@ than access to protected state.
   retained documents and Ferret syntax state, refresh, and close coordination.
 * `internal/exec` borrows a composition-owned `api.Runtime` and owns compiled
   Sessions, common per-run execution state, `Parameters`, normalized
-  `RuntimeOptions`, copied `api.Output` and `RuntimeFailure` results, one-shot
-  Executions, watches, cancellation, lazy debug Plans, and debugger-runtime
-  leases.
+  `RuntimeOptions`, live output ownership, detached `api.Content` and
+  `RuntimeFailure` results, one-shot Executions, watches, cancellation, lazy debug
+  Plans, and debugger-runtime leases.
 * Ferret's upstream `uapi` package adapts native runtime objects and diagnostics
   to the Universal API. Composition constructs an owning runtime with `uapi.New`;
   no local package translates between the two runtime APIs.
@@ -123,9 +123,10 @@ than access to protected state.
 ## State and resource hierarchy
 
 Each daemon or DAP service graph constructs one shared Universal runtime with
-`uapi.New()` and closes it after its child services. That runtime owns the
-native engine. An open workspace owns retained file and document snapshots, but
-no execution engine.
+`uapi.New` and closes it after its child services. That runtime owns the
+native engine. Both compositions supply `runtimes.NativeVersion`, checked against
+the selected Ferret dependency in tests. An open workspace owns retained file
+and document snapshots, but no execution engine.
 
 Each graph also retains its own startup catalog. Supplying the same absolute
 `--runtime-config` path aligns definitions without sharing services or connections.
@@ -144,7 +145,10 @@ the common runtime's one-time session close attempt. `internal/debug` layers
 DebugSession identity, commands, presentation scopes, events, and state on that
 DebugRuntime while consuming Universal debugger and source values directly.
 Ferret's `uapi` forwards canonical debugger values and projects diagnostics.
-Execution and debug services copy output before cleanup and for each snapshot.
+Ordinary execution consumes its live output handle into detached content and
+settles output and session cleanup before publishing its terminal state.
+Debugger events already contain detached content. Snapshots and watcher events
+copy content metadata and mutable bytes, never live handles.
 Ordinary Executions and DebugSessions remain sibling resources
 with distinct observable state machines. Closing a parent stops new runtime
 creation, settles both child kinds, releases leases, and only then closes its

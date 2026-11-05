@@ -55,6 +55,11 @@ func TestRuntimeConfigurationAcceptsUnusedWire(t *testing.T) {
 		}
 	})
 
+	version, err := server.runtime.Version(t.Context())
+	if err != nil || version != runtimes.NativeVersion {
+		t.Fatalf("native runtime version = %q, %v", version, err)
+	}
+
 	if server.catalog.DefaultName() != "local" || len(server.catalog.List()) != 2 {
 		t.Fatalf("catalog = %+v", server.catalog.List())
 	}

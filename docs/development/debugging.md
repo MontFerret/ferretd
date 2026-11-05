@@ -22,14 +22,18 @@ matching debug Plan. Lazy construction is coordinated so concurrent debug
 requests converge on one result. A failed debug compilation is retained
 consistently with the Session's source snapshot.
 
-`internal/exec` creates a DebugRuntime through the same lower-level machinery as
-ordinary execution. The common execution state owns cloned parameters,
+`internal/exec` creates a DebugRuntime through the same lower-level machinery
+as ordinary execution. The common execution state owns cloned parameters,
 normalized `exec.RuntimeOptions`, immutable source/Plan data, manager-owned
-cancellation, one Universal debugger Session, `RuntimeFailure` materialization,
-and idempotent cleanup. The retained debug Session copies `api.Output` when
-accepting completion and when returning snapshots. The DebugRuntime
-exposes the Universal debugger capability and owns the debug-Plan lease. It does
-not expose mutable Session maps, locks, or child state.
+cancellation, one Universal debugger Session, `RuntimeFailure`
+materialization, and idempotent cleanup. Universal debugger events already
+carry detached `*api.Content`; they are never consumed as live output handles.
+The retained debug Session copies the complete metadata value and mutable
+bytes when accepting completion and returning snapshots, preserving absent and
+present-empty content, unknown lengths, and partial-content descriptors
+through cleanup. The DebugRuntime exposes the Universal debugger capability
+and owns the debug-Plan lease. It does not expose mutable Session maps, locks,
+or child state.
 
 ## Retained DebugSessions
 
@@ -89,7 +93,7 @@ releasing normal or debug Plans.
 
 The `dap` command runs one protocol-pure server over stdin and stdout. It does
 not connect to `ferretd serve`. DAP composition constructs an owning Universal
-runtime with Ferret's `uapi.New()` plus in-process workspace, execution, and debug
+runtime with Ferret's `uapi.New` plus in-process workspace, execution, and debug
 managers. It also owns one launched
 workspace, execution Session, and DebugSession.
 
@@ -192,7 +196,10 @@ Runtime errors stop as inspectable DAP exceptions. Continuing from that stop
 reports error output and terminal events. Successful completion reports encoded
 result output and successful exit. If a command returns completion output together
 with an error, the debug Session retains both and DAP emits the available result
-before the failure output and unsuccessful exit. Explicit termination ends the
+before the failure output and unsuccessful exit. DAP reads the detached
+`Content.Data`; successful and failed exits preserve output, exited, then
+terminated event ordering. Retained content remains valid after debugger
+cleanup and is isolated between observers. Explicit termination ends the
 session without inventing a normal process exit.
 
 Adapter cleanup cancels the active watch, terminates and closes the DebugSession,

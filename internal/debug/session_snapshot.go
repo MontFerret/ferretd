@@ -17,8 +17,9 @@ type SessionSnapshot struct {
 	HitBreakpointIDs []apidebugger.BreakpointID
 	Parameters       exec.Parameters
 	Options          exec.RuntimeOptions
-	Output           *api.Output
-	Failure          *exec.RuntimeFailure
+	// Output is detached debugger event content that remains valid after cleanup.
+	Output  *api.Content
+	Failure *exec.RuntimeFailure
 }
 
 // Clone returns an independent copy of the snapshot's retained mutable data.
@@ -27,7 +28,7 @@ func (s SessionSnapshot) Clone() SessionSnapshot {
 	result := s
 	result.HitBreakpointIDs = append([]apidebugger.BreakpointID(nil), s.HitBreakpointIDs...)
 	result.Parameters = s.Parameters.Clone()
-	result.Output = cloneOutput(s.Output)
+	result.Output = cloneContent(s.Output)
 	result.Failure = s.Failure.Clone()
 
 	return result
@@ -50,7 +51,7 @@ func (d *session) snapshotLocked() SessionSnapshot {
 		HitBreakpointIDs: append([]apidebugger.BreakpointID(nil), d.hitBreakpointIDs...),
 		Parameters:       d.runtime.Parameters(),
 		Options:          d.runtime.Options(),
-		Output:           cloneOutput(d.output),
+		Output:           cloneContent(d.output),
 		Failure:          d.failure.Clone(),
 	}
 }

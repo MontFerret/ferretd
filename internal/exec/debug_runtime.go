@@ -74,7 +74,7 @@ func (r *DebugRuntime) MaterializeFailure(err error) *RuntimeFailure {
 // observe the same session close result.
 func (r *DebugRuntime) Close() error {
 	r.runtime.cancel(errExecutionCanceled)
-	err := r.runtime.closeSession()
+	err := r.runtime.closeResources()
 	r.lease.release()
 
 	return err

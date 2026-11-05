@@ -24,7 +24,7 @@ func newLiveBreakpointFixture(t *testing.T, stopOnEntry bool, initial ...int) *l
 	t.Helper()
 	f := &liveBreakpointFixture{t: t, entered: make(chan struct{}), release: make(chan struct{})}
 
-	runtime, err := uapi.New(ferret.WithFunctionsRegistrar(func(ns ferruntime.Namespace) {
+	runtime, err := uapi.New("test", ferret.WithFunctionsRegistrar(func(ns ferruntime.Namespace) {
 		ns.Function().A0().Add("GATE", func(ctx context.Context) (ferruntime.Value, error) {
 			select {
 			case f.entered <- struct{}{}:

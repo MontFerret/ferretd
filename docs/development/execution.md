@@ -32,9 +32,10 @@ compilation diagnostics without publishing a Session.
 
 A published Session owns one immutable normal `api.Plan`, its workspace and source
 identity, source revision, and declared parameter names. Parameter metadata is
-retrieved through fallible `Plan.Params()` before publication. Metadata failure
-closes the unpublished Plan and retains both retrieval and cleanup errors.
-Later disk refreshes do not mutate existing Sessions. The same Session can create multiple isolated
+retrieved through fallible `Plan.Params(ctx)` using the creation context before
+publication, outside registry locks. Metadata failure closes the unpublished
+Plan and retains both retrieval and cleanup errors. Later disk refreshes do not
+mutate existing Sessions. The same Session can create multiple isolated
 Executions.
 
 The Session also coordinates lazy construction of one matching debug Plan. That
@@ -57,14 +58,27 @@ The package has one concrete per-run implementation. It owns the immutable
 Session/Plan/source target, cloned parameters, normalized options, a
 manager-owned context and cancellation function, one `api.Session` or Universal
 debugger Session, ordinary output capture, `RuntimeFailure`
-materialization, and idempotent session cleanup. Both normal and debug creation
-use the same preparation and cloning semantics.
+materialization, and idempotent output/session cleanup. Both normal and debug
+creation use the same preparation and cloning semantics.
 
-Ordinary output is copied before closing the Universal session, so cleanup
-cannot invalidate retained bytes. A nil output means absent output; a non-nil
-empty output remains present, including when execution or cleanup also fails.
-Debug output is retained by the debug Session. Both snapshot APIs copy mutable
-fields once for each caller.
+Ordinary `Session.Run` returns a caller-owned live `api.Output` handle, not a
+terminal result. The per-run owner calls `Collect` with its manager-owned context,
+retains the detached `*api.Content` directly, then explicitly closes the output
+and the caller-owned Universal session in that order. Collection settles
+output-owned execution, delivery, and cleanup; explicit closure also handles
+collection rejected before admission and retrieves retained cleanup errors.
+Terminal state and its event are published only after collection and owned
+cleanup settle. Closing unread output alone does not establish successful
+execution, so even side-effect-only runs consume their handles.
+
+A nil collected content pointer means absent output. Non-nil content remains
+present even with nil or empty `Data`, including when collection or cleanup also
+fails. Content metadata describes the complete payload, so its known length may
+exceed a prefix returned with an error; unknown length remains unchanged.
+Collected content stays valid after cleanup. Live handles never enter snapshots
+or watcher events. Debug events already carry detached content, retained by the
+debug Session. Both snapshot APIs copy metadata values and mutable bytes for
+each caller and watcher.
 
 Runtime options also retain an optional canonical working directory. Validation
 requires a nonblank absolute path that resolves to an accessible directory and
@@ -110,7 +124,11 @@ terminal state remains observable until explicit close or parent cleanup.
 
 Successful output is retained with its content type and encoded bytes. Failures
 distinguish runtime, runtime-session creation, and cleanup categories and retain
-protocol-neutral source diagnostics when Ferret supplies them.
+protocol-neutral source diagnostics when Ferret supplies them. `Run` and `Collect`
+errors use the runtime category, including cleanup causes already reported by
+collection. Explicit cleanup failure after otherwise successful collection uses
+the cleanup category. Joined causes survive until failure materialization;
+cleanup does not discard the primary error or available content.
 
 ## Watches and ordering
 
@@ -129,12 +147,12 @@ Execution lifecycle.
 
 ## Cleanup and parent ownership
 
-Closing an Execution cancels active work, waits for common-runtime cleanup, ends
-watchers, and becomes idempotent. Closing a Session stops both normal and debug
-runtime creation, closes every child Execution and DebugSession, waits for
-DebugRuntime leases, and then closes its Plans. Closing a workspace invokes the
-execution manager's registered close hook before retained workspace state is
-cleared.
+Closing an Execution cancels active work, waits for output settlement and
+common-runtime cleanup, ends watchers, and becomes idempotent. Closing a
+Session stops both normal and debug runtime creation, closes every child
+Execution and DebugSession, waits for DebugRuntime leases, and then closes its
+Plans. Closing a workspace invokes the execution manager's registered close
+hook before retained workspace state is cleared.
 
 The manager orchestrates two package-local registries rather than owning all
 resource maps under one lock. The Session registry owns active-versus-closing
@@ -155,9 +173,12 @@ No Session-registry lock is held while entering the Execution registry, and no
 registry lock is held during compilation, hooks, runtime cleanup, Plan closure,
 or lifecycle waits.
 
-Concurrent close calls share one close operation and retained result. A caller's
-canceled wait does not transfer or abandon ownership of the underlying cleanup;
-a later caller can still observe completion.
+Output and session cleanup failures are retained by the per-run owner so parent
+cleanup and concurrent close waiters can observe both. A cleanup failure does not
+skip remaining resource closure. Concurrent close calls share one close
+operation and retained result. A caller's canceled wait does not transfer or
+abandon ownership of the underlying cleanup; a later caller can still observe
+completion.
 
 The manager itself has a terminal closed state. New resources are rejected after
 close, and daemon shutdown closes execution resources before clearing
@@ -169,9 +190,12 @@ composition close their one runtime exactly once after managers and workspaces.
 The execution v1 protobuf defines Session and Execution identity, source
 snapshots, JSON-shaped parameters, output, structured failures, lifecycle RPCs,
 the optional runtime working directory, and the server-streaming watch.
-`internal/grpc` preserves optional-field presence and maps those values and
-stable domain errors without owning execution state. A present blank working
-directory is classified separately from invalid parameters.
+The adapter maps `Content.Metadata.ContentType` and `Content.Data` to the
+existing output content-type and data fields; upstream Content JSON is not the
+public result representation. `internal/grpc` preserves optional-field presence
+and maps those values and stable domain errors without owning execution state.
+A present blank working directory is classified separately from invalid
+parameters.
 
 The public `client` package presents supported Session, Execution, watcher,
 output, failure, and working-directory option types while hiding generated

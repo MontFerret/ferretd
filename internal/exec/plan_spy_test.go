@@ -23,7 +23,15 @@ type planSpy struct {
 
 var _ api.Plan = (*planSpy)(nil)
 
-func (p *planSpy) Params() ([]string, error) {
+func (p *planSpy) Params(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if p.runtime.paramsFn != nil {
+		return p.runtime.paramsFn(ctx)
+	}
+
 	return p.runtime.parameters, p.runtime.paramsErr
 }
 

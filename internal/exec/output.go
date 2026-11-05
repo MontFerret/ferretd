@@ -1,14 +1,18 @@
 package exec
 
-import "github.com/MontFerret/api"
+import (
+	"bytes"
 
-func cloneOutput(output *api.Output) *api.Output {
-	if output == nil {
+	"github.com/MontFerret/api"
+)
+
+func cloneContent(content *api.Content) *api.Content {
+	if content == nil {
 		return nil
 	}
 
-	return &api.Output{
-		ContentType: output.ContentType,
-		Content:     append([]byte(nil), output.Content...),
-	}
+	result := *content
+	result.Data = bytes.Clone(content.Data)
+
+	return &result
 }

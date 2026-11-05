@@ -21,7 +21,8 @@ with a bounded shutdown context. Process signals cancel the root context in
 `cmd/ferretd/main.go`.
 
 The daemon constructs its owning Universal runtime with Ferret's upstream
-`uapi.New()` and owns that runtime together with one workspace manager, one
+`uapi.New`, supplying the selected Ferret Core version independently of the
+daemon version, and owns that runtime together with one workspace manager, one
 execution manager, and one gRPC server. The execution manager
 borrows the runtime and registers its workspace close hook during construction
 so child Sessions, Executions, and Plans are released before workspace state.
@@ -34,7 +35,7 @@ validation, exact metadata resolution, and immutable startup catalog. Commands
 read an explicit file once through its context-aware loader and pass parsed
 configuration through `daemon.Options.RuntimeConfig` or `dap.Options.RuntimeConfig`.
 Programmatic construction uses the same catalog constructor. Each composition
-constructs one catalog and rejects unsupported defaults before `uapi.New()` or
+constructs one catalog and rejects unsupported defaults before `uapi.New` or
 other owned services. The daemon passes that catalog explicitly to gRPC; adapters
 and execution/debug managers never load configuration files.
 

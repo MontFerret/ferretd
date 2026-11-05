@@ -17,7 +17,7 @@ type (
 		id          ExecutionID
 		runtime     *executionRuntime
 		state       State
-		output      *api.Output
+		output      *api.Content
 		failure     *Failure
 		runDone     chan struct{}
 		close       lifecycle.CloseOperation
@@ -151,7 +151,7 @@ func (e *execution) run() {
 	e.finish(result.output, result.err, result.category)
 }
 
-func (e *execution) finish(output *api.Output, err error, category FailureCategory) {
+func (e *execution) finish(output *api.Content, err error, category FailureCategory) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -187,7 +187,7 @@ func (e *execution) beginClose() bool {
 func (e *execution) settleClose() error {
 	e.cancel()
 	<-e.runDone
-	closeErr := e.runtime.closeSession()
+	closeErr := e.runtime.closeResources()
 
 	e.mu.Lock()
 	for id, watcher := range e.watchers {

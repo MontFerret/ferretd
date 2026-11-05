@@ -311,9 +311,9 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 		default:
 			return &apidebugger.Event{
 				Reason: apidebugger.ReasonCompleted,
-				Output: &api.Output{
-					ContentType: "application/json",
-					Content:     []byte(`{"result":5}`),
+				Output: &api.Content{
+					Metadata: api.Metadata{ContentType: "application/json"},
+					Data:     []byte(`{"result":5}`),
 				},
 			}, nil
 		}
@@ -438,7 +438,7 @@ func TestDebugSessionLifecycleBreakpointsFramesScopesAndEvaluation(t *testing.T)
 	}
 
 	completed := waitForState(t, subscription, StateCompleted)
-	if completed.Output == nil || completed.Output.ContentType != "application/json" {
+	if completed.Output == nil || completed.Output.Metadata.ContentType != "application/json" {
 		t.Fatalf("completed = %+v", completed)
 	}
 

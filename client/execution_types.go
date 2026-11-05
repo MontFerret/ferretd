@@ -136,7 +136,7 @@ const (
 	FailureCategorySessionCreation FailureCategory = iota + 1
 	// FailureCategoryRuntime identifies Ferret execution failure.
 	FailureCategoryRuntime
-	// FailureCategoryCleanup identifies runtime Session cleanup failure.
+	// FailureCategoryCleanup identifies explicit output or runtime Session cleanup failure.
 	FailureCategoryCleanup
 )
 

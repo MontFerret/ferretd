@@ -118,7 +118,7 @@ func TestDAPInitialStopPreservesStartTimeBindingsDuringReplacement(t *testing.T)
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			native, err := uapi.New()
+			native, err := uapi.New("test")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -214,7 +214,7 @@ func TestDAPInitialStopPreservesStartTimeBindingsDuringReplacement(t *testing.T)
 }
 
 func TestDAPInitialStopSurvivesFailedReplacement(t *testing.T) {
-	native, err := uapi.New()
+	native, err := uapi.New("test")
 	if err != nil {
 		t.Fatal(err)
 	}

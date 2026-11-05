@@ -224,7 +224,7 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 		t.Fatalf("Continue: %v", err)
 	}
 
-	if event.Reason != apidebugger.ReasonCompleted || event.Output == nil || string(event.Output.Content) != "1" {
+	if event.Reason != apidebugger.ReasonCompleted || event.Output == nil || string(event.Output.Data) != "1" {
 		t.Fatalf("debug completion = %+v, want first Session output 1", event)
 	}
 }
@@ -293,7 +293,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
 		if terminal.State != exec.StateCompleted || terminal.Output == nil ||
-			string(terminal.Output.Content) != `"workspace"` {
+			string(terminal.Output.Data) != `"workspace"` {
 			t.Fatalf("terminal = %+v, want workspace output", terminal)
 		}
 	})
@@ -335,7 +335,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
 		if terminal.State != exec.StateCompleted || terminal.Output == nil ||
-			string(terminal.Output.Content) != `"runtime"` {
+			string(terminal.Output.Data) != `"runtime"` {
 			t.Fatalf("terminal = %+v, want runtime output", terminal)
 		}
 	})
@@ -416,7 +416,7 @@ func TestConcurrentExecutionsUseIndependentWorkingDirectories(t *testing.T) {
 
 	for index, result := range results {
 		want := `"` + strconv.Itoa(index+1) + `"`
-		if result.State != exec.StateCompleted || result.Output == nil || string(result.Output.Content) != want {
+		if result.State != exec.StateCompleted || result.Output == nil || string(result.Output.Data) != want {
 			t.Fatalf("result[%d] = %+v, want %s", index, result, want)
 		}
 	}
