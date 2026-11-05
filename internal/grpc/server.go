@@ -13,6 +13,7 @@ import (
 	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 	workspacev1 "github.com/MontFerret/ferretd/gen/ferretd/workspace/v1"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -30,10 +31,11 @@ type (
 )
 
 // New constructs the daemon's gRPC adapter over the supplied domain services.
-// It returns an error when a required service or the shutdown callback is nil.
+// It returns an error when a required service, catalog, or shutdown callback is nil.
 func New(
 	workspaces *workspace.Manager,
 	executions *exec.Manager,
+	catalog *runtimes.Catalog,
 	version string,
 	instanceID string,
 	shutdown func(),
@@ -49,7 +51,7 @@ func New(
 		return nil, err
 	}
 
-	daemonAdapter, err := newDaemonService(version, instanceID, shutdown)
+	daemonAdapter, err := newDaemonService(version, instanceID, shutdown, catalog)
 	if err != nil {
 		return nil, err
 	}

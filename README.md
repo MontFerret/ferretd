@@ -77,9 +77,11 @@ FERRETD_AUTH_TOKEN="$(openssl rand -base64 32)" \
   --endpoint tcp://127.0.0.1:0 \
   --auth-token-env FERRETD_AUTH_TOKEN
 ./bin/ferretd serve --log-level debug
+./bin/ferretd serve --runtime-config /absolute/path/runtimes.json
 ./bin/ferretd lsp
 ./bin/ferretd dap
 ./bin/ferretd dap --log-level debug
+./bin/ferretd dap --runtime-config /absolute/path/runtimes.json
 ```
 
 `serve` starts the local daemon and waits for an interrupt or a `Shutdown` RPC.
@@ -157,6 +159,68 @@ c, err := client.Dial(
 The client rejects TCP endpoints without a bearer token and rejects bearer-token
 configuration for native endpoints before opening a connection.
 
+### Runtime definitions and discovery
+
+Both `serve` and standalone `dap` accept the same optional `--runtime-config`
+JSON file:
+
+```json
+{
+  "defaultRuntime": "local",
+  "runtimes": [
+    {
+      "name": "application",
+      "label": "My application",
+      "provider": "wire",
+      "endpoint": "tcp://127.0.0.1:9000",
+      "connectTimeout": "5s"
+    }
+  ]
+}
+```
+
+The built-in `local` target (`Built-in Ferret`, provider `native`) is always
+implicit and cannot be replaced. Additional definitions must use provider `wire`.
+Names are unique, case-sensitive, nonempty, and have no surrounding whitespace.
+An omitted or empty label uses the name; an omitted connection timeout uses
+`5s`. Supplied timeouts must be positive duration strings, and Wire endpoints
+must be nonblank. Endpoint syntax and connectivity are not validated here.
+
+Without a file, the catalog contains only `local`. Omitting `defaultRuntime`
+selects `local`; explicit blank or unknown defaults fail startup. Both entry
+points currently require a native default: a configured Wire default fails
+clearly before runtime allocation because execution binding and DAP runtime
+selection are not implemented yet. Unused Wire targets are accepted.
+
+Explicit missing, unreadable, malformed, or invalid files fail startup. The
+loader requires a JSON object and rejects unknown fields, null typed fields,
+invalid field types, and trailing JSON values. Relative file paths use the
+process working directory. Each service graph reads its file once and owns an
+immutable catalog snapshot. Pass the same absolute path to both commands for
+consistent definitions; DAP still constructs independent services and a runtime.
+Configuration is not reloaded, discovered from workspaces, or persisted through
+RPCs. The incoming daemon `--endpoint` and `--auth-token-env` options remain
+separate from these outbound target definitions.
+
+Use the supported Go client to discover metadata:
+
+```go
+catalog, err := c.ListRuntimes(ctx)
+if err != nil {
+	return err
+}
+fmt.Println(catalog.DefaultRuntime)
+for _, target := range catalog.Runtimes {
+	fmt.Println(target.Name, target.Label, target.Provider)
+}
+```
+
+Discovery returns definitions ordered by name and one authoritative default
+name. It does not dial endpoints, expose connection settings, or assert that a
+target is reachable, executable, or debug-capable. A compatible older 1.x daemon
+can still serve existing operations; unsupported discovery returns an error
+matching `client.ErrUnsupportedOperation` without fabricating definitions.
+
 Opening a workspace recursively discovers lowercase `.fql` files, loads their
 contents, and retains daemon-owned documents with Ferret syntax state and
 diagnostics. No Ferret project manifest is required. While the workspace remains
@@ -209,7 +273,7 @@ parameters, expressions, or evaluated values. See
 
 ## Current Status
 
-The daemon exposes API v1.1 `DaemonService`, `WorkspaceService`, and
+The daemon exposes API v1.2 `DaemonService`, `WorkspaceService`, and
 `ExecutionService` contracts over permission-restricted native local transports
 or authenticated ephemeral IPv4 loopback TCP, plus the standard gRPC health
 service. The checked-in Go code under `gen/` is generated from `proto/` with

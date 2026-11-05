@@ -21,7 +21,7 @@ func TestDaemonClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 		t.Fatalf("normalize options: %v", err)
 	}
 
-	daemon, err := newDaemon(options, runtime)
+	daemon, err := newDaemon(options, runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newDaemon: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestDaemonStopCancellationDoesNotAbandonRuntimeCleanup(t *testing.T) {
 		t.Fatalf("normalize options: %v", err)
 	}
 
-	daemon, err := newDaemon(options, runtime)
+	daemon, err := newDaemon(options, runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newDaemon: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDaemonStartupFailureClosesOwnedRuntime(t *testing.T) {
 		t.Fatalf("normalize options: %v", err)
 	}
 
-	daemon, err := newDaemon(options, runtime)
+	daemon, err := newDaemon(options, runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newDaemon: %v", err)
 	}

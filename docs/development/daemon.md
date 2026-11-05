@@ -11,8 +11,9 @@ owned below the daemon.
 ## Process composition
 
 `cmd/ferretd/serve.go` parses an optional local endpoint, the TCP-only
-`--auth-token-env` setting, and the shared `--log-level` setting. It creates a
-logger that writes newline-delimited JSON to stderr, constructs the daemon, and
+`--auth-token-env` setting, an optional `--runtime-config` JSON file, and the shared
+`--log-level` setting. It creates a logger that writes newline-delimited JSON
+to stderr, constructs the daemon, and
 starts it with the command context. The level accepts `debug`, `info`, `warn`,
 or `error` and defaults to `info`; the DAP command uses the same logger
 construction and level contract. After `Start` returns, `serve` calls `Stop`
@@ -27,6 +28,33 @@ so child Sessions, Executions, and Plans are released before workspace state.
 Required service dependencies are passed explicitly. Runtime cleanup closes the
 wrapper, which delegates exactly once to the native engine; composition does not
 also close the engine independently.
+
+`internal/runtimes` owns the shared configuration schema, normalization,
+validation, exact metadata resolution, and immutable startup catalog. Commands
+read an explicit file once through its context-aware loader and pass parsed
+configuration through `daemon.Options.RuntimeConfig` or `dap.Options.RuntimeConfig`.
+Programmatic construction uses the same catalog constructor. Each composition
+constructs one catalog and rejects unsupported defaults before `uapi.New()` or
+other owned services. The daemon passes that catalog explicitly to gRPC; adapters
+and execution/debug managers never load configuration files.
+
+The implicit `local` definition is always present, labeled `Built-in Ferret`,
+with provider `native`. Additional definitions use provider `wire`, a unique
+case-sensitive name without surrounding whitespace, a nonblank endpoint, an
+optional label, and an optional positive duration string for `connectTimeout`.
+Empty labels use the name; omitted timeouts use `5s`. An omitted default selects
+`local`; blank or unknown defaults are invalid. Wire defaults are valid catalog
+metadata but temporarily rejected by both compositions until their execution or
+DAP selection paths can honor them. Resolution itself never connects or falls
+back after an unknown selection.
+
+The loader requires one JSON object, rejects unknown fields, null typed fields,
+invalid types, and trailing values, and reports explicit file failures. Relative
+paths use the process working directory. Recommend the same absolute file path
+for `serve` and standalone `dap`, which retain separate snapshots and runtimes.
+There is no reload, workspace discovery, or mutation/persistence API. Outbound
+Wire syntax and transport validation remain outside this metadata layer; the
+inbound daemon endpoint parser must not be reused for it.
 
 ## Lifecycle
 
@@ -90,7 +118,7 @@ domain errors without retaining workspace, Session, or Execution state.
 
 Clients send their API version during daemon information negotiation. A major
 version mismatch is rejected with structured compatibility detail; minor
-versions are additive. The current version is 1.1; transport and bootstrap
+versions are additive. The current version is 1.2; transport and bootstrap
 features do not change the RPC API version. Process-local state survives client
 disconnects but not daemon restarts.
 
@@ -100,11 +128,20 @@ classification. Generated clients remain an implementation detail. Changes to
 public client types, endpoint behavior, or error identity require compatibility
 review and boundary tests.
 
+`DaemonService.ListRuntimes` returns one default name and descriptors containing
+name, label, and string provider, ordered by name. It describes configured
+targets without connection settings or capability/reachability claims and does
+no outbound work. `Client.ListRuntimes` returns independent semantic snapshots,
+validates incomplete responses, and preserves future nonempty provider strings.
+Discovery against an older compatible daemon returns a classifiable
+`client.ErrUnsupportedOperation` while retaining the original gRPC error.
+Minor-version differences never prevent initial negotiation or existing calls.
+
 ## Protobuf ownership and generation
 
 Source contracts live below `proto/ferretd` in versioned packages:
 
-* daemon v1: information, negotiation, and shutdown;
+* daemon v1: information, negotiation, shutdown, and runtime discovery;
 * workspace v1: open, get, list, and close;
 * execution v1: Session and Execution lifecycle plus execution watching;
 * debug v1: an unimplemented placeholder capability declaration.

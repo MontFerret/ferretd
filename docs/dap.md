@@ -5,6 +5,30 @@ stdout. Stdout contains framed DAP messages only. Adapter diagnostics are
 newline-delimited JSON records on the process stderr stream; process-facing
 errors are also written to stderr.
 
+## Runtime configuration
+
+Standalone DAP accepts the same startup definitions as `ferretd serve`:
+
+```sh
+ferretd dap --runtime-config /absolute/path/runtimes.json
+```
+
+See the [runtime configuration example](../README.md#runtime-definitions-and-discovery)
+for the JSON schema. The implicit built-in `local` runtime is the default when
+the flag or `defaultRuntime` is omitted. Additional Wire definitions are accepted
+as metadata, but the default must currently be `local`: selecting a Wire default
+fails before runtime allocation until DAP runtime selection is implemented.
+No runtime selector is added to launch arguments in this stage.
+
+An explicitly requested missing, unreadable, malformed, or invalid file fails
+the process with diagnostics on stderr and no stdout bytes. Configuration uses
+one strict JSON object, rejecting unknown fields, invalid types, null typed
+fields, and trailing values. Relative file paths use the process working
+directory. Pass the same absolute configuration path to `serve` and `dap` for
+consistent definitions. Each reads once and constructs its own immutable catalog,
+native runtime, and service graph; DAP does not connect to `serve`. There is no
+live reload or outbound connection attempt for configured Wire definitions.
+
 ## Diagnostics
 
 DAP lifecycle transitions, rejected or failed requests, debugger stops, and

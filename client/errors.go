@@ -6,8 +6,12 @@ import (
 )
 
 var (
-	errIncompleteServerInfo = errors.New("daemon returned incomplete server information")
-	errIncompleteWorkspace  = errors.New("daemon returned an incomplete workspace")
+	errIncompleteServerInfo     = errors.New("daemon returned incomplete server information")
+	errIncompleteWorkspace      = errors.New("daemon returned an incomplete workspace")
+	errIncompleteRuntimeCatalog = errors.New("daemon returned an incomplete runtime catalog")
+
+	// ErrUnsupportedOperation reports an additive operation unavailable on this daemon.
+	ErrUnsupportedOperation = errors.New("unsupported daemon operation")
 
 	// ErrIncompatibleAPI reports a daemon with a different API major version.
 	ErrIncompatibleAPI = errors.New("incompatible daemon API")

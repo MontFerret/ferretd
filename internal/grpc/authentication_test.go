@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
+	daemonv1 "github.com/MontFerret/ferretd/gen/ferretd/daemon/v1"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -24,6 +25,7 @@ func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 	server, err := New(
 		workspaces,
 		mustNewExecutionManager(t, workspaces),
+		mustNewRuntimeCatalog(t),
 		"dev",
 		"instance",
 		func() {},
@@ -66,6 +68,11 @@ func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 			t.Fatalf("Check authorization %q error = %v, want Unauthenticated", authorization, checkErr)
 		}
 
+		_, discoveryErr := daemonv1.NewDaemonServiceClient(connection).ListRuntimes(ctx, &daemonv1.ListRuntimesRequest{})
+		if status.Code(discoveryErr) != codes.Unauthenticated {
+			t.Fatalf("unauthenticated discovery = %v", discoveryErr)
+		}
+
 		watch, watchErr := client.Watch(ctx, &healthv1.HealthCheckRequest{})
 		if watchErr == nil {
 			_, watchErr = watch.Recv()
@@ -81,6 +88,10 @@ func TestBearerAuthenticationProtectsUnaryAndStreamingRPCs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	t.Cleanup(cancel)
 	ctx = metadata.AppendToOutgoingContext(ctx, authorizationMetadataKey, "Bearer correct-token")
+
+	if _, err := daemonv1.NewDaemonServiceClient(connection).ListRuntimes(ctx, &daemonv1.ListRuntimesRequest{}); err != nil {
+		t.Fatalf("authenticated discovery: %v", err)
+	}
 
 	response, err := client.Check(ctx, &healthv1.HealthCheckRequest{})
 	if err != nil {

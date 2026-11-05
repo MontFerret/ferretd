@@ -34,7 +34,7 @@ func mustNewServer(
 ) *Server {
 	t.Helper()
 
-	server, err := New(workspaces, executions, "dev", "instance", func() {}, Options{})
+	server, err := New(workspaces, executions, mustNewRuntimeCatalog(t), "dev", "instance", func() {}, Options{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -50,7 +50,7 @@ func mustNewDaemonService(
 ) *daemonService {
 	t.Helper()
 
-	service, err := newDaemonService(version, instanceID, shutdown)
+	service, err := newDaemonService(version, instanceID, shutdown, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newDaemonService: %v", err)
 	}

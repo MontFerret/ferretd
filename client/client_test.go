@@ -13,6 +13,7 @@ import (
 )
 
 type daemonClientStub struct {
+	daemonv1.DaemonServiceClient
 	getInfoErr error
 }
 

@@ -17,7 +17,7 @@ import (
 func TestServerClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 	runtime := newRuntimeOwnershipSpy()
 
-	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime)
+	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestServerClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 func TestServerRunCancellationClosesOwnedRuntime(t *testing.T) {
 	runtime := newRuntimeOwnershipSpy()
 
-	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime)
+	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

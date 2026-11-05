@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/MontFerret/ferretd/internal/daemon"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/transport"
 )
 
@@ -18,23 +19,31 @@ func newServeCommand(version string) *cobra.Command {
 	var endpointValue string
 	var bearerTokenEnvironment string
 	var logLevelValue string
+	var runtimeConfigPath string
 
 	command := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the local daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			configuration, err := loadRuntimeConfig(cmd.Context(), runtimeConfigPath, cmd.Flags().Changed("runtime-config"))
+			if err != nil {
+				return err
+			}
+
 			return serve(
 				cmd.Context(),
 				version,
 				endpointValue,
 				bearerTokenEnvironment,
 				logLevel(logLevelValue),
+				configuration,
 				cmd.ErrOrStderr(),
 			)
 		},
 	}
 	command.Flags().StringVar(&endpointValue, "endpoint", "", "local endpoint URL")
+	command.Flags().StringVar(&runtimeConfigPath, "runtime-config", "", "runtime definitions JSON file")
 	command.Flags().StringVar(
 		&bearerTokenEnvironment,
 		"auth-token-env",
@@ -57,6 +66,7 @@ func serve(
 	endpointValue string,
 	bearerTokenEnvironment string,
 	logLevelValue logLevel,
+	runtimeConfig runtimes.Config,
 	stderr io.Writer,
 ) error {
 	var endpoint transport.Endpoint
@@ -81,10 +91,11 @@ func serve(
 	}
 
 	d, err := daemon.New(daemon.Options{
-		Version:     version,
-		Endpoint:    endpoint,
-		BearerToken: bearerToken,
-		Logger:      logger,
+		Version:       version,
+		Endpoint:      endpoint,
+		BearerToken:   bearerToken,
+		Logger:        logger,
+		RuntimeConfig: runtimeConfig,
 	})
 	if err != nil {
 		return fmt.Errorf("create daemon: %w", err)

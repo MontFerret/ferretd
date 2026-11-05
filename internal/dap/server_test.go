@@ -109,7 +109,7 @@ func newTestClientWithRuntime(t *testing.T, options Options, runtime api.Runtime
 	clientOutput, serverOutput := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	server, err := newServer(serverInput, serverOutput, options.normalized(), runtime)
+	server, err := newServer(serverInput, serverOutput, options.normalized(), runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

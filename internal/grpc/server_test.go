@@ -28,17 +28,30 @@ func TestNewRequiresDomainServices(t *testing.T) {
 	}{
 		{
 			name: "workspace manager",
-			new:  func() (*Server, error) { return New(nil, executions, "dev", "instance", nil, Options{}) },
+			new: func() (*Server, error) {
+				return New(nil, executions, mustNewRuntimeCatalog(t), "dev", "instance", nil, Options{})
+			},
 			want: errNilWorkspaceManager,
 		},
 		{
 			name: "execution manager",
-			new:  func() (*Server, error) { return New(workspaces, nil, "dev", "instance", nil, Options{}) },
+			new: func() (*Server, error) {
+				return New(workspaces, nil, mustNewRuntimeCatalog(t), "dev", "instance", nil, Options{})
+			},
 			want: errNilExecutionManager,
 		},
 		{
+			name: "runtime catalog",
+			new: func() (*Server, error) {
+				return New(workspaces, executions, nil, "dev", "instance", func() {}, Options{})
+			},
+			want: errNilRuntimeCatalog,
+		},
+		{
 			name: "shutdown callback",
-			new:  func() (*Server, error) { return New(workspaces, executions, "dev", "instance", nil, Options{}) },
+			new: func() (*Server, error) {
+				return New(workspaces, executions, mustNewRuntimeCatalog(t), "dev", "instance", nil, Options{})
+			},
 			want: errNilShutdown,
 		},
 	}

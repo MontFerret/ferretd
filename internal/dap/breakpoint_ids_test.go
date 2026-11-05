@@ -26,7 +26,7 @@ func TestDAPOlderQueuedStopPreservesNewerCommandHits(t *testing.T) {
 
 	var output bytes.Buffer
 
-	server, err := newServer(strings.NewReader(""), &output, Options{}.normalized(), native)
+	server, err := newServer(strings.NewReader(""), &output, Options{}.normalized(), native, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}

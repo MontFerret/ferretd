@@ -5,6 +5,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/transport"
 )
 
@@ -13,6 +14,8 @@ type Options struct {
 	Version     string
 	Endpoint    transport.Endpoint
 	BearerToken string
+	// RuntimeConfig is the startup definition snapshot; zero selects local only.
+	RuntimeConfig runtimes.Config
 	// Logger receives daemon diagnostics. Its writer must be safe for concurrent
 	// use. A nil logger discards diagnostics.
 	Logger *zerolog.Logger

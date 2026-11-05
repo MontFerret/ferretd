@@ -67,7 +67,7 @@ func benchmarkBreakpointServer(b *testing.B) (*Server, string) {
 		b.Fatal(err)
 	}
 
-	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime)
+	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime, mustNewRuntimeCatalog(b))
 	if err != nil {
 		b.Fatal(err)
 	}

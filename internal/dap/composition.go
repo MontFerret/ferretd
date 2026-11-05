@@ -12,6 +12,7 @@ import (
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -19,6 +20,10 @@ import (
 // the supplied options. It returns an error when either stream is nil or its
 // owned service graph cannot be constructed.
 func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
+	return bootstrap(input, output, options, func() (api.Runtime, error) { return uapi.New() })
+}
+
+func bootstrap(input io.Reader, output io.Writer, options Options, createRuntime runtimes.Factory) (*Server, error) {
 	if input == nil {
 		return nil, errNilInput
 	}
@@ -27,19 +32,32 @@ func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 		return nil, errNilOutput
 	}
 
-	options = options.normalized()
+	catalog, err := runtimes.NewCatalog(options.RuntimeConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	runtime, err := uapi.New()
+	definition, err := catalog.Resolve("")
+	if err != nil {
+		return nil, err
+	}
+
+	// DAP launch selection does not yet support Wire defaults.
+	if definition.Provider != runtimes.ProviderNative {
+		return nil, fmt.Errorf("%w: %q requires Wire DAP support", runtimes.ErrUnsupportedDefault, definition.Name)
+	}
+
+	options = options.normalized()
+	runtime, err := createRuntime()
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
 
-	return newServer(input, output, options, runtime)
+	return newServer(input, output, options, runtime, catalog)
 }
 
-func newServer(input io.Reader, output io.Writer, options Options, runtime api.Runtime) (*Server, error) {
+func newServer(input io.Reader, output io.Writer, options Options, runtime api.Runtime, catalog *runtimes.Catalog) (*Server, error) {
 	workspaces := workspace.New()
-
 	executions, err := exec.New(workspaces, runtime)
 	if err != nil {
 		cleanupErr := errors.Join(workspaces.Clear(context.Background()), runtime.Close())
@@ -65,6 +83,7 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 		executions:  executions,
 		debugs:      debugs,
 		runtime:     runtime,
+		catalog:     catalog,
 		logger:      options.Logger.With().Str("component", "dap").Logger(),
 		handles:     newHandleTable(),
 		breakpoints: newBreakpointIDs(),

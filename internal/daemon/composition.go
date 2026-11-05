@@ -12,25 +12,45 @@ import (
 
 	"github.com/MontFerret/ferretd/internal/exec"
 	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 // New constructs a daemon and its service boundaries.
 func New(options Options) (*Daemon, error) {
-	options, err := options.normalized()
+	return bootstrap(options, func() (api.Runtime, error) { return uapi.New() })
+}
+
+func bootstrap(options Options, createRuntime runtimes.Factory) (*Daemon, error) {
+	catalog, err := runtimes.NewCatalog(options.RuntimeConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	runtime, err := uapi.New()
+	definition, err := catalog.Resolve("")
+	if err != nil {
+		return nil, err
+	}
+
+	// Until execution binding supports Wire, a remote default must never run locally.
+	if definition.Provider != runtimes.ProviderNative {
+		return nil, fmt.Errorf("%w: %q requires Wire execution support", runtimes.ErrUnsupportedDefault, definition.Name)
+	}
+
+	options, err = options.normalized()
+	if err != nil {
+		return nil, err
+	}
+
+	runtime, err := createRuntime()
 	if err != nil {
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
 
-	return newDaemon(options, runtime)
+	return newDaemon(options, runtime, catalog)
 }
 
-func newDaemon(options Options, runtime api.Runtime) (*Daemon, error) {
+func newDaemon(options Options, runtime api.Runtime, catalog *runtimes.Catalog) (*Daemon, error) {
 	instanceID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, errors.Join(
@@ -40,7 +60,6 @@ func newDaemon(options Options, runtime api.Runtime) (*Daemon, error) {
 	}
 
 	workspaceManager := workspace.New()
-
 	executionManager, err := exec.New(workspaceManager, runtime)
 	if err != nil {
 		cleanupErr := errors.Join(workspaceManager.Clear(context.Background()), runtime.Close())
@@ -59,10 +78,10 @@ func newDaemon(options Options, runtime api.Runtime) (*Daemon, error) {
 		stopDone:   make(chan struct{}),
 		state:      stateNew,
 	}
-
 	grpcServer, err := grpcadapter.New(
 		result.workspaces,
 		result.executions,
+		catalog,
 		options.Version,
 		instanceID.String(),
 		result.requestShutdown,

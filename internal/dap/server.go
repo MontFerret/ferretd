@@ -16,6 +16,7 @@ import (
 
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -40,6 +41,7 @@ type (
 		executions    *exec.Manager
 		debugs        *debug.Manager
 		runtime       api.Runtime
+		catalog       *runtimes.Catalog
 		logger        zerolog.Logger
 		handles       *handleTable
 		owned         ownedSession

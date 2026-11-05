@@ -1,0 +1,12 @@
+package runtimes
+
+import "errors"
+
+var (
+	// ErrInvalidConfig classifies malformed or invalid runtime configuration.
+	ErrInvalidConfig = errors.New("invalid runtime configuration")
+	// ErrRuntimeNotFound classifies unresolved explicit or default target names.
+	ErrRuntimeNotFound = errors.New("runtime not found")
+	// ErrUnsupportedDefault classifies a default the entry point cannot execute yet.
+	ErrUnsupportedDefault = errors.New("unsupported default runtime")
+)

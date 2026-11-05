@@ -49,6 +49,11 @@ debugging is not currently a daemon gRPC capability. Daemon and DAP composition
 each construct an owning Universal runtime with Ferret's `uapi.New()` and
 retain it through final cleanup.
 
+Daemon and DAP composition first build independent immutable runtime catalogs
+from the same optional startup schema. Both currently require the default to
+resolve to `local`; configured Wire targets are metadata only. Validation and
+the unsupported-default guard run before native runtime allocation.
+
 ## Dependency direction
 
 Commands compose services and adapters. Protocol adapters translate requests,
@@ -81,6 +86,10 @@ than access to protected state.
   and execution services, and graceful shutdown.
 * `internal/transport` owns local endpoint parsing, defaults, listening, dialing,
   and platform security behavior.
+* `internal/runtimes` owns startup runtime definitions, strict file loading,
+  normalization, validation, and immutable ordered metadata lookup. It owns no
+  runtime, connection, lease, or cleanup lifecycle. Daemon discovery exposes only
+  its names, labels, providers, and authoritative default name.
 * `internal/grpc` translates the versioned daemon, workspace, and execution wire
   contracts without owning domain state.
 * `client` is the supported public Go client. It hides generated clients and
@@ -117,6 +126,13 @@ Each daemon or DAP service graph constructs one shared Universal runtime with
 `uapi.New()` and closes it after its child services. That runtime owns the
 native engine. An open workspace owns retained file and document snapshots, but
 no execution engine.
+
+Each graph also retains its own startup catalog. Supplying the same absolute
+`--runtime-config` path aligns definitions without sharing services or connections.
+Discovery is an in-memory metadata operation and makes no reachability or
+capability claims. Wire runtime construction, session binding, and DAP launch
+selection remain unimplemented; a Wire default is rejected rather than ignored.
+
 An execution Session is a child of that workspace and owns an immutable
 `api.Plan` compiled by the shared runtime. Each ordinary Execution is a one-shot
 child of a Session and creates a fresh `api.Session`.

@@ -8,26 +8,32 @@ import (
 	"google.golang.org/grpc/status"
 
 	daemonv1 "github.com/MontFerret/ferretd/gen/ferretd/daemon/v1"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 )
 
 const (
 	apiMajor uint32 = 1
-	apiMinor uint32 = 1
+	apiMinor uint32 = 2
 )
 
 type daemonService struct {
 	daemonv1.UnimplementedDaemonServiceServer
 	info     *daemonv1.ServerInfo
 	shutdown func()
+	catalog  *runtimes.Catalog
 	once     sync.Once
 }
 
-func newDaemonService(version, instanceID string, shutdown func()) (*daemonService, error) {
+func newDaemonService(version, instanceID string, shutdown func(), catalog *runtimes.Catalog) (*daemonService, error) {
 	if shutdown == nil {
 		return nil, errNilShutdown
 	}
 
-	result := &daemonService{shutdown: shutdown}
+	if catalog == nil {
+		return nil, errNilRuntimeCatalog
+	}
+
+	result := &daemonService{shutdown: shutdown, catalog: catalog}
 	result.info = &daemonv1.ServerInfo{
 		Version:    version,
 		InstanceId: instanceID,
@@ -35,6 +41,26 @@ func newDaemonService(version, instanceID string, shutdown func()) (*daemonServi
 	}
 
 	return result, nil
+}
+
+func (s *daemonService) ListRuntimes(ctx context.Context, _ *daemonv1.ListRuntimesRequest) (*daemonv1.ListRuntimesResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+
+	definitions := s.catalog.List()
+	response := &daemonv1.ListRuntimesResponse{
+		DefaultRuntime: s.catalog.DefaultName(),
+		Runtimes:       make([]*daemonv1.RuntimeDescriptor, 0, len(definitions)),
+	}
+
+	for _, definition := range definitions {
+		response.Runtimes = append(response.Runtimes, &daemonv1.RuntimeDescriptor{
+			Name: definition.Name, Label: definition.Label, Provider: string(definition.Provider),
+		})
+	}
+
+	return response, nil
 }
 
 func (s *daemonService) GetInfo(
@@ -47,7 +73,6 @@ func (s *daemonService) GetInfo(
 
 	if request.ClientApi.Major != apiMajor {
 		result := status.New(codes.FailedPrecondition, "incompatible daemon API major version")
-
 		withDetails, err := result.WithDetails(&daemonv1.ApiCompatibilityError{
 			ClientApi: request.ClientApi,
 			ServerApi: s.apiVersion(),
