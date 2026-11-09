@@ -9,9 +9,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MontFerret/api"
+
 	"github.com/MontFerret/ferretd/internal/transport"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
+
+func TestDaemonConstructionFailureReleasesNativeRoot(t *testing.T) {
+	runtime := newRuntimeLifecycleSpy()
+
+	if daemon, err := newDaemon(Options{}, runtime, nil); daemon != nil || err == nil || runtime.closeCalls.Load() != 1 {
+		t.Fatalf("failed owner construction = %v, %v; closes = %d", daemon, err, runtime.closeCalls.Load())
+	}
+
+	runtime = newRuntimeLifecycleSpy()
+	constructionErr := errors.New("native construction failed")
+
+	daemon, err := bootstrap(Options{Endpoint: testEndpoint(t)}, func() (api.Runtime, error) { return runtime, constructionErr })
+	if daemon != nil || !errors.Is(err, constructionErr) || runtime.closeCalls.Load() != 1 {
+		t.Fatalf("failed native construction = %v, %v; closes = %d", daemon, err, runtime.closeCalls.Load())
+	}
+}
 
 func TestDaemonClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 	runtime := newRuntimeLifecycleSpy()

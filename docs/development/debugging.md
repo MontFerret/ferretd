@@ -93,8 +93,11 @@ releasing normal or debug Plans.
 
 The `dap` command runs one protocol-pure server over stdin and stdout. It does
 not connect to `ferretd serve`. DAP composition constructs an owning Universal
-runtime with Ferret's `uapi.New` plus in-process workspace, execution, and debug
-managers. It also owns one launched
+runtime with Ferret's `uapi.New`, transfers it to its own `runtimes.Owner`, and
+retains a native binding alongside in-process workspace, execution, and debug
+managers. Internal Wire acquisition is available through the same owner type;
+DAP launch selection remains unimplemented and Wire defaults are rejected before
+runtime allocation. Unused Wire definitions never connect. It also owns one launched
 workspace, execution Session, and DebugSession.
 
 Launch explicitly selects its `program` through the same workspace refresh as
@@ -204,7 +207,10 @@ session without inventing a normal process exit.
 
 Adapter cleanup cancels the active watch, terminates and closes the DebugSession,
 closes its execution Session, closes the workspace, closes each manager, and
-then closes the composition runtime exactly once. The common execution state
+then releases its native binding and closes the runtime owner exactly once.
+Owners close the shared native root and any remaining Wire roots after child
+cleanup; binding release never substitutes for output/session/debugger/plan
+settlement. The common execution state
 owns the Universal debugger Session and performs cancellation and its one-time
 close attempt. The DebugRuntime releases its debug-Plan lease afterward even
 when cleanup reports failure. Repeated disconnect, termination, context

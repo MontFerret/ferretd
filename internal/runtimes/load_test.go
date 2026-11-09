@@ -40,7 +40,7 @@ func TestLoadStrictJSON(t *testing.T) {
 
 func TestLoadAndCatalogDefaults(t *testing.T) {
 	t.Chdir(t.TempDir())
-	path := writeConfig(t, `{"runtimes":[{"name":"application","provider":"wire","endpoint":"arbitrary outbound syntax"}]}`)
+	path := writeConfig(t, `{"runtimes":[{"name":"application","provider":"wire","endpoint":"tcp://application.invalid:9000"}]}`)
 
 	workingDirectory, err := os.Getwd()
 	if err != nil {

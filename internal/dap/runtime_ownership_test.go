@@ -11,8 +11,26 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/MontFerret/api"
+
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
+
+func TestServerConstructionFailureReleasesNativeRoot(t *testing.T) {
+	runtime := newRuntimeOwnershipSpy()
+
+	if server, err := newServer(strings.NewReader(""), io.Discard, Options{}, runtime, nil); server != nil || err == nil || runtime.closeCalls.Load() != 1 {
+		t.Fatalf("failed owner construction = %v, %v; closes = %d", server, err, runtime.closeCalls.Load())
+	}
+
+	runtime = newRuntimeOwnershipSpy()
+	constructionErr := errors.New("native construction failed")
+
+	server, err := bootstrap(strings.NewReader(""), io.Discard, Options{}, func() (api.Runtime, error) { return runtime, constructionErr })
+	if server != nil || !errors.Is(err, constructionErr) || runtime.closeCalls.Load() != 1 {
+		t.Fatalf("failed native construction = %v, %v; closes = %d", server, err, runtime.closeCalls.Load())
+	}
+}
 
 func TestServerClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 	runtime := newRuntimeOwnershipSpy()

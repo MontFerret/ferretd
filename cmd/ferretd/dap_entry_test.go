@@ -12,7 +12,7 @@ import (
 
 func TestDAPProcessInitialStop(t *testing.T) {
 	binary := buildDAPProcess(t)
-	runtimeConfig := writeRuntimeConfig(t, `{"runtimes":[{"name":"application","provider":"wire","endpoint":"tcp://127.0.0.1:0"}]}`)
+	runtimeConfig := writeRuntimeConfig(t, `{"runtimes":[{"name":"application","provider":"wire","endpoint":"tcp://127.0.0.1:9000"}]}`)
 
 	for _, test := range []struct {
 		name        string

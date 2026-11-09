@@ -13,8 +13,9 @@ semantics remain owned by the main Ferret project.
 
 Execution uses the
 [Universal Runtime API](https://github.com/MontFerret/api). Each daemon or DAP
-service graph constructs and owns one shared runtime through Ferret's upstream
-`uapi.New` adapter. Execution Sessions own reusable plans, individual runs own
+service graph transfers one shared native root from Ferret's upstream
+`uapi.New` adapter to its own runtime acquisition owner and retains a native
+binding. Execution Sessions own reusable plans, individual runs own
 runtime sessions and live output handles, and the execution manager borrows the
 composition runtime. Runs collect detached content and settle output and session
 cleanup before publishing completion.
@@ -175,6 +176,7 @@ JSON file:
       "label": "My application",
       "provider": "wire",
       "endpoint": "tcp://127.0.0.1:9000",
+      "insecure": true,
       "connectTimeout": "5s"
     }
   ]
@@ -185,8 +187,25 @@ The built-in `local` target (`Built-in Ferret`, provider `native`) is always
 implicit and cannot be replaced. Additional definitions must use provider `wire`.
 Names are unique, case-sensitive, nonempty, and have no surrounding whitespace.
 An omitted or empty label uses the name; an omitted connection timeout uses
-`5s`. Supplied timeouts must be positive duration strings, and Wire endpoints
-must be nonblank. Endpoint syntax and connectivity are not validated here.
+`5s`. Supplied timeouts must be positive duration strings. Wire endpoints must
+use `tcp://host:port`, with a hostname or IP and a numeric port in `1..65535`.
+Bracketed IPv6 is supported; userinfo, paths, queries, and fragments are rejected.
+Syntax is validated without connecting, so unreachable targets remain valid.
+
+`insecure` is an optional boolean, defaulting to `false`. Omission or `false`
+uses Wire's TLS defaults with system trust and server identity verification;
+`true` explicitly selects plaintext. The development example opts into plaintext.
+Loopback addresses do not imply plaintext, and TLS failure never retries with
+weaker transport. Explicit null and nonboolean values are invalid.
+
+Internally, each acquisition of a Wire definition creates a fresh client and
+owned channel, even for the same target. Native bindings borrow one shared root.
+The connection timeout bounds startup; bounded detached Wire rollback can take
+additional time after cancellation. Cancelling startup after successful
+acquisition does not close the binding. Callers settle outputs, sessions/debuggers,
+and plans before releasing a binding; owner shutdown closes remaining roots
+after child services settle. Definitive connection loss does not revive or replay
+an existing binding; a new explicit acquisition performs a fresh handshake.
 
 Without a file, the catalog contains only `local`. Omitting `defaultRuntime`
 selects `local`; explicit blank or unknown defaults fail startup. Both entry
@@ -237,8 +256,9 @@ not close its workspaces, and `Close` is explicit and idempotent. The current
 workspace RPC continues to expose identity and lifecycle operations rather than
 documents or parser internals.
 
-Each daemon service graph owns one Universal runtime. `CreateSession` refreshes
-the latest saved contents of one explicitly selected workspace-relative `.fql`
+Each daemon service graph currently retains one native binding from its runtime
+owner. Public session runtime selection remains unimplemented. `CreateSession`
+refreshes the latest saved contents of one explicitly selected workspace-relative `.fql`
 document and compiles it into an immutable reusable plan. A missed creation notification
 is recovered during this refresh. Explicit selection also admits lowercase `.fql`
 regular files beneath discovery-excluded directories, including `.tmp`, `testdata`,

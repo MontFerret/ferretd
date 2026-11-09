@@ -23,7 +23,7 @@ func mustNewRuntimeCatalog(t testing.TB) *runtimes.Catalog {
 }
 
 func TestRuntimeDiscoverySnapshot(t *testing.T) {
-	catalog, err := runtimes.NewCatalog(runtimes.Config{Runtimes: []runtimes.DefinitionConfig{{Name: "application", Provider: runtimes.ProviderWire, Endpoint: "not a transport endpoint"}}})
+	catalog, err := runtimes.NewCatalog(runtimes.Config{Runtimes: []runtimes.DefinitionConfig{{Name: "application", Provider: runtimes.ProviderWire, Endpoint: "tcp://application.invalid:9000"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

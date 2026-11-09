@@ -51,8 +51,12 @@ translate; they do not become alternate owners of domain behavior.
 * `cmd/ferretd` owns process startup, Cobra command behavior, signal handling,
   process-facing output, and top-level composition.
 * `internal/daemon` owns long-running service lifecycle and coordination. Its
-  composition constructs and owns the shared Universal runtime with Ferret's
-  `uapi.New`.
+  composition transfers the shared native `uapi.New` root to a runtime owner,
+  retains a native binding, and closes child services before binding and owner.
+* `internal/runtimes` owns strict startup configuration, immutable catalogs,
+  endpoint validation, runtime acquisition, and root cleanup. Each owner owns
+  one shared native root and fresh independent Wire roots per acquisition.
+  Callers borrow binding runtimes and settle all children before release.
 * `internal/transport` owns local endpoint discovery, listening, and dialing.
 * `internal/grpc` and `internal/lsp` own their protocol translation, framing,
   handles, and transport-facing state.
@@ -68,8 +72,8 @@ translate; they do not become alternate owners of domain behavior.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
   events, detached debugger event content, and debug child cleanup.
 * `internal/dap` owns DAP composition as well as protocol translation. Its
-  composition constructs and owns the shared Universal runtime with Ferret's
-  `uapi.New`.
+  composition owns a separate runtime owner and native binding, with the same
+  child-before-binding-before-owner cleanup as the daemon.
 * Ferret's upstream `github.com/MontFerret/ferret/v2/uapi` package is the sole
   bridge from the Universal Runtime API to native runtime, Plan, Session,
   debugger, and diagnostic types. Composition uses its owning constructor;

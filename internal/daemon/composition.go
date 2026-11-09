@@ -44,40 +44,61 @@ func bootstrap(options Options, createRuntime runtimes.Factory) (*Daemon, error)
 
 	runtime, err := createRuntime()
 	if err != nil {
+		if runtime != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
 
 	return newDaemon(options, runtime, catalog)
 }
 
+// newDaemon consumes runtime ownership, including on construction failure.
 func newDaemon(options Options, runtime api.Runtime, catalog *runtimes.Catalog) (*Daemon, error) {
+	owner, err := runtimes.NewOwner(catalog, runtime)
+	if err != nil {
+		if runtime != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+
+		return nil, err
+	}
+
+	binding, err := owner.Acquire(context.Background(), "")
+	if err != nil {
+		return nil, errors.Join(err, owner.Close(context.Background()))
+	}
+
 	instanceID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, errors.Join(
 			fmt.Errorf("generate daemon instance ID: %w", err),
-			runtime.Close(),
+			binding.Release(),
+			owner.Close(context.Background()),
 		)
 	}
 
 	workspaceManager := workspace.New()
 
-	executionManager, err := exec.New(workspaceManager, runtime)
+	executionManager, err := exec.New(workspaceManager, binding.Runtime())
 	if err != nil {
-		cleanupErr := errors.Join(workspaceManager.Clear(context.Background()), runtime.Close())
+		cleanupErr := errors.Join(workspaceManager.Clear(context.Background()), binding.Release(), owner.Close(context.Background()))
 
 		return nil, errors.Join(fmt.Errorf("create execution manager: %w", err), cleanupErr)
 	}
 
 	result := &Daemon{
-		workspaces: workspaceManager,
-		executions: executionManager,
-		runtime:    runtime,
-		endpoint:   options.Endpoint,
-		version:    options.Version,
-		logger:     *options.Logger,
-		shutdown:   make(chan struct{}),
-		stopDone:   make(chan struct{}),
-		state:      stateNew,
+		workspaces:     workspaceManager,
+		executions:     executionManager,
+		runtimeOwner:   owner,
+		runtimeBinding: binding,
+		endpoint:       options.Endpoint,
+		version:        options.Version,
+		logger:         *options.Logger,
+		shutdown:       make(chan struct{}),
+		stopDone:       make(chan struct{}),
+		state:          stateNew,
 	}
 
 	grpcServer, err := grpcadapter.New(
@@ -94,7 +115,8 @@ func newDaemon(options Options, runtime api.Runtime, catalog *runtimes.Catalog) 
 		cleanupErr := errors.Join(
 			result.executions.Close(ctx),
 			result.workspaces.Clear(ctx),
-			result.runtime.Close(),
+			result.runtimeBinding.Release(),
+			result.runtimeOwner.Close(ctx),
 		)
 
 		return nil, errors.Join(fmt.Errorf("create gRPC server: %w", err), cleanupErr)

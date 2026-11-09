@@ -51,18 +51,37 @@ func bootstrap(input io.Reader, output io.Writer, options Options, createRuntime
 
 	runtime, err := createRuntime()
 	if err != nil {
+		if runtime != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+
 		return nil, fmt.Errorf("create runtime: %w", err)
 	}
 
 	return newServer(input, output, options, runtime, catalog)
 }
 
+// newServer consumes runtime ownership, including on construction failure.
 func newServer(input io.Reader, output io.Writer, options Options, runtime api.Runtime, catalog *runtimes.Catalog) (*Server, error) {
+	owner, err := runtimes.NewOwner(catalog, runtime)
+	if err != nil {
+		if runtime != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+
+		return nil, err
+	}
+
+	binding, err := owner.Acquire(context.Background(), "")
+	if err != nil {
+		return nil, errors.Join(err, owner.Close(context.Background()))
+	}
+
 	workspaces := workspace.New()
 
-	executions, err := exec.New(workspaces, runtime)
+	executions, err := exec.New(workspaces, binding.Runtime())
 	if err != nil {
-		cleanupErr := errors.Join(workspaces.Clear(context.Background()), runtime.Close())
+		cleanupErr := errors.Join(workspaces.Clear(context.Background()), binding.Release(), owner.Close(context.Background()))
 
 		return nil, errors.Join(fmt.Errorf("create execution manager: %w", err), cleanupErr)
 	}
@@ -70,7 +89,7 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 	debugs, err := debug.New(executions)
 	if err != nil {
 		ctx := context.Background()
-		cleanupErr := errors.Join(executions.Close(ctx), workspaces.Clear(ctx), runtime.Close())
+		cleanupErr := errors.Join(executions.Close(ctx), workspaces.Clear(ctx), binding.Release(), owner.Close(ctx))
 
 		return nil, errors.Join(fmt.Errorf("create debug manager: %w", err), cleanupErr)
 	}
@@ -78,17 +97,18 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 	readerClose, _ := input.(io.Closer)
 
 	return &Server{
-		reader:      bufio.NewReader(input),
-		readerClose: readerClose,
-		writer:      output,
-		workspaces:  workspaces,
-		executions:  executions,
-		debugs:      debugs,
-		runtime:     runtime,
-		catalog:     catalog,
-		logger:      options.Logger.With().Str("component", "dap").Logger(),
-		handles:     newHandleTable(),
-		breakpoints: newBreakpointIDs(),
+		reader:         bufio.NewReader(input),
+		readerClose:    readerClose,
+		writer:         output,
+		workspaces:     workspaces,
+		executions:     executions,
+		debugs:         debugs,
+		runtimeOwner:   owner,
+		runtimeBinding: binding,
+		catalog:        catalog,
+		logger:         options.Logger.With().Str("component", "dap").Logger(),
+		handles:        newHandleTable(),
+		breakpoints:    newBreakpointIDs(),
 		client: clientOptions{
 			pathFormat:      pathFormatPath,
 			linesStartAt1:   true,

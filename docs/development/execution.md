@@ -2,7 +2,8 @@
 
 `internal/exec` coordinates compiled Universal API Plans and one common per-run
 execution state used by ordinary execution and debugging. It borrows the
-composition-owned `api.Runtime`; Ferret remains the implementation through its
+native binding's `api.Runtime` from the composition-owned runtime owner;
+Ferret remains the implementation through its
 upstream `uapi` adapter. The execution manager owns long-lived
 identity, option preparation, cancellation, lifecycle, observation, and cleanup.
 
@@ -183,7 +184,11 @@ completion.
 The manager itself has a terminal closed state. New resources are rejected after
 close, and daemon shutdown closes execution resources before clearing
 workspaces. The manager borrows its runtime and never closes it; daemon and DAP
-composition close their one runtime exactly once after managers and workspaces.
+composition release their native binding and close the runtime owner after
+managers and workspaces. Internal Wire acquisition is available, but binding
+selection/storage on compiled Sessions remains unimplemented. Any caller using a
+Wire binding must settle output, sessions/debuggers, and plans before release;
+Wire root closure alone does not close caller-owned descendants.
 
 ## gRPC and public client projection
 

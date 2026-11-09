@@ -1,4 +1,4 @@
-// Package runtimes owns startup runtime definitions and immutable metadata catalogs.
+// Package runtimes owns runtime configuration, acquisition, and root cleanup.
 package runtimes
 
 import (
@@ -21,6 +21,7 @@ type (
 		Label          string
 		Provider       Provider
 		Endpoint       string
+		Insecure       bool
 		ConnectTimeout *string
 	}
 )
@@ -38,8 +39,9 @@ func (c DefinitionConfig) normalized() (Definition, error) {
 		return Definition{}, fmt.Errorf("%w: runtime %q has unsupported provider %q", ErrInvalidConfig, c.Name, c.Provider)
 	}
 
-	if strings.TrimSpace(c.Endpoint) == "" {
-		return Definition{}, fmt.Errorf("%w: runtime %q requires a Wire endpoint", ErrInvalidConfig, c.Name)
+	target, err := wireTarget(c.Endpoint)
+	if err != nil {
+		return Definition{}, fmt.Errorf("%w: runtime %q endpoint: %w", ErrInvalidConfig, c.Name, err)
 	}
 
 	timeout := 5 * time.Second
@@ -63,6 +65,8 @@ func (c DefinitionConfig) normalized() (Definition, error) {
 		Label:          label,
 		Provider:       c.Provider,
 		Endpoint:       c.Endpoint,
+		Insecure:       c.Insecure,
 		ConnectTimeout: timeout,
+		target:         target,
 	}, nil
 }

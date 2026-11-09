@@ -16,7 +16,7 @@ import (
 )
 
 func TestDAPCommandPassesRuntimeConfiguration(t *testing.T) {
-	path := writeRuntimeConfig(t, `{"runtimes":[{"name":"app","provider":"wire","endpoint":"outbound value","connectTimeout":"2s"}]}`)
+	path := writeRuntimeConfig(t, `{"runtimes":[{"name":"app","provider":"wire","endpoint":"tcp://application.invalid:9000","connectTimeout":"2s"}]}`)
 	original := runDAP
 	t.Cleanup(func() { runDAP = original })
 	called := false
@@ -29,7 +29,7 @@ func TestDAPCommandPassesRuntimeConfiguration(t *testing.T) {
 		}
 
 		definition, err := catalog.Resolve("app")
-		if err != nil || definition.Endpoint != "outbound value" || definition.ConnectTimeout != 2*time.Second || catalog.DefaultName() != "local" {
+		if err != nil || definition.Endpoint != "tcp://application.invalid:9000" || definition.ConnectTimeout != 2*time.Second || catalog.DefaultName() != "local" {
 			t.Fatalf("config = %+v, %v", definition, err)
 		}
 
@@ -46,7 +46,7 @@ func TestDAPCommandPassesRuntimeConfiguration(t *testing.T) {
 }
 
 func TestServeCommandRuntimeDiscovery(t *testing.T) {
-	path := writeRuntimeConfig(t, `{"defaultRuntime":"local","runtimes":[{"name":"app","label":"Application","provider":"wire","endpoint":"outbound value"}]}`)
+	path := writeRuntimeConfig(t, `{"defaultRuntime":"local","runtimes":[{"name":"app","label":"Application","provider":"wire","endpoint":"tcp://application.invalid:9000"}]}`)
 	endpoint := testClientEndpoint(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -97,7 +97,7 @@ func TestRuntimeConfigurationProcessErrorsUseStderr(t *testing.T) {
 			{"null", writeRuntimeConfig(t, "null"), "invalid runtime configuration"},
 			{"unknown field", writeRuntimeConfig(t, `{"unexpected":true}`), "invalid runtime configuration"},
 			{"unknown default", writeRuntimeConfig(t, `{"defaultRuntime":"missing"}`), "runtime not found"},
-			{"Wire default", writeRuntimeConfig(t, `{"defaultRuntime":"app","runtimes":[{"name":"app","provider":"wire","endpoint":"unparsed"}]}`), "unsupported default runtime"},
+			{"Wire default", writeRuntimeConfig(t, `{"defaultRuntime":"app","runtimes":[{"name":"app","provider":"wire","endpoint":"tcp://application.invalid:9000"}]}`), "unsupported default runtime"},
 		} {
 			t.Run(command+"/"+test.name, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)

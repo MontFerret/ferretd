@@ -22,13 +22,14 @@ with a bounded shutdown context. Process signals cancel the root context in
 
 The daemon constructs its owning Universal runtime with Ferret's upstream
 `uapi.New`, supplying the selected Ferret Core version independently of the
-daemon version, and owns that runtime together with one workspace manager, one
+daemon version, and transfers it into `runtimes.Owner`. Composition owns that
+owner and retains a native binding alongside one workspace manager, one
 execution manager, and one gRPC server. The execution manager
-borrows the runtime and registers its workspace close hook during construction
-so child Sessions, Executions, and Plans are released before workspace state.
+borrows the binding's runtime and registers its workspace close hook during
+construction so child Sessions, Executions, and Plans are released before workspace state.
 Required service dependencies are passed explicitly. Runtime cleanup closes the
-wrapper, which delegates exactly once to the native engine; composition does not
-also close the engine independently.
+owner, which closes the upstream wrapper exactly once; composition does not
+also close the wrapper or engine independently.
 
 `internal/runtimes` owns the shared configuration schema, normalization,
 validation, exact metadata resolution, and immutable startup catalog. Commands
@@ -54,8 +55,23 @@ invalid types, and trailing values, and reports explicit file failures. Relative
 paths use the process working directory. Recommend the same absolute file path
 for `serve` and standalone `dap`, which retain separate snapshots and runtimes.
 There is no reload, workspace discovery, or mutation/persistence API. Outbound
-Wire syntax and transport validation remain outside this metadata layer; the
-inbound daemon endpoint parser must not be reused for it.
+Wire endpoint validation is definition-owned and uses `tcp://host:port`, including
+hostnames and bracketed IPv6, with numeric ports `1..65535`. Userinfo, paths,
+queries, fragments, and other schemes are rejected without dialing. The inbound
+daemon endpoint parser has different semantics and is not reused.
+
+An optional strict `insecure` boolean defaults to false: Wire construction uses
+TLS with system trust and identity verification unless true explicitly supplies
+`WithInsecure()` for plaintext. No bearer token is forwarded from incoming daemon
+requests, and no weaker-transport retry is attempted.
+
+`Owner.Acquire` resolves through the same catalog. Native bindings share one root;
+every Wire binding owns a fresh `wireclient.New` runtime and channel. The caller's
+earlier deadline or configured `connectTimeout` bounds startup, while Wire's
+bounded detached rollback can outlast cancellation. Successful publication
+separates the binding lifetime from its startup context. No extra probe, cached
+connection, automatic replacement, or query replay is added. Public execution
+runtime selection is still pending.
 
 ## Lifecycle
 
@@ -74,7 +90,7 @@ port for an ephemeral TCP listener and is never filtered by `--log-level`.
 3. clear workspaces;
 4. drain gRPC under the committed cleanup operation;
 5. close the local listener;
-6. close the composition-owned runtime exactly once;
+6. release the native binding, then close its owner and shared root exactly once;
 7. publish one retained stop result to concurrent callers.
 
 Cancellation and partial startup must not leave a listener, manager resource,
@@ -82,6 +98,11 @@ runtime, or goroutine behind. Once stop commits, cleanup proceeds under its own
 operation even if an individual caller stops waiting. Concurrent and repeated
 callers observe the retained final result. Shutdown errors are joined so cleanup
 continues after an individual failure.
+
+Owner shutdown also cancels pending constructors and waits for their rollback,
+then closes unreleased Wire roots. Closing bindings remain tracked until their
+release settles. Child outputs, sessions/debuggers, and plans must close first;
+Wire runtime closure cannot substitute for caller-owned child cleanup.
 
 ## Local transport
 

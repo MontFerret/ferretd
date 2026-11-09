@@ -26,12 +26,12 @@ func TestNew(t *testing.T) {
 		t.Fatal("New did not construct all service boundaries")
 	}
 
-	if d.runtime == nil {
+	if d.runtimeOwner == nil || d.runtimeBinding == nil {
 		t.Fatal("New did not construct the composition runtime")
 	}
 
-	if _, ok := d.runtime.(*uapi.Runtime); !ok {
-		t.Fatalf("New runtime = %T, want native Ferret adapter", d.runtime)
+	if _, ok := d.runtimeBinding.Runtime().(*uapi.Runtime); !ok {
+		t.Fatalf("New runtime = %T, want native Ferret adapter", d.runtimeBinding.Runtime())
 	}
 
 	if err := d.Stop(context.Background()); err != nil {

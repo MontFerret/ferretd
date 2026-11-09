@@ -30,7 +30,7 @@ func TestCatalogResolutionAndIsolation(t *testing.T) {
 	config := Config{
 		DefaultRuntime: &defaultName,
 		Runtimes: []DefinitionConfig{
-			{Name: "remote", Provider: ProviderWire, Endpoint: "not parsed here", ConnectTimeout: &timeout},
+			{Name: "remote", Provider: ProviderWire, Endpoint: "tcp://application.invalid:9000", ConnectTimeout: &timeout},
 			{Name: "Remote", Label: "Other", Provider: ProviderWire, Endpoint: "tcp://unavailable.invalid:9000"},
 		},
 	}
@@ -51,7 +51,7 @@ func TestCatalogResolutionAndIsolation(t *testing.T) {
 	listed[2].Endpoint = "changed"
 
 	definition, err := catalog.Resolve("")
-	if err != nil || definition.Name != "remote" || definition.Label != "remote" || definition.ConnectTimeout != 2*time.Second || definition.Endpoint != "not parsed here" {
+	if err != nil || definition.Name != "remote" || definition.Label != "remote" || definition.ConnectTimeout != 2*time.Second || definition.Endpoint != "tcp://application.invalid:9000" {
 		t.Fatalf("Resolve = %+v, %v", definition, err)
 	}
 

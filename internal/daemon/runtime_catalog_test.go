@@ -32,7 +32,8 @@ func TestRuntimeConfigurationPrecedesAllocation(t *testing.T) {
 		want   error
 	}{
 		{"invalid", runtimes.Config{DefaultRuntime: new("missing")}, runtimes.ErrInvalidConfig},
-		{"wire default", runtimes.Config{DefaultRuntime: new("app"), Runtimes: []runtimes.DefinitionConfig{{Name: "app", Provider: runtimes.ProviderWire, Endpoint: "unparsed"}}}, runtimes.ErrUnsupportedDefault},
+		{"invalid endpoint", runtimes.Config{Runtimes: []runtimes.DefinitionConfig{{Name: "app", Provider: runtimes.ProviderWire, Endpoint: "tcp://localhost:0"}}}, runtimes.ErrInvalidConfig},
+		{"wire default", runtimes.Config{DefaultRuntime: new("app"), Runtimes: []runtimes.DefinitionConfig{{Name: "app", Provider: runtimes.ProviderWire, Endpoint: "tcp://application.invalid:9000"}}}, runtimes.ErrUnsupportedDefault},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			d, err := bootstrap(Options{RuntimeConfig: test.config}, func() (api.Runtime, error) {
@@ -78,7 +79,7 @@ func TestRuntimeDiscoveryAndNativeExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	version, err := d.runtime.Version(t.Context())
+	version, err := d.runtimeBinding.Runtime().Version(t.Context())
 	if err != nil || version != runtimes.NativeVersion {
 		t.Fatalf("native runtime version = %q, %v", version, err)
 	}

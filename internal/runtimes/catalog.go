@@ -20,7 +20,9 @@ type (
 		Label          string
 		Provider       Provider
 		Endpoint       string
+		Insecure       bool
 		ConnectTimeout time.Duration
+		target         string
 	}
 
 	// Catalog is an immutable startup snapshot. It owns no runtime or connection.

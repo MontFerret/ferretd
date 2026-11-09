@@ -18,6 +18,7 @@ type (
 		Label          configString `json:"label"`
 		Provider       configString `json:"provider"`
 		Endpoint       configString `json:"endpoint"`
+		Insecure       configBool   `json:"insecure"`
 		ConnectTimeout configString `json:"connectTimeout"`
 	}
 
@@ -26,7 +27,24 @@ type (
 		value string
 		set   bool
 	}
+
+	configBool bool
 )
+
+func (b *configBool) UnmarshalJSON(data []byte) error {
+	var value *bool
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+
+	if value == nil {
+		return errors.New("expected a boolean, got null")
+	}
+
+	*b = configBool(*value)
+
+	return nil
+}
 
 func (s *configString) UnmarshalJSON(data []byte) error {
 	var value *string
@@ -78,6 +96,7 @@ func (f fileConfig) config() (Config, error) {
 			Label:          definition.Label.value,
 			Provider:       Provider(definition.Provider.value),
 			Endpoint:       definition.Endpoint.value,
+			Insecure:       bool(definition.Insecure),
 			ConnectTimeout: definition.ConnectTimeout.optional(),
 		})
 	}

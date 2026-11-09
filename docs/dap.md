@@ -16,8 +16,8 @@ ferretd dap --runtime-config /absolute/path/runtimes.json
 See the [runtime configuration example](../README.md#runtime-definitions-and-discovery)
 for the JSON schema. The implicit built-in `local` runtime is the default when
 the flag or `defaultRuntime` is omitted. Additional Wire definitions are accepted
-as metadata, but the default must currently be `local`: selecting a Wire default
-fails before runtime allocation until DAP runtime selection is implemented.
+after endpoint syntax validation, but the default must currently be `local`.
+Selecting a Wire default fails before runtime allocation until DAP runtime selection is implemented.
 No runtime selector is added to launch arguments in this stage.
 
 An explicitly requested missing, unreadable, malformed, or invalid file fails
@@ -26,8 +26,10 @@ one strict JSON object, rejecting unknown fields, invalid types, null typed
 fields, and trailing values. Relative file paths use the process working
 directory. Pass the same absolute configuration path to `serve` and `dap` for
 consistent definitions. Each reads once and constructs its own immutable catalog,
-native runtime, and service graph; DAP does not connect to `serve`. There is no
-live reload or outbound connection attempt for configured Wire definitions.
+runtime acquisition owner, shared native root, native binding, and service graph;
+DAP closes children before releasing its binding and owner. It does not connect
+to `serve`. There is no live reload or outbound connection attempt for configured
+Wire definitions.
 
 ## Diagnostics
 
