@@ -10,6 +10,7 @@ import (
 	apidebugger "github.com/MontFerret/api/debugger"
 	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -29,15 +30,13 @@ func mustNewExecutionManager(
 ) *exec.Manager {
 	t.Helper()
 
-	manager, err := exec.New(workspaces, runtime)
+	manager, err := exec.New(workspaces, newTestOwner(t, runtime))
 	if err != nil {
-		_ = runtime.Close()
 		t.Fatalf("exec.New: %v", err)
 	}
 
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
-		_ = runtime.Close()
 	})
 
 	return manager
@@ -130,7 +129,7 @@ func newDebugFixture(t *testing.T, query string) debugFixture {
 	executions := mustNewExecutionManager(t, workspaces, runtime)
 	manager := mustNewManager(t, executions)
 
-	session, err := executions.CreateSession(context.Background(), opened.ID(), "query.fql")
+	session, err := executions.CreateSession(context.Background(), opened.ID(), "query.fql", "")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -149,4 +148,22 @@ func newDebugFixture(t *testing.T, query string) debugFixture {
 		workspace:  opened,
 		session:    session,
 	}
+}
+
+func newTestOwner(t testing.TB, runtime api.Runtime) *runtimes.Owner {
+	t.Helper()
+
+	catalog, err := runtimes.NewCatalog(runtimes.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := runtimes.NewOwner(catalog, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = owner.Close(context.Background()) })
+
+	return owner
 }

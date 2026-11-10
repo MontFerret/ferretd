@@ -35,27 +35,26 @@ type (
 		// and request/event lifecycle flags.
 		stateMu sync.Mutex
 
-		workspaces     *workspace.Manager
-		executions     *exec.Manager
-		debugs         *debug.Manager
-		runtimeOwner   *runtimes.Owner
-		runtimeBinding *runtimes.Binding
-		catalog        *runtimes.Catalog
-		logger         zerolog.Logger
-		handles        *handleTable
-		owned          ownedSession
-		client         clientOptions
-		watch          debug.Subscription
-		pendingLaunch  *protocol.Request
-		sequence       int
-		initialized    bool
-		launched       bool
-		configured     bool
-		disconnected   bool
-		initialStop    *initialStop
-		breakpoints    *breakpointIDs
-		cleanupOnce    sync.Once
-		cleanupErr     error
+		workspaces    *workspace.Manager
+		executions    *exec.Manager
+		debugs        *debug.Manager
+		runtimeOwner  *runtimes.Owner
+		catalog       *runtimes.Catalog
+		logger        zerolog.Logger
+		handles       *handleTable
+		owned         ownedSession
+		client        clientOptions
+		watch         debug.Subscription
+		pendingLaunch *protocol.Request
+		sequence      int
+		initialized   bool
+		launched      bool
+		configured    bool
+		disconnected  bool
+		initialStop   *initialStop
+		breakpoints   *breakpointIDs
+		cleanupOnce   sync.Once
+		cleanupErr    error
 	}
 
 	ownedSession struct {
@@ -283,7 +282,6 @@ func (s *Server) cleanup() error {
 		result = errors.Join(result, s.debugs.Close(ctx))
 		result = errors.Join(result, s.executions.Close(ctx))
 		result = errors.Join(result, s.workspaces.Clear(ctx))
-		result = errors.Join(result, s.runtimeBinding.Release())
 		result = errors.Join(result, s.runtimeOwner.Close(ctx))
 		s.cleanupErr = result
 	})

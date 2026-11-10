@@ -105,11 +105,11 @@ func (o *Owner) Acquire(ctx context.Context, name string) (*Binding, error) {
 			err = errors.Join(err, o.rollback(definition.Name, remote))
 		}
 
-		return nil, fmt.Errorf("connect runtime %q: %w", definition.Name, err)
+		return nil, fmt.Errorf("connect runtime %q: %w", definition.Name, errors.Join(ErrRuntimeUnavailable, err))
 	}
 
 	if remote == nil {
-		return nil, fmt.Errorf("connect runtime %q: constructor returned no runtime", definition.Name)
+		return nil, fmt.Errorf("%w: connect runtime %q: constructor returned no runtime", ErrRuntimeUnavailable, definition.Name)
 	}
 
 	o.mu.Lock()

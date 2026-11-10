@@ -17,9 +17,11 @@ type (
 
 	// Session is an immutable daemon execution-session snapshot.
 	Session struct {
-		ID         SessionID
-		Source     SourceSnapshot
-		Parameters []string
+		ID SessionID
+		// RuntimeName is the resolved name; empty means unreported by an older server.
+		RuntimeName string
+		Source      SourceSnapshot
+		Parameters  []string
 	}
 
 	// CreateSessionRequest explicitly selects one workspace-relative .fql regular
@@ -28,6 +30,8 @@ type (
 	CreateSessionRequest struct {
 		WorkspaceID  string
 		RelativePath string
+		// RuntimeName selects an exact catalog name; empty uses the daemon default.
+		RuntimeName string
 	}
 
 	// ExecutionState identifies an Execution lifecycle state.
@@ -36,7 +40,8 @@ type (
 	// ExecutionOptions contains one-shot invocation settings.
 	ExecutionOptions struct {
 		OutputContentType string
-		WorkingDirectory  string
+		// WorkingDirectory is local for native Sessions and host-interpreted for Wire.
+		WorkingDirectory string
 	}
 
 	// CreateExecutionRequest creates one isolated invocation from a compiled Session.

@@ -22,6 +22,7 @@ type (
 		compileErr          error
 		paramsErr           error
 		compilePlan         api.Plan
+		compileFn           func(context.Context) (api.Plan, error)
 		compileSources      []api.Source
 		compileDebugSources []api.Source
 		parameters          []string
@@ -102,6 +103,10 @@ func (r *runtimeSpy) Compile(
 		if err := r.beforeCompile(ctx); err != nil {
 			return nil, err
 		}
+	}
+
+	if r.compileFn != nil {
+		return r.compileFn(ctx)
 	}
 
 	if compileErr != nil {

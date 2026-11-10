@@ -48,7 +48,7 @@ func TestOlderDaemonRemainsCompatibleWithoutDiscovery(t *testing.T) {
 
 	t.Cleanup(func() { _ = c.Close() })
 
-	if negotiated := <-old.negotiations; negotiated != (APIVersion{Major: 1, Minor: 2}) {
+	if negotiated := <-old.negotiations; negotiated != (APIVersion{Major: 1, Minor: 3}) {
 		t.Fatalf("negotiated = %+v", negotiated)
 	}
 

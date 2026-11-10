@@ -51,8 +51,8 @@ translate; they do not become alternate owners of domain behavior.
 * `cmd/ferretd` owns process startup, Cobra command behavior, signal handling,
   process-facing output, and top-level composition.
 * `internal/daemon` owns long-running service lifecycle and coordination. Its
-  composition transfers the shared native `uapi.New` root to a runtime owner,
-  retains a native binding, and closes child services before binding and owner.
+  composition transfers the shared native `uapi.New` root to a runtime owner
+  and closes child services and their Session bindings before the owner.
 * `internal/runtimes` owns strict startup configuration, immutable catalogs,
   endpoint validation, runtime acquisition, and root cleanup. Each owner owns
   one shared native root and fresh independent Wire roots per acquisition.
@@ -67,12 +67,13 @@ translate; they do not become alternate owners of domain behavior.
 * `internal/exec` owns compiled Sessions, the shared per-run execution state,
   caller parameters (`Parameters`), live output handles and their settlement,
   detached retained `api.Content`, one-shot Executions, lazy debug Plans,
-  DebugRuntime leases, and execution lifecycle observation. It borrows one
-  composition-owned `api.Runtime` and never closes it.
+  DebugRuntime leases, Session runtime bindings, and execution lifecycle observation.
+  It borrows the composition-owned acquisition owner, releases bindings after
+  child and plan settlement, and never closes that owner or borrowed runtimes.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
   events, detached debugger event content, and debug child cleanup.
 * `internal/dap` owns DAP composition as well as protocol translation. Its
-  composition owns a separate runtime owner and native binding, with the same
+  composition owns a separate runtime owner, with the same
   child-before-binding-before-owner cleanup as the daemon.
 * Ferret's upstream `github.com/MontFerret/ferret/v2/uapi` package is the sole
   bridge from the Universal Runtime API to native runtime, Plan, Session,

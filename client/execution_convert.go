@@ -13,7 +13,8 @@ func fromProtoSession(value *executionv1.Session) (Session, error) {
 	}
 
 	return Session{
-		ID: SessionID(value.Id.Value),
+		ID:          SessionID(value.Id.Value),
+		RuntimeName: value.RuntimeName,
 		Source: SourceSnapshot{
 			WorkspaceID:  value.Source.WorkspaceId.Value,
 			RelativePath: value.Source.RelativePath,

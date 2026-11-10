@@ -18,8 +18,8 @@ The supported launch arguments and wire behavior are documented in
 ## Debug runtimes and Plan ownership
 
 An execution Session eagerly owns its normal Plan and lazily compiles one
-matching debug Plan. Lazy construction is coordinated so concurrent debug
-requests converge on one result. A failed debug compilation is retained
+matching debug Plan on its retained runtime binding, using the original source.
+Lazy construction is coordinated so concurrent debug requests converge on one result. A failed debug compilation is retained
 consistently with the Session's source snapshot.
 
 `internal/exec` creates a DebugRuntime through the same lower-level machinery
@@ -87,16 +87,17 @@ events. Terminal states eventually close the common runtime and end every watch.
 Closing a DebugSession is idempotent and guarantees eventual common-runtime
 cleanup even when an individual caller stops waiting. Closing the parent
 execution Session closes all DebugSessions and their DebugRuntimes before
-releasing normal or debug Plans.
+releasing normal/debug Plans and the runtime binding. Pending debug compilation
+and debugger construction are cancelled before Session close waits for creators.
 
 ## DAP composition
 
 The `dap` command runs one protocol-pure server over stdin and stdout. It does
 not connect to `ferretd serve`. DAP composition constructs an owning Universal
 runtime with Ferret's `uapi.New`, transfers it to its own `runtimes.Owner`, and
-retains a native binding alongside in-process workspace, execution, and debug
-managers. Internal Wire acquisition is available through the same owner type;
-DAP launch selection remains unimplemented and Wire defaults are rejected before
+passes that owner to in-process execution alongside workspace and debug managers.
+The compiled launch Session acquires and retains the native binding. Internal
+Wire acquisition is available through the same owner type; DAP launch selection remains unimplemented and Wire defaults are rejected before
 runtime allocation. Unused Wire definitions never connect. It also owns one launched
 workspace, execution Session, and DebugSession.
 
@@ -207,7 +208,8 @@ session without inventing a normal process exit.
 
 Adapter cleanup cancels the active watch, terminates and closes the DebugSession,
 closes its execution Session, closes the workspace, closes each manager, and
-then releases its native binding and closes the runtime owner exactly once.
+then closes the runtime owner exactly once. The execution Session releases its
+binding after children, leases, and plans settle.
 Owners close the shared native root and any remaining Wire roots after child
 cleanup; binding release never substitutes for output/session/debugger/plan
 settlement. The common execution state

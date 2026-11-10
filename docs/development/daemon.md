@@ -23,10 +23,10 @@ with a bounded shutdown context. Process signals cancel the root context in
 The daemon constructs its owning Universal runtime with Ferret's upstream
 `uapi.New`, supplying the selected Ferret Core version independently of the
 daemon version, and transfers it into `runtimes.Owner`. Composition owns that
-owner and retains a native binding alongside one workspace manager, one
-execution manager, and one gRPC server. The execution manager
-borrows the binding's runtime and registers its workspace close hook during
-construction so child Sessions, Executions, and Plans are released before workspace state.
+owner alongside one workspace manager, one execution manager, and one gRPC server.
+The execution manager borrows the owner and acquires one binding per compiled
+Session. It registers its workspace close hook during construction so children,
+Plans, and bindings are released before workspace state.
 Required service dependencies are passed explicitly. Runtime cleanup closes the
 owner, which closes the upstream wrapper exactly once; composition does not
 also close the wrapper or engine independently.
@@ -36,8 +36,9 @@ validation, exact metadata resolution, and immutable startup catalog. Commands
 read an explicit file once through its context-aware loader and pass parsed
 configuration through `daemon.Options.RuntimeConfig` or `dap.Options.RuntimeConfig`.
 Programmatic construction uses the same catalog constructor. Each composition
-constructs one catalog and rejects unsupported defaults before `uapi.New` or
-other owned services. The daemon passes that catalog explicitly to gRPC; adapters
+validates one catalog before `uapi.New` or other owned services. Standalone DAP
+also rejects unsupported defaults there; daemon Wire acquisition stays lazy. The daemon passes that catalog explicitly to gRPC;
+adapters
 and execution/debug managers never load configuration files.
 
 The implicit `local` definition is always present, labeled `Built-in Ferret`,
@@ -46,9 +47,9 @@ case-sensitive name without surrounding whitespace, a nonblank endpoint, an
 optional label, and an optional positive duration string for `connectTimeout`.
 Empty labels use the name; omitted timeouts use `5s`. An omitted default selects
 `local`; blank or unknown defaults are invalid. Wire defaults are valid catalog
-metadata but temporarily rejected by both compositions until their execution or
-DAP selection paths can honor them. Resolution itself never connects or falls
-back after an unknown selection.
+metadata and supported by daemon Session creation. Standalone DAP still rejects
+them until DAP launch selection is implemented. Resolution itself never connects
+or falls back after an unknown selection.
 
 The loader requires one JSON object, rejects unknown fields, null typed fields,
 invalid types, and trailing values, and reports explicit file failures. Relative
@@ -70,8 +71,8 @@ every Wire binding owns a fresh `wireclient.New` runtime and channel. The caller
 earlier deadline or configured `connectTimeout` bounds startup, while Wire's
 bounded detached rollback can outlast cancellation. Successful publication
 separates the binding lifetime from its startup context. No extra probe, cached
-connection, automatic replacement, or query replay is added. Public execution
-runtime selection is still pending.
+connection, automatic replacement, or query replay is added. Session creation selects and retains a binding; discovery and startup never
+connect to Wire, including when it is the default.
 
 ## Lifecycle
 
@@ -90,7 +91,7 @@ port for an ephemeral TCP listener and is never filtered by `--log-level`.
 3. clear workspaces;
 4. drain gRPC under the committed cleanup operation;
 5. close the local listener;
-6. release the native binding, then close its owner and shared root exactly once;
+6. close the runtime owner and shared root exactly once, after Session bindings;
 7. publish one retained stop result to concurrent callers.
 
 Cancellation and partial startup must not leave a listener, manager resource,
@@ -140,7 +141,7 @@ domain errors without retaining workspace, Session, or Execution state.
 
 Clients send their API version during daemon information negotiation. A major
 version mismatch is rejected with structured compatibility detail; minor
-versions are additive. The current version is 1.2; transport and bootstrap
+versions are additive. The current version is 1.3; transport and bootstrap
 features do not change the RPC API version. Process-local state survives client
 disconnects but not daemon restarts.
 
@@ -158,6 +159,15 @@ validates incomplete responses, and preserves future nonempty provider strings.
 Discovery against an older compatible daemon returns a classifiable
 `client.ErrUnsupportedOperation` while retaining the original gRPC error.
 Minor-version differences never prevent initial negotiation or existing calls.
+
+API 1.3 adds Session runtime selection and acknowledgment. Protocol clients must
+feature-gate every explicit name before creation, then require an identical
+acknowledgment; new-feature Session responses require a nonempty resolved name.
+Older unselected responses may omit it. Rejected creations with an identifiable
+Session require bounded detached cleanup without replay. The Go client retains
+initial negotiation, uses a five-second cleanup timeout, and distinguishes
+runtime lookup/acquisition failures from source and daemon failures through
+execution resource details.
 
 ## Protobuf ownership and generation
 

@@ -96,12 +96,10 @@ func (m *Manager) CreateDebugRuntime(
 		return nil, err
 	}
 
-	input, err := newRuntimeInput(parameters, options)
-	if err != nil {
-		return nil, err
-	}
+	operation, operationCtx := newConstruction(ctx)
+	defer operation.finish()
 
-	creation, err := m.sessions.beginRuntimeCreate(id)
+	creation, err := m.sessions.beginRuntimeCreate(id, operation)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +107,14 @@ func (m *Manager) CreateDebugRuntime(
 
 	parent := creation.session()
 
-	target, err := parent.acquireDebugRuntimeTarget(ctx)
+	input, err := parent.prepareInput(parameters, options)
 	if err != nil {
+		return nil, err
+	}
+
+	target, err := parent.acquireDebugRuntimeTarget(operationCtx)
+	if err != nil {
+		err = errors.Join(err, constructionError(operationCtx))
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, ErrSessionClosed) || errors.Is(err, workspace.ErrClosed) ||
 			errors.Is(err, workspace.ErrDocumentNotFound) {
@@ -126,7 +130,9 @@ func (m *Manager) CreateDebugRuntime(
 
 	runtime := newExecutionRuntime(target, input)
 
-	debugger, err := target.plan.NewDebugSession(ctx, runtime.sessionOptions()...)
+	debugger, err := target.plan.NewDebugSession(operationCtx, runtime.sessionOptions()...)
+
+	err = errors.Join(err, parent.publicationError(operationCtx))
 	if err != nil {
 		runtime.cancel(errExecutionCanceled)
 

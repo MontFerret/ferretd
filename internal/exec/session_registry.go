@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/MontFerret/ferretd/internal/workspace"
@@ -29,10 +30,12 @@ type (
 	sessionCreation struct {
 		workspace workspace.ID
 		group     *workspaceGroup
+		operation *construction
 	}
 
 	runtimeCreation struct {
-		parent *session
+		parent    *session
+		operation *construction
 	}
 
 	workspaceClose struct {
@@ -54,7 +57,7 @@ func newSessionRegistry() *sessionRegistry {
 	}
 }
 
-func (r *sessionRegistry) beginCreate(id workspace.ID) (sessionCreation, error) {
+func (r *sessionRegistry) beginCreate(id workspace.ID, operation *construction) (sessionCreation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -68,18 +71,18 @@ func (r *sessionRegistry) beginCreate(id workspace.ID) (sessionCreation, error) 
 		r.groups[id] = group
 	}
 
-	if !group.beginCreate() {
+	if !group.beginCreate(operation) {
 		return sessionCreation{}, workspace.ErrClosed
 	}
 
-	return sessionCreation{workspace: id, group: group}, nil
+	return sessionCreation{workspace: id, group: group, operation: operation}, nil
 }
 
 func (r *sessionRegistry) finishCreate(creation sessionCreation) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	discard := creation.group.finishCreate()
+	discard := creation.group.finishCreate(creation.operation)
 	if discard && r.groups[creation.workspace] == creation.group {
 		delete(r.groups, creation.workspace)
 	}
@@ -94,10 +97,10 @@ func (r *sessionRegistry) commitCreate(
 	defer r.mu.Unlock()
 
 	if r.closed || r.groups[creation.workspace] != creation.group || !creation.group.accepting() {
-		return workspace.ErrClosed
+		return errors.Join(workspace.ErrClosed, constructionError(ctx))
 	}
 
-	if err := ctx.Err(); err != nil {
+	if err := constructionError(ctx); err != nil {
 		return err
 	}
 
@@ -123,7 +126,7 @@ func (r *sessionRegistry) active(id SessionID) *session {
 	return entry.session
 }
 
-func (r *sessionRegistry) beginRuntimeCreate(id SessionID) (runtimeCreation, error) {
+func (r *sessionRegistry) beginRuntimeCreate(id SessionID, operation *construction) (runtimeCreation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -136,11 +139,11 @@ func (r *sessionRegistry) beginRuntimeCreate(id SessionID) (runtimeCreation, err
 		return runtimeCreation{}, ErrSessionNotFound
 	}
 
-	if !entry.session.beginRuntimeCreate() {
+	if !entry.session.beginRuntimeCreate(operation) {
 		panic("execution: active Session rejected runtime creation")
 	}
 
-	return runtimeCreation{parent: entry.session}, nil
+	return runtimeCreation{parent: entry.session, operation: operation}, nil
 }
 
 func (c runtimeCreation) session() *session {
@@ -148,7 +151,7 @@ func (c runtimeCreation) session() *session {
 }
 
 func (c runtimeCreation) finish() {
-	c.parent.finishRuntimeCreate()
+	c.parent.finishRuntimeCreate(c.operation)
 }
 
 func (r *sessionRegistry) beginClose(id SessionID, retained *sessionEntry) (*sessionEntry, bool) {

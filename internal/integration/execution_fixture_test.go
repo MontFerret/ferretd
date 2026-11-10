@@ -6,8 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/MontFerret/api"
+
 	"github.com/MontFerret/ferret/v2/uapi"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -26,15 +29,13 @@ func mustNewManager(t testing.TB, workspaces *workspace.Manager) *exec.Manager {
 		t.Fatalf("uapi.New: %v", err)
 	}
 
-	manager, err := exec.New(workspaces, runtime)
+	manager, err := exec.New(workspaces, newTestOwner(t, runtime))
 	if err != nil {
-		_ = runtime.Close()
 		t.Fatalf("New: %v", err)
 	}
 
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
-		_ = runtime.Close()
 	})
 
 	return manager
@@ -57,7 +58,7 @@ func newExecutionFixture(t *testing.T, query string) executionFixture {
 
 	manager := mustNewManager(t, workspaces)
 
-	session, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql")
+	session, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql", "")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -152,4 +153,22 @@ func assertFailure(t *testing.T, terminal exec.ExecutionSnapshot, category exec.
 	if (terminal.Output != nil) != wantOutput {
 		t.Fatalf("output = %+v, want present %t", terminal.Output, wantOutput)
 	}
+}
+
+func newTestOwner(t testing.TB, runtime api.Runtime) *runtimes.Owner {
+	t.Helper()
+
+	catalog, err := runtimes.NewCatalog(runtimes.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := runtimes.NewOwner(catalog, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = owner.Close(context.Background()) })
+
+	return owner
 }

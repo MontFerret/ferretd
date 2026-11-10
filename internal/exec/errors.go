@@ -10,7 +10,7 @@ import (
 
 var (
 	errNilWorkspaceManager = errors.New("execution: nil workspace manager")
-	errNilRuntime          = errors.New("execution: nil runtime")
+	errNilRuntimeOwner     = errors.New("execution: nil runtime owner")
 	errExecutionCanceled   = errors.New("execution cancellation requested")
 
 	// ErrClosed reports an execution service that is shutting down.
@@ -29,7 +29,7 @@ var (
 	ErrInvalidExecutionOptions = errors.New("invalid execution options")
 	// ErrWatcherLagged reports a watcher that exceeded its bounded event buffer.
 	ErrWatcherLagged = errors.New("execution watcher lagged")
-	// ErrCompilationFailed classifies runtime compiler diagnostics.
+	// ErrCompilationFailed classifies runtime compilation and metadata failures.
 	ErrCompilationFailed = errors.New("session compilation failed")
 )
 
@@ -42,6 +42,10 @@ type CompilationError struct {
 
 // Error describes a failed compilation while preserving its stable classification.
 func (e *CompilationError) Error() string {
+	if len(e.Diagnostics) == 0 && e.Cause != nil {
+		return fmt.Sprintf("%v: %s: %v", ErrCompilationFailed, e.Source.RelativePath, e.Cause)
+	}
+
 	return fmt.Sprintf("%v: %s", ErrCompilationFailed, e.Source.RelativePath)
 }
 

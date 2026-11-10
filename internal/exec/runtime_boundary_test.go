@@ -103,7 +103,7 @@ func TestSessionOwnsDeclaredParameterNames(t *testing.T) {
 	runtime := newRuntimeSpy()
 	runtime.parameters = []string{"value"}
 	plan := &planSpy{runtime: runtime}
-	created := newSession("session", workspace.SourceSnapshot{}, plan, runtime.parameters, "", "", nil)
+	created := newSession("session", workspace.SourceSnapshot{}, plan, runtime.parameters, "", "", nil, newTestBinding(t, runtime))
 	runtime.parameters[0] = "changed"
 
 	if names := created.snapshot().Parameters; len(names) != 1 || names[0] != "value" {

@@ -54,7 +54,7 @@ func TestManagerCloseSettlesMultipleParentGroups(t *testing.T) {
 	fixture := newDebugFixture(t, "RETURN 1")
 	ctx := context.Background()
 
-	secondParent, err := fixture.executions.CreateSession(ctx, fixture.workspace.ID(), "query.fql")
+	secondParent, err := fixture.executions.CreateSession(ctx, fixture.workspace.ID(), "query.fql", "")
 	if err != nil {
 		t.Fatalf("CreateSession second parent: %v", err)
 	}

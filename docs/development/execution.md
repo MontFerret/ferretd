@@ -2,9 +2,9 @@
 
 `internal/exec` coordinates compiled Universal API Plans and one common per-run
 execution state used by ordinary execution and debugging. It borrows the
-native binding's `api.Runtime` from the composition-owned runtime owner;
-Ferret remains the implementation through its
-upstream `uapi` adapter. The execution manager owns long-lived
+composition-owned `runtimes.Owner`. Each compiled Session acquires and owns one
+binding; native bindings use Ferret's upstream `uapi` adapter, and Wire bindings
+use the configured hosted runtime. The execution manager owns long-lived
 identity, option preparation, cancellation, lifecycle, observation, and cleanup.
 
 The resource hierarchy is:
@@ -26,21 +26,25 @@ Creating a Session explicitly selects one workspace-relative lowercase `.fql`
 regular file. Workspace refresh admits the selected file beneath discovery-excluded
 directories (including `.tmp`, `testdata`, and nested Go modules) while preserving
 containment and nested-symlink restrictions. It does not admit excluded neighbors.
-The execution manager then compiles the refreshed source with the
-shared runtime using `api.NewSource` with the absolute source path and retained
-content. Load, syntax, or compiler failures are returned as structured
+After loading source, the execution manager acquires the exact selected runtime
+(or catalog default) and compiles there using `api.NewSource` with the absolute
+source path and retained content. No native compiler preflight runs for Wire.
+The name identifies source; it does not synchronize remote files or remap paths.
+Load, syntax, or compiler failures are returned as structured
 compilation diagnostics without publishing a Session.
 
-A published Session owns one immutable normal `api.Plan`, its workspace and source
-identity, source revision, and declared parameter names. Parameter metadata is
-retrieved through fallible `Plan.Params(ctx)` using the creation context before
+A published Session owns one runtime binding, its resolved immutable `RuntimeName`,
+one normal `api.Plan`, workspace/source identity, source revision, and declared
+parameter names. Parameter metadata is retrieved through fallible `Plan.Params(ctx)` using the creation context before
 publication, outside registry locks. Metadata failure closes the unpublished
 Plan and retains both retrieval and cleanup errors. Later disk refreshes do not
 mutate existing Sessions. The same Session can create multiple isolated
 Executions.
 
 The Session also coordinates lazy construction of one matching debug Plan. That
-Plan is separate because it carries debugger instrumentation. Debug consumers
+Plan is separate because it carries debugger instrumentation. It compiles on the
+same bound runtime from the original source, without reacquisition or refresh.
+Debug consumers
 receive an `exec.DebugRuntime`, never mutable Session internals or a raw Plan.
 The DebugRuntime owns its Plan lease through the common execution state's
 one-time Universal debugger Session close attempt.
@@ -81,21 +85,18 @@ or watcher events. Debug events already carry detached content, retained by the
 debug Session. Both snapshot APIs copy metadata values and mutable bytes for
 each caller and watcher.
 
-Runtime options also retain an optional canonical working directory. Validation
-requires a nonblank absolute path that resolves to an accessible directory and
-uses the same rooted-filesystem opening semantics as Ferret. This option is
-independent of source/workspace containment and may name a directory outside the
-workspace. Every fresh runtime Session receives the parent workspace root via
-`api.WithFSRoot`; an explicit normalized working directory replaces that
-baseline without changing the retained daemon option snapshot, compilation, or
-Plan identity.
+Runtime options retain an optional working directory prepared through the parent
+Session's provider policy. Native Sessions default to the workspace root and
+validate explicit absolute paths through canonicalization and rooted-directory
+opening; an override may be outside the workspace. Wire Sessions send no implicit
+root and inherit the hosted runtime's default. Nonblank Wire overrides retain
+exact bytes and bypass daemon-side filesystem checks and normalization; the host
+validates them during runtime session creation or use. Normal and debug creation
+use the same policy, while low-level `api.WithFSRoot` application is provider-neutral.
 
-An empty internal working directory means no explicit override. If neither an
-override nor a workspace root is available, no `api.WithFSRoot` option is sent.
-The gRPC and DAP boundaries distinguish an omitted wire field from a present empty
-one; both reject the latter before creating a runtime. DAP also rejects explicit
-JSON null and non-string values. Nonempty strings, including whitespace-only
-input, go through the domain's existing normalization.
+An empty internal working directory means no explicit override. The gRPC and DAP
+boundaries reject present blank fields; DAP also rejects JSON null and non-string
+values. Source containment and identity always belong to the daemon workspace.
 
 Parameters and output content type are applied with `api.WithParams` and
 `api.WithOutputContentType`. Runtime-specific parameter rejection therefore
@@ -150,9 +151,9 @@ Execution lifecycle.
 
 Closing an Execution cancels active work, waits for output settlement and
 common-runtime cleanup, ends watchers, and becomes idempotent. Closing a
-Session stops both normal and debug runtime creation, closes every child
-Execution and DebugSession, waits for DebugRuntime leases, and then closes its
-Plans. Closing a workspace invokes the execution manager's registered close
+Session stops both normal and debug runtime creation, cancels pending preparation,
+closes every child Execution and DebugSession, waits for DebugRuntime leases,
+closes its Plans, and finally releases its binding. Closing a workspace invokes the execution manager's registered close
 hook before retained workspace state is cleared.
 
 The manager orchestrates two package-local registries rather than owning all
@@ -165,8 +166,8 @@ for concurrent waiters and parent teardown, but normal lookups expose active
 entries only.
 
 Each Session owns the gate that admits ordinary and debug runtime creation.
-Session close stops that gate, waits for every admitted creator to publish or
-leave, then marks the ordinary child set closing and invokes debug child cleanup.
+Session close stops that gate, cancels pending constructors outside locks, and
+waits for every admitted creator to publish or roll back, then marks the ordinary child set closing and invokes debug child cleanup.
 A completed Execution remains in its Session group while that parent is closing,
 including while the parent waits for admitted creators. This preserves child
 cleanup errors until the parent has collected them.
@@ -183,18 +184,21 @@ completion.
 
 The manager itself has a terminal closed state. New resources are rejected after
 close, and daemon shutdown closes execution resources before clearing
-workspaces. The manager borrows its runtime and never closes it; daemon and DAP
-composition release their native binding and close the runtime owner after
-managers and workspaces. Internal Wire acquisition is available, but binding
-selection/storage on compiled Sessions remains unimplemented. Any caller using a
-Wire binding must settle output, sessions/debuggers, and plans before release;
-Wire root closure alone does not close caller-owned descendants.
+workspaces. The manager borrows its acquisition owner and never closes it. Workspace and
+manager close cancel pending Session preparation before waiting. Temporary
+construction contexts link caller cancellation with parent closure, preserving
+both context identities and domain causes; publication checks prevent adopting
+resources after closure. Cleanup settles cooperatively and retains failures,
+even when a close waiter cancels. Composition closes the owner afterward.
+Binding disconnection does not trigger reacquisition or replay; a new compiled
+Session obtains a new binding.
 
 ## gRPC and public client projection
 
 The execution v1 protobuf defines Session and Execution identity, source
 snapshots, JSON-shaped parameters, output, structured failures, lifecycle RPCs,
-the optional runtime working directory, and the server-streaming watch.
+the optional runtime selector and resolved Session name, the runtime working
+directory, and the server-streaming watch.
 The adapter maps `Content.Metadata.ContentType` and `Content.Data` to the
 existing output content-type and data fields; upstream Content JSON is not the
 public result representation. `internal/grpc` preserves optional-field presence
@@ -206,6 +210,13 @@ The public `client` package presents supported Session, Execution, watcher,
 output, failure, and working-directory option types while hiding generated
 protobuf clients. An empty Go working-directory value omits the wire field. Its
 sentinel and typed error mapping is part of the public compatibility surface.
+API 1.3 introduces selection. The client remembers initial negotiation, rejects
+explicit names on older servers before RPC, and validates new names and exact
+acknowledgment outside the shared converter. Rejected creation responses with an
+ID receive one detached, five-second cleanup attempt; failures are joined.
+Older unselected responses may leave the name empty, meaning unreported.
+Runtime resource details are classified before generic source/daemon mappings.
+Nondiagnostic compilation and metadata errors retain readable RPC messages.
 
 ## Testing changes
 

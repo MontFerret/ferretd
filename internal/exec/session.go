@@ -7,12 +7,13 @@ import (
 
 	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
-// session owns one immutable reusable Universal Plan. The child gate orders
-// execution-runtime creation before close; its mutex owns debug compilation and
-// Plan lease state. No operation holds the Session mutex while waiting on the gate.
+// session owns its binding and immutable reusable Universal Plans. Its mutex owns
+// pending construction, debug compilation, and Plan leases. The child gate orders
+// execution-runtime creation before close. No operation holds the Session mutex while waiting on the gate.
 type session struct {
 	mu sync.Mutex
 
@@ -21,6 +22,8 @@ type session struct {
 	parameters   []string
 	text         string
 	fsRoot       string
+	binding      *runtimes.Binding
+	pending      map[*construction]struct{}
 	compileDebug func(context.Context) (api.Plan, error)
 	plan         api.Plan
 	debugPlan    api.Plan
@@ -42,6 +45,7 @@ func newSession(
 	text string,
 	fsRoot string,
 	compileDebug func(context.Context) (api.Plan, error),
+	binding *runtimes.Binding,
 ) *session {
 	return &session{
 		id:           id,
@@ -51,6 +55,8 @@ func newSession(
 		fsRoot:       fsRoot,
 		compileDebug: compileDebug,
 		plan:         plan,
+		binding:      binding,
+		pending:      make(map[*construction]struct{}),
 	}
 }
 
@@ -59,16 +65,23 @@ func (s *session) snapshot() SessionSnapshot {
 	defer s.mu.Unlock()
 
 	return SessionSnapshot{
-		ID:         s.id,
-		Source:     s.source,
-		Text:       s.text,
-		Parameters: append([]string(nil), s.parameters...),
+		ID:          s.id,
+		RuntimeName: s.binding.Name(),
+		Source:      s.source,
+		Text:        s.text,
+		Parameters:  append([]string(nil), s.parameters...),
 	}
 }
 
 func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget, error) {
 	for {
 		s.mu.Lock()
+		if err := constructionError(ctx); err != nil {
+			s.mu.Unlock()
+
+			return runtimeTarget{}, err
+		}
+
 		if !s.children.Accepting() {
 			s.mu.Unlock()
 
@@ -114,6 +127,7 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 
 		s.mu.Lock()
 		closing := !s.children.Accepting()
+		err = errors.Join(err, constructionError(ctx))
 		var target runtimeTarget
 
 		if err == nil && !closing {
@@ -186,15 +200,31 @@ func (s *session) runtimeTarget() runtimeTarget {
 	}
 }
 
-func (s *session) beginRuntimeCreate() bool {
-	return s.children.BeginCreate()
+func (s *session) beginRuntimeCreate(operation *construction) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.children.BeginCreate() {
+		return false
+	}
+
+	s.pending[operation] = struct{}{}
+
+	return true
 }
 
-func (s *session) finishRuntimeCreate() {
+func (s *session) finishRuntimeCreate(operation *construction) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.pending, operation)
 	s.children.EndCreate()
 }
 
 func (s *session) beginClose() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.children.BeginClose()
 }
 
@@ -246,8 +276,44 @@ func (s *session) closeUnpublished() error {
 	s.mu.Unlock()
 
 	if plan == nil {
-		return nil
+		return s.binding.Release()
 	}
 
-	return plan.Close()
+	return errors.Join(plan.Close(), s.binding.Release())
+}
+
+func (s *session) cancelPending() {
+	s.mu.Lock()
+	pending := make([]*construction, 0, len(s.pending))
+	for operation := range s.pending {
+		pending = append(pending, operation)
+	}
+
+	s.mu.Unlock()
+
+	for _, operation := range pending {
+		operation.stop(ErrSessionClosed)
+	}
+}
+
+// publicationError is the child publication gate. Once this check succeeds,
+// admission keeps the parent alive until the child is registered or handed off.
+func (s *session) publicationError(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.children.Accepting() {
+		return errors.Join(ErrSessionClosed, constructionError(ctx))
+	}
+
+	return constructionError(ctx)
+}
+
+func (s *session) prepareInput(parameters Parameters, options RuntimeOptions) (runtimeInput, error) {
+	normalized, err := options.normalizedFor(s.binding.Provider())
+	if err != nil {
+		return runtimeInput{}, err
+	}
+
+	return runtimeInput{parameters: parameters.Clone(), options: normalized}, nil
 }

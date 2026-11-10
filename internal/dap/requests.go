@@ -103,7 +103,7 @@ func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchReque
 		}, arguments.logWorkingDirectory)
 	}
 
-	session, err := s.executions.CreateSession(ctx, opened.ID(), paths.relativePath)
+	session, err := s.executions.CreateSession(ctx, opened.ID(), paths.relativePath, "")
 	if err != nil {
 		_ = s.workspaces.Close(context.Background(), opened.ID())
 

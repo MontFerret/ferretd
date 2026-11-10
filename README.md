@@ -14,10 +14,10 @@ semantics remain owned by the main Ferret project.
 Execution uses the
 [Universal Runtime API](https://github.com/MontFerret/api). Each daemon or DAP
 service graph transfers one shared native root from Ferret's upstream
-`uapi.New` adapter to its own runtime acquisition owner and retains a native
-binding. Execution Sessions own reusable plans, individual runs own
-runtime sessions and live output handles, and the execution manager borrows the
-composition runtime. Runs collect detached content and settle output and session
+`uapi.New` adapter to its own runtime acquisition owner. Each compiled Session
+owns one selected runtime binding and its reusable plans; individual runs own
+runtime sessions and live output handles. The execution manager borrows the
+composition owner and releases Session bindings after their children and plans. Runs collect detached content and settle output and session
 cleanup before publishing completion.
 
 ## Build
@@ -142,10 +142,40 @@ watcher, err := c.Executions().WatchExecution(ctx, execution.ID)
 running, err := c.Executions().RunExecution(ctx, execution.ID)
 ```
 
-`WorkingDirectory` is optional. When omitted, the Universal runtime session uses
-the parent workspace root. When supplied, it must resolve to an existing
-absolute local directory; it may be outside the workspace and is retained
-canonically in Execution snapshots.
+`WorkingDirectory` is optional. Native Sessions default to the workspace root;
+an override must resolve to an existing absolute local directory and is retained
+canonically. Wire Sessions inherit the hosted runtime's filesystem default when
+omitted. A nonblank Wire override is forwarded exactly as a runtime-host path,
+without daemon-side path normalization or existence checks; validation occurs on
+the runtime host during session creation or use. Source loading always uses the
+daemon workspace, independently of this execution filesystem.
+
+Select a configured application runtime when creating a Session (API 1.3+):
+
+```go
+session, err := c.Executions().CreateSession(ctx, client.CreateSessionRequest{
+    WorkspaceID:  workspace.ID,
+    RelativePath: "query.fql",
+    RuntimeName:  "application",
+})
+```
+
+`CreateSession` and `GetSession` report the resolved `Session.RuntimeName`.
+Executions and lazy debug compilation reuse that binding and the original source.
+Connection loss fails operations on existing Sessions; creating a new Session
+acquires afresh. Source names do not synchronize remote files or remap paths.
+
+Protocol clients must remember the negotiated server version and reject every
+explicit selector, including `local`, below API 1.3: an older protobuf server can
+ignore the field. API 1.3+ responses must report a nonempty name, and explicit
+selection must be acknowledged identically. Reject missing/mismatched names
+without retrying creation; attempt bounded detached cleanup when the rejected
+response contains a Session ID. The Go client uses a five-second cleanup timeout.
+Older compatible 1.x servers still support unselected calls; their empty name
+means unreported. Runtime lookup/acquisition failures expose `ErrRuntimeNotFound`
+and `ErrRuntimeUnavailable`, separately from daemon availability, source failures,
+and `CompilationError`. Compilation/preparation failures retain diagnostics when
+available and otherwise a readable cause.
 
 For the opt-in TCP transport, parse the endpoint from the `ferretd.ready` event
 and pass the same token explicitly:
@@ -208,10 +238,11 @@ after child services settle. Definitive connection loss does not revive or repla
 an existing binding; a new explicit acquisition performs a fresh handshake.
 
 Without a file, the catalog contains only `local`. Omitting `defaultRuntime`
-selects `local`; explicit blank or unknown defaults fail startup. Both entry
-points currently require a native default: a configured Wire default fails
-clearly before runtime allocation because execution binding and DAP runtime
-selection are not implemented yet. Unused Wire targets are accepted.
+selects `local`; explicit blank or unknown defaults fail startup.
+`serve` accepts Wire defaults without connecting at startup or during discovery;
+`CreateSession` performs acquisition. Standalone `dap` still requires a native
+default and rejects Wire defaults before runtime allocation. Unused Wire targets
+never connect.
 
 Explicit missing, unreadable, malformed, or invalid files fail startup. The
 loader requires a JSON object and rejects unknown fields, null typed fields,
@@ -256,10 +287,11 @@ not close its workspaces, and `Close` is explicit and idempotent. The current
 workspace RPC continues to expose identity and lifecycle operations rather than
 documents or parser internals.
 
-Each daemon service graph currently retains one native binding from its runtime
-owner. Public session runtime selection remains unimplemented. `CreateSession`
-refreshes the latest saved contents of one explicitly selected workspace-relative `.fql`
-document and compiles it into an immutable reusable plan. A missed creation notification
+`CreateSession` resolves its optional `RuntimeName` exactly through the startup
+catalog; omission selects the daemon default. It first refreshes the latest saved contents of one explicitly selected workspace-relative `.fql`
+document, acquires that runtime, and compiles there into an immutable reusable
+plan. The Session retains its resolved name, binding, and source bytes until
+close. A missed creation notification
 is recovered during this refresh. Explicit selection also admits lowercase `.fql`
 regular files beneath discovery-excluded directories, including `.tmp`, `testdata`,
 and nested Go modules, without discovering neighboring excluded files.
@@ -267,8 +299,9 @@ Containment and nested-symlink restrictions remain. These admissions survive
 watcher reconciliation and same-path recreation until workspace close.
 Existing Sessions keep their original source revision and normal and lazy debug
 Plans. Each `Execution` owns isolated JSON-shaped parameter bindings and a fresh,
-one-shot runtime session. Its filesystem starts at the workspace root; an
-optional working directory changes only that runtime session's root. Source
+one-shot runtime session. Native filesystem defaults use the workspace root;
+Wire filesystem defaults belong to the hosted runtime. An optional working
+directory changes only that runtime session's root. Source
 containment and retained state remain workspace-owned.
 `RunExecution` returns the `RUNNING` snapshot immediately; execution then
 continues independently of the triggering RPC context. It remains running until
@@ -298,7 +331,7 @@ parameters, expressions, or evaluated values. See
 
 ## Current Status
 
-The daemon exposes API v1.2 `DaemonService`, `WorkspaceService`, and
+The daemon exposes API v1.3 `DaemonService`, `WorkspaceService`, and
 `ExecutionService` contracts over permission-restricted native local transports
 or authenticated ephemeral IPv4 loopback TCP, plus the standard gRPC health
 service. The checked-in Go code under `gen/` is generated from `proto/` with

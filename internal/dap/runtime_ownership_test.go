@@ -50,7 +50,7 @@ func TestServerClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	if _, err := server.executions.CreateSession(context.Background(), opened.ID(), "query.fql"); err != nil {
+	if _, err := server.executions.CreateSession(context.Background(), opened.ID(), "query.fql", ""); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 

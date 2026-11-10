@@ -72,16 +72,11 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 		return nil, err
 	}
 
-	binding, err := owner.Acquire(context.Background(), "")
-	if err != nil {
-		return nil, errors.Join(err, owner.Close(context.Background()))
-	}
-
 	workspaces := workspace.New()
 
-	executions, err := exec.New(workspaces, binding.Runtime())
+	executions, err := exec.New(workspaces, owner)
 	if err != nil {
-		cleanupErr := errors.Join(workspaces.Clear(context.Background()), binding.Release(), owner.Close(context.Background()))
+		cleanupErr := errors.Join(workspaces.Clear(context.Background()), owner.Close(context.Background()))
 
 		return nil, errors.Join(fmt.Errorf("create execution manager: %w", err), cleanupErr)
 	}
@@ -89,7 +84,7 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 	debugs, err := debug.New(executions)
 	if err != nil {
 		ctx := context.Background()
-		cleanupErr := errors.Join(executions.Close(ctx), workspaces.Clear(ctx), binding.Release(), owner.Close(ctx))
+		cleanupErr := errors.Join(executions.Close(ctx), workspaces.Clear(ctx), owner.Close(ctx))
 
 		return nil, errors.Join(fmt.Errorf("create debug manager: %w", err), cleanupErr)
 	}
@@ -97,18 +92,17 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 	readerClose, _ := input.(io.Closer)
 
 	return &Server{
-		reader:         bufio.NewReader(input),
-		readerClose:    readerClose,
-		writer:         output,
-		workspaces:     workspaces,
-		executions:     executions,
-		debugs:         debugs,
-		runtimeOwner:   owner,
-		runtimeBinding: binding,
-		catalog:        catalog,
-		logger:         options.Logger.With().Str("component", "dap").Logger(),
-		handles:        newHandleTable(),
-		breakpoints:    newBreakpointIDs(),
+		reader:       bufio.NewReader(input),
+		readerClose:  readerClose,
+		writer:       output,
+		workspaces:   workspaces,
+		executions:   executions,
+		debugs:       debugs,
+		runtimeOwner: owner,
+		catalog:      catalog,
+		logger:       options.Logger.With().Str("component", "dap").Logger(),
+		handles:      newHandleTable(),
+		breakpoints:  newBreakpointIDs(),
 		client: clientOptions{
 			pathFormat:      pathFormatPath,
 			linesStartAt1:   true,

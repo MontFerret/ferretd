@@ -19,11 +19,10 @@ import (
 
 // Daemon owns the services and lifecycle that make up ferretd.
 type Daemon struct {
-	workspaces     *workspace.Manager
-	executions     *exec.Manager
-	grpc           *grpcadapter.Server
-	runtimeOwner   *runtimes.Owner
-	runtimeBinding *runtimes.Binding
+	workspaces   *workspace.Manager
+	executions   *exec.Manager
+	grpc         *grpcadapter.Server
+	runtimeOwner *runtimes.Owner
 
 	endpoint transport.Endpoint
 	version  string
@@ -184,9 +183,8 @@ func (d *Daemon) startCleanup(listener net.Listener, serving bool) {
 			listenerErr = listener.Close()
 		}
 
-		bindingErr := d.runtimeBinding.Release()
 		runtimeErr := d.runtimeOwner.Close(ctx)
-		d.finishStop(errors.Join(executionErr, workspaceErr, grpcErr, listenerErr, bindingErr, runtimeErr))
+		d.finishStop(errors.Join(executionErr, workspaceErr, grpcErr, listenerErr, runtimeErr))
 	}()
 }
 

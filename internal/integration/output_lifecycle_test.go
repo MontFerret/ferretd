@@ -31,7 +31,7 @@ func TestNativeExecutionOwnsInvocationUntilOutputSettlement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Cleanup(func() { _ = runtime.Close() })
+	owner := newTestOwner(t, runtime)
 
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "query.fql"), []byte("RETURN WAIT_NATIVE()"), 0o600); err != nil {
@@ -46,14 +46,14 @@ func TestNativeExecutionOwnsInvocationUntilOutputSettlement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	manager, err := exec.New(workspaces, runtime)
+	manager, err := exec.New(workspaces, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() { _ = manager.Close(context.Background()) })
 
-	session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
+	session, err := manager.CreateSession(ctx, opened.ID(), "query.fql", "")
 	if err != nil {
 		t.Fatal(err)
 	}

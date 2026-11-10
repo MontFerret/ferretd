@@ -38,6 +38,7 @@ message Session {
   SessionId id = 1;
   SourceSnapshot source = 2;
   repeated string parameters = 3;
+  string runtime_name = 4;
 }
 
 enum ExecutionState {
@@ -125,6 +126,7 @@ enum ResourceKind {
   RESOURCE_KIND_SESSION = 3;
   RESOURCE_KIND_EXECUTION = 4;
   RESOURCE_KIND_WATCHER = 5;
+  RESOURCE_KIND_RUNTIME = 6;
 }
 
 enum ResourceCondition {
@@ -135,6 +137,7 @@ enum ResourceCondition {
   RESOURCE_CONDITION_INVALID_PARAMETERS = 4;
   RESOURCE_CONDITION_LAGGED = 5;
   RESOURCE_CONDITION_INVALID_OPTIONS = 6;
+  RESOURCE_CONDITION_UNAVAILABLE = 7;
 }
 
 message ResourceErrorDetail {
@@ -177,6 +180,7 @@ message WatchExecutionResponse {
 message CreateSessionRequest {
   ferretd.workspace.v1.WorkspaceId workspace_id = 1;
   string relative_path = 2;
+  string runtime_name = 3;
 }
 
 message CreateSessionResponse {

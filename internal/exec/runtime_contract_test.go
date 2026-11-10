@@ -24,7 +24,7 @@ func TestCreateSessionMetadataFailureClosesUnpublishedPlan(t *testing.T) {
 			}
 			t.Cleanup(func() { fixture.runtime.planClose = nil })
 
-			snapshot, err := fixture.manager.CreateSession(t.Context(), fixture.workspace.ID(), "query.fql")
+			snapshot, err := fixture.manager.CreateSession(t.Context(), fixture.workspace.ID(), "query.fql", "")
 			if snapshot.ID != "" || !errors.Is(err, metadataErr) || !errors.Is(err, cleanupErr) {
 				t.Fatalf("CreateSession = %+v, %v", snapshot, err)
 			}
@@ -53,7 +53,8 @@ func TestCreateSessionMetadataFailureClosesUnpublishedPlan(t *testing.T) {
 
 func TestCreateSessionMetadataUsesCreationContext(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN @value")
-	operation, cancel := context.WithCancel(t.Context())
+	type contextKey struct{}
+	operation, cancel := context.WithCancel(context.WithValue(t.Context(), contextKey{}, "caller"))
 	t.Cleanup(cancel)
 	contexts := make(chan context.Context, 1)
 	cleanupErr := errors.New("unpublished plan cleanup")
@@ -72,7 +73,7 @@ func TestCreateSessionMetadataUsesCreationContext(t *testing.T) {
 	t.Cleanup(func() { fixture.runtime.planClose = nil })
 	result := make(chan error, 1)
 	go func() {
-		snapshot, err := fixture.manager.CreateSession(operation, fixture.workspace.ID(), "query.fql")
+		snapshot, err := fixture.manager.CreateSession(operation, fixture.workspace.ID(), "query.fql", "")
 		if snapshot.ID != "" {
 			t.Error("metadata operation published a session")
 		}
@@ -80,8 +81,8 @@ func TestCreateSessionMetadataUsesCreationContext(t *testing.T) {
 		result <- err
 	}()
 
-	if ctx := <-contexts; ctx != operation {
-		t.Fatal("metadata received a different operation context")
+	if ctx := <-contexts; ctx.Err() != nil || ctx.Done() == nil || ctx.Value(contextKey{}) != "caller" {
+		t.Fatal("metadata did not receive a live construction context")
 	}
 
 	lookup := make(chan error, 1)

@@ -82,7 +82,7 @@ func benchmarkBreakpointServer(b *testing.B) (*Server, string) {
 
 	server.owned.workspace = workspace.ID()
 
-	session, err := server.executions.CreateSession(ctx, workspace.ID(), "query.fql")
+	session, err := server.executions.CreateSession(ctx, workspace.ID(), "query.fql", "")
 	if err != nil {
 		b.Fatal(err)
 	}

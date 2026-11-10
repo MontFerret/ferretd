@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/MontFerret/ferretd/internal/lifecycle"
+	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 // workspaceGroup owns Session creation admission and retained membership for
@@ -15,23 +16,31 @@ type workspaceGroup struct {
 
 	gate     lifecycle.Gate
 	sessions map[SessionID]*sessionEntry
+	pending  map[*construction]struct{}
 }
 
 func newWorkspaceGroup() *workspaceGroup {
-	return &workspaceGroup{sessions: make(map[SessionID]*sessionEntry)}
+	return &workspaceGroup{sessions: make(map[SessionID]*sessionEntry), pending: make(map[*construction]struct{})}
 }
 
-func (g *workspaceGroup) beginCreate() bool {
+func (g *workspaceGroup) beginCreate(operation *construction) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	return g.gate.BeginCreate()
+	if !g.gate.BeginCreate() {
+		return false
+	}
+
+	g.pending[operation] = struct{}{}
+
+	return true
 }
 
-func (g *workspaceGroup) finishCreate() bool {
+func (g *workspaceGroup) finishCreate(operation *construction) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	delete(g.pending, operation)
 	idle := g.gate.EndCreate()
 
 	return idle && g.gate.Accepting() && len(g.sessions) == 0
@@ -97,4 +106,18 @@ func (g *workspaceGroup) finishClose(err error) {
 
 func (g *workspaceGroup) waitClose(ctx context.Context) error {
 	return g.gate.WaitClose(ctx)
+}
+
+func (g *workspaceGroup) cancelPending() {
+	g.mu.Lock()
+	pending := make([]*construction, 0, len(g.pending))
+	for operation := range g.pending {
+		pending = append(pending, operation)
+	}
+
+	g.mu.Unlock()
+
+	for _, operation := range pending {
+		operation.stop(workspace.ErrClosed)
+	}
 }

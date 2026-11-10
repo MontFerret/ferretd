@@ -15,7 +15,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/transport"
 )
 
-var currentAPIVersion = APIVersion{Major: 1, Minor: 2}
+var currentAPIVersion = APIVersion{Major: 1, Minor: 3}
 
 // Client owns a negotiated connection to a local daemon.
 type Client struct {
@@ -77,7 +77,8 @@ func Dial(ctx context.Context, options ...Option) (*Client, error) {
 		client: executionv1.NewExecutionServiceClient(connection),
 	}
 
-	if _, err := result.Info(ctx); err != nil {
+	info, err := result.Info(ctx)
+	if err != nil {
 		_ = result.Close()
 
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -86,6 +87,8 @@ func Dial(ctx context.Context, options ...Option) (*Client, error) {
 
 		return nil, err
 	}
+
+	result.executions.serverAPI = info.APIVersion
 
 	return result, nil
 }

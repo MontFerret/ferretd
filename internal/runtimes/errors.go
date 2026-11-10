@@ -11,6 +11,8 @@ var (
 	ErrInvalidConfig = errors.New("invalid runtime configuration")
 	// ErrRuntimeNotFound classifies unresolved explicit or default target names.
 	ErrRuntimeNotFound = errors.New("runtime not found")
+	// ErrRuntimeUnavailable classifies runtime acquisition failures, preserving their cause.
+	ErrRuntimeUnavailable = errors.New("runtime unavailable")
 	// ErrUnsupportedDefault classifies a default the entry point cannot execute yet.
 	ErrUnsupportedDefault = errors.New("unsupported default runtime")
 )

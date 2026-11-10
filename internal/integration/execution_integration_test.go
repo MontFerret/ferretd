@@ -49,7 +49,7 @@ func TestCreateSessionCompilesImmutableSourceAndParameters(t *testing.T) {
 	second, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
@@ -69,7 +69,7 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	second, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
@@ -91,7 +91,7 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	third, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("unchanged CreateSession: %v", err)
@@ -119,7 +119,7 @@ func TestCreateSessionDiscoversSourceCreatedAfterWorkspaceOpen(t *testing.T) {
 
 	writeSourceFile(t, root, "created.fql", "RETURN 42")
 
-	session, err := manager.CreateSession(context.Background(), opened.ID(), "created.fql")
+	session, err := manager.CreateSession(context.Background(), opened.ID(), "created.fql", "")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		_, err := fixture.manager.CreateSession(
 			context.Background(),
 			fixture.workspace.ID(),
-			"query.fql",
+			"query.fql", "",
 		)
 
 		var compilation *exec.CompilationError
@@ -155,7 +155,7 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		recovered, err := fixture.manager.CreateSession(
 			context.Background(),
 			fixture.workspace.ID(),
-			"query.fql",
+			"query.fql", "",
 		)
 		if err != nil {
 			t.Fatalf("recovered CreateSession: %v", err)
@@ -175,7 +175,7 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		_, err := fixture.manager.CreateSession(
 			context.Background(),
 			fixture.workspace.ID(),
-			"query.fql",
+			"query.fql", "",
 		)
 		if !errors.Is(err, workspace.ErrDocumentNotFound) {
 			t.Fatalf("CreateSession error = %v, want ErrDocumentNotFound", err)
@@ -191,7 +191,7 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	second, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)

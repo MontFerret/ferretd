@@ -22,22 +22,30 @@ import (
 )
 
 type wireFixture struct {
-	runtime     *uapi.Runtime
-	server      *wireserver.Server
-	endpoint    string
-	connections chan string
-	serving     chan error
-	cancel      context.CancelFunc
-	stop        sync.Once
-	stopErr     error
-	closes      atomic.Int32
+	root         string
+	runtime      *uapi.Runtime
+	server       *wireserver.Server
+	endpoint     string
+	connections  chan string
+	serving      chan error
+	cancel       context.CancelFunc
+	stop         sync.Once
+	stopErr      error
+	closes       atomic.Int32
+	acquisitions atomic.Int32
 }
 
-func newWireFixture(t *testing.T, applicationValue int, options ...wireserver.Option) *wireFixture {
+func newWireFixture(t testing.TB, applicationValue int, options ...wireserver.Option) *wireFixture {
 	t.Helper()
-	f := &wireFixture{connections: make(chan string, 16), serving: make(chan error, 1)}
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	return newWireFixtureAt(t, applicationValue, "127.0.0.1:0", options...)
+}
+
+func newWireFixtureAt(t testing.TB, applicationValue int, address string, options ...wireserver.Option) *wireFixture {
+	t.Helper()
+	f := &wireFixture{connections: make(chan string, 16), serving: make(chan error, 1), root: t.TempDir()}
+
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +53,7 @@ func newWireFixture(t *testing.T, applicationValue int, options ...wireserver.Op
 	f.endpoint = "tcp://" + listener.Addr().String()
 
 	f.runtime, err = uapi.New(runtimes.NativeVersion,
+		ferret.WithFSRoot(f.root),
 		ferret.WithFunctionsRegistrar(func(ns ferruntime.Namespace) {
 			ns.Function().A0().Add("TASK3_APPLICATION_VALUE", func(context.Context) (ferruntime.Value, error) {
 				return ferruntime.NewInt(applicationValue), nil
@@ -87,14 +96,18 @@ func newWireFixture(t *testing.T, applicationValue int, options ...wireserver.Op
 func (f *wireFixture) observeConnection(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	if strings.HasSuffix(info.FullMethod, "/Connect") {
 		if remote, ok := peer.FromContext(stream.Context()); ok {
-			f.connections <- remote.Addr.String()
+			f.acquisitions.Add(1)
+			select {
+			case f.connections <- remote.Addr.String():
+			default:
+			}
 		}
 	}
 
 	return handler(srv, stream)
 }
 
-func (f *wireFixture) closeServer(t *testing.T) {
+func (f *wireFixture) closeServer(t testing.TB) {
 	t.Helper()
 	f.stop.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

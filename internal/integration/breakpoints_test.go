@@ -185,7 +185,7 @@ func TestDebugManagerLiveBreakpointReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Cleanup(func() { _ = runtime.Close() })
+	owner := newTestOwner(t, runtime)
 	workspaces := workspace.New()
 	t.Cleanup(func() { _ = workspaces.Clear(context.Background()) })
 	root := t.TempDir()
@@ -196,7 +196,7 @@ func TestDebugManagerLiveBreakpointReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	executions, err := exec.New(workspaces, runtime)
+	executions, err := exec.New(workspaces, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestDebugManagerLiveBreakpointReplacement(t *testing.T) {
 
 	t.Cleanup(func() { _ = manager.Close(context.Background()) })
 
-	compiled, err := executions.CreateSession(ctx, opened.ID(), "query.fql")
+	compiled, err := executions.CreateSession(ctx, opened.ID(), "query.fql", "")
 	if err != nil {
 		t.Fatal(err)
 	}

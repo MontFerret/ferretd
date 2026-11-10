@@ -76,8 +76,8 @@ func TestNewConstructsNativeRuntimeAdapter(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	if _, ok := server.runtimeBinding.Runtime().(*uapi.Runtime); !ok {
-		t.Fatalf("New runtime = %T, want native Ferret adapter", server.runtimeBinding.Runtime())
+	if _, ok := nativeRuntimeForTest(t, server.runtimeOwner).(*uapi.Runtime); !ok {
+		t.Fatalf("New runtime = %T, want native Ferret adapter", nativeRuntimeForTest(t, server.runtimeOwner))
 	}
 
 	if err := server.cleanup(); err != nil {

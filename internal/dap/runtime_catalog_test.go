@@ -66,7 +66,7 @@ func TestRuntimeConfigurationAcceptsUnusedWire(t *testing.T) {
 		}
 	})
 
-	version, err := server.runtimeBinding.Runtime().Version(t.Context())
+	version, err := nativeRuntimeForTest(t, server.runtimeOwner).Version(t.Context())
 	if err != nil || version != runtimes.NativeVersion {
 		t.Fatalf("native runtime version = %q, %v", version, err)
 	}
@@ -99,4 +99,17 @@ func TestRuntimeConfigurationAcceptsUnusedWire(t *testing.T) {
 	if accepted.RemoteAddr().String() != control.LocalAddr().String() {
 		t.Fatal("DAP startup connected to an unused Wire target")
 	}
+}
+
+func nativeRuntimeForTest(t testing.TB, owner *runtimes.Owner) api.Runtime {
+	t.Helper()
+
+	binding, err := owner.Acquire(t.Context(), "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = binding.Release() })
+
+	return binding.Runtime()
 }

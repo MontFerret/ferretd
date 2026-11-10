@@ -21,7 +21,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/runtimes"
 )
 
-func newWireOwner(t *testing.T, definitions ...runtimes.DefinitionConfig) *runtimes.Owner {
+func newWireOwner(t testing.TB, definitions ...runtimes.DefinitionConfig) *runtimes.Owner {
 	t.Helper()
 
 	catalog, err := runtimes.NewCatalog(runtimes.Config{Runtimes: definitions})

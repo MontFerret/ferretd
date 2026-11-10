@@ -329,7 +329,7 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	refreshed, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -535,7 +535,7 @@ func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 	if _, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	); !errors.Is(err, ErrClosed) {
 		t.Fatalf("CreateSession after Close error = %v, want ErrClosed", err)
 	}

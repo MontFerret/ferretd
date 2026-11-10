@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"fmt"
+	"strings"
 
 	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 	"github.com/MontFerret/ferretd/internal/exec"
@@ -30,7 +31,7 @@ func fromProtoExecutionOptions(value *executionv1.ExecutionOptions) (exec.Runtim
 	}
 
 	if value.WorkingDirectory != nil {
-		if *value.WorkingDirectory == "" {
+		if strings.TrimSpace(*value.WorkingDirectory) == "" {
 			return exec.RuntimeOptions{}, fmt.Errorf("%w: working directory must not be blank", exec.ErrInvalidExecutionOptions)
 		}
 

@@ -13,20 +13,26 @@ import (
 // A Binding must not be copied. Outputs, sessions/debuggers, and plans must settle
 // before Release; closing a Wire root does not close caller-owned descendants.
 type Binding struct {
-	owner   *Owner
-	name    string
-	runtime api.Runtime
-	owned   bool
-	close   lifecycle.CloseOperation
+	owner    *Owner
+	name     string
+	provider Provider
+	runtime  api.Runtime
+	owned    bool
+	close    lifecycle.CloseOperation
 }
 
 func newBinding(owner *Owner, definition Definition, runtime api.Runtime) *Binding {
-	return &Binding{owner: owner, name: definition.Name, runtime: runtime, owned: definition.Provider == ProviderWire}
+	return &Binding{owner: owner, name: definition.Name, provider: definition.Provider, runtime: runtime, owned: definition.Provider == ProviderWire}
 }
 
 // Name returns the exact stable name resolved by the catalog.
 func (b *Binding) Name() string {
 	return b.name
+}
+
+// Provider identifies the implementation selected by this binding's definition.
+func (b *Binding) Provider() Provider {
+	return b.provider
 }
 
 // Runtime returns the borrowed runtime. The caller must not close it directly.

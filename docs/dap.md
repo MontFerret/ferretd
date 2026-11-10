@@ -26,9 +26,9 @@ one strict JSON object, rejecting unknown fields, invalid types, null typed
 fields, and trailing values. Relative file paths use the process working
 directory. Pass the same absolute configuration path to `serve` and `dap` for
 consistent definitions. Each reads once and constructs its own immutable catalog,
-runtime acquisition owner, shared native root, native binding, and service graph;
-DAP closes children before releasing its binding and owner. It does not connect
-to `serve`. There is no live reload or outbound connection attempt for configured
+runtime acquisition owner, shared native root, and service graph. Its compiled
+Session owns the native binding; DAP closes children and plans before that binding
+and closes the owner afterward. It does not connect to `serve`. There is no live reload or outbound connection attempt for configured
 Wire definitions.
 
 ## Diagnostics

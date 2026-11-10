@@ -33,10 +33,9 @@ func TestExecutionOptionsProtoRoundTrip(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name:          "whitespace field present",
-			value:         &executionv1.ExecutionOptions{WorkingDirectory: &blank},
-			wantDirectory: blank,
-			wantPresent:   true,
+			name:      "whitespace field present",
+			value:     &executionv1.ExecutionOptions{WorkingDirectory: &blank},
+			wantError: true,
 		},
 		{
 			name: "field present",

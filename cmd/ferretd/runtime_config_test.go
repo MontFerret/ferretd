@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +47,14 @@ func TestDAPCommandPassesRuntimeConfiguration(t *testing.T) {
 }
 
 func TestServeCommandRuntimeDiscovery(t *testing.T) {
-	path := writeRuntimeConfig(t, `{"defaultRuntime":"local","runtimes":[{"name":"app","label":"Application","provider":"wire","endpoint":"tcp://application.invalid:9000"}]}`)
+	for _, defaultRuntime := range []string{"local", "app"} {
+		t.Run(defaultRuntime, func(t *testing.T) { testServeRuntimeDiscovery(t, defaultRuntime) })
+	}
+}
+
+func testServeRuntimeDiscovery(t *testing.T, defaultRuntime string) {
+	t.Helper()
+	path := writeRuntimeConfig(t, fmt.Sprintf(`{"defaultRuntime":%q,"runtimes":[{"name":"app","label":"Application","provider":"wire","endpoint":"tcp://application.invalid:9000"}]}`, defaultRuntime))
 	endpoint := testClientEndpoint(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -78,7 +86,7 @@ func TestServeCommandRuntimeDiscovery(t *testing.T) {
 	}
 
 	snapshot, err := c.ListRuntimes(t.Context())
-	if err != nil || snapshot.DefaultRuntime != "local" || len(snapshot.Runtimes) != 2 || snapshot.Runtimes[0].Name != "app" || snapshot.Runtimes[0].Label != "Application" {
+	if err != nil || snapshot.DefaultRuntime != defaultRuntime || len(snapshot.Runtimes) != 2 || snapshot.Runtimes[0].Name != "app" || snapshot.Runtimes[0].Label != "Application" {
 		t.Fatalf("discovery = %+v, %v", snapshot, err)
 	}
 }
@@ -99,6 +107,10 @@ func TestRuntimeConfigurationProcessErrorsUseStderr(t *testing.T) {
 			{"unknown default", writeRuntimeConfig(t, `{"defaultRuntime":"missing"}`), "runtime not found"},
 			{"Wire default", writeRuntimeConfig(t, `{"defaultRuntime":"app","runtimes":[{"name":"app","provider":"wire","endpoint":"tcp://application.invalid:9000"}]}`), "unsupported default runtime"},
 		} {
+			if command == "serve" && test.name == "Wire default" {
+				continue
+			}
+
 			t.Run(command+"/"+test.name, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 				defer cancel()

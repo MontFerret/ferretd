@@ -188,6 +188,7 @@ const (
 	ResourceKind_RESOURCE_KIND_SESSION     ResourceKind = 3
 	ResourceKind_RESOURCE_KIND_EXECUTION   ResourceKind = 4
 	ResourceKind_RESOURCE_KIND_WATCHER     ResourceKind = 5
+	ResourceKind_RESOURCE_KIND_RUNTIME     ResourceKind = 6
 )
 
 // Enum value maps for ResourceKind.
@@ -199,6 +200,7 @@ var (
 		3: "RESOURCE_KIND_SESSION",
 		4: "RESOURCE_KIND_EXECUTION",
 		5: "RESOURCE_KIND_WATCHER",
+		6: "RESOURCE_KIND_RUNTIME",
 	}
 	ResourceKind_value = map[string]int32{
 		"RESOURCE_KIND_UNSPECIFIED": 0,
@@ -207,6 +209,7 @@ var (
 		"RESOURCE_KIND_SESSION":     3,
 		"RESOURCE_KIND_EXECUTION":   4,
 		"RESOURCE_KIND_WATCHER":     5,
+		"RESOURCE_KIND_RUNTIME":     6,
 	}
 )
 
@@ -247,6 +250,7 @@ const (
 	ResourceCondition_RESOURCE_CONDITION_INVALID_PARAMETERS ResourceCondition = 4
 	ResourceCondition_RESOURCE_CONDITION_LAGGED             ResourceCondition = 5
 	ResourceCondition_RESOURCE_CONDITION_INVALID_OPTIONS    ResourceCondition = 6
+	ResourceCondition_RESOURCE_CONDITION_UNAVAILABLE        ResourceCondition = 7
 )
 
 // Enum value maps for ResourceCondition.
@@ -259,6 +263,7 @@ var (
 		4: "RESOURCE_CONDITION_INVALID_PARAMETERS",
 		5: "RESOURCE_CONDITION_LAGGED",
 		6: "RESOURCE_CONDITION_INVALID_OPTIONS",
+		7: "RESOURCE_CONDITION_UNAVAILABLE",
 	}
 	ResourceCondition_value = map[string]int32{
 		"RESOURCE_CONDITION_UNSPECIFIED":        0,
@@ -268,6 +273,7 @@ var (
 		"RESOURCE_CONDITION_INVALID_PARAMETERS": 4,
 		"RESOURCE_CONDITION_LAGGED":             5,
 		"RESOURCE_CONDITION_INVALID_OPTIONS":    6,
+		"RESOURCE_CONDITION_UNAVAILABLE":        7,
 	}
 )
 
@@ -459,6 +465,7 @@ type Session struct {
 	Id            *SessionId             `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Source        *SourceSnapshot        `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
 	Parameters    []string               `protobuf:"bytes,3,rep,name=parameters,proto3" json:"parameters,omitempty"`
+	RuntimeName   string                 `protobuf:"bytes,4,opt,name=runtime_name,json=runtimeName,proto3" json:"runtime_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -512,6 +519,13 @@ func (x *Session) GetParameters() []string {
 		return x.Parameters
 	}
 	return nil
+}
+
+func (x *Session) GetRuntimeName() string {
+	if x != nil {
+		return x.RuntimeName
+	}
+	return ""
 }
 
 type ExecutionOptions struct {
@@ -1500,6 +1514,7 @@ type CreateSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   *v1.WorkspaceId        `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
 	RelativePath  string                 `protobuf:"bytes,2,opt,name=relative_path,json=relativePath,proto3" json:"relative_path,omitempty"`
+	RuntimeName   string                 `protobuf:"bytes,3,opt,name=runtime_name,json=runtimeName,proto3" json:"runtime_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1544,6 +1559,13 @@ func (x *CreateSessionRequest) GetWorkspaceId() *v1.WorkspaceId {
 func (x *CreateSessionRequest) GetRelativePath() string {
 	if x != nil {
 		return x.RelativePath
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetRuntimeName() string {
+	if x != nil {
+		return x.RuntimeName
 	}
 	return ""
 }
@@ -2265,13 +2287,14 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	"\fworkspace_id\x18\x01 \x01(\v2!.ferretd.workspace.v1.WorkspaceIdR\vworkspaceId\x12#\n" +
 	"\rrelative_path\x18\x02 \x01(\tR\frelativePath\x12\x10\n" +
 	"\x03uri\x18\x03 \x01(\tR\x03uri\x12\x1a\n" +
-	"\brevision\x18\x04 \x01(\x04R\brevision\"\x98\x01\n" +
+	"\brevision\x18\x04 \x01(\x04R\brevision\"\xbb\x01\n" +
 	"\aSession\x12/\n" +
 	"\x02id\x18\x01 \x01(\v2\x1f.ferretd.execution.v1.SessionIdR\x02id\x12<\n" +
 	"\x06source\x18\x02 \x01(\v2$.ferretd.execution.v1.SourceSnapshotR\x06source\x12\x1e\n" +
 	"\n" +
 	"parameters\x18\x03 \x03(\tR\n" +
-	"parameters\"\x8a\x01\n" +
+	"parameters\x12!\n" +
+	"\fruntime_name\x18\x04 \x01(\tR\vruntimeName\"\x8a\x01\n" +
 	"\x10ExecutionOptions\x12.\n" +
 	"\x13output_content_type\x18\x01 \x01(\tR\x11outputContentType\x120\n" +
 	"\x11working_directory\x18\x02 \x01(\tH\x00R\x10workingDirectory\x88\x01\x01B\x14\n" +
@@ -2337,10 +2360,11 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	"\tcompleted\x18\x05 \x01(\v2(.ferretd.execution.v1.ExecutionCompletedH\x00R\tcompleted\x12?\n" +
 	"\x06failed\x18\x06 \x01(\v2%.ferretd.execution.v1.ExecutionFailedH\x00R\x06failed\x12H\n" +
 	"\tcancelled\x18\a \x01(\v2(.ferretd.execution.v1.ExecutionCancelledH\x00R\tcancelledB\t\n" +
-	"\apayload\"\x81\x01\n" +
+	"\apayload\"\xa4\x01\n" +
 	"\x14CreateSessionRequest\x12D\n" +
 	"\fworkspace_id\x18\x01 \x01(\v2!.ferretd.workspace.v1.WorkspaceIdR\vworkspaceId\x12#\n" +
-	"\rrelative_path\x18\x02 \x01(\tR\frelativePath\"P\n" +
+	"\rrelative_path\x18\x02 \x01(\tR\frelativePath\x12!\n" +
+	"\fruntime_name\x18\x03 \x01(\tR\vruntimeName\"P\n" +
 	"\x15CreateSessionResponse\x127\n" +
 	"\asession\x18\x01 \x01(\v2\x1d.ferretd.execution.v1.SessionR\asession\"D\n" +
 	"\x11GetSessionRequest\x12/\n" +
@@ -2390,14 +2414,15 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	"\x18FAILURE_CATEGORY_CLEANUP\x10\x03*X\n" +
 	"\x12DiagnosticSeverity\x12#\n" +
 	"\x1fDIAGNOSTIC_SEVERITY_UNSPECIFIED\x10\x00\x12\x1d\n" +
-	"\x19DIAGNOSTIC_SEVERITY_ERROR\x10\x01*\xb7\x01\n" +
+	"\x19DIAGNOSTIC_SEVERITY_ERROR\x10\x01*\xd2\x01\n" +
 	"\fResourceKind\x12\x1d\n" +
 	"\x19RESOURCE_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17RESOURCE_KIND_WORKSPACE\x10\x01\x12\x18\n" +
 	"\x14RESOURCE_KIND_SOURCE\x10\x02\x12\x19\n" +
 	"\x15RESOURCE_KIND_SESSION\x10\x03\x12\x1b\n" +
 	"\x17RESOURCE_KIND_EXECUTION\x10\x04\x12\x19\n" +
-	"\x15RESOURCE_KIND_WATCHER\x10\x05*\x90\x02\n" +
+	"\x15RESOURCE_KIND_WATCHER\x10\x05\x12\x19\n" +
+	"\x15RESOURCE_KIND_RUNTIME\x10\x06*\xb4\x02\n" +
 	"\x11ResourceCondition\x12\"\n" +
 	"\x1eRESOURCE_CONDITION_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cRESOURCE_CONDITION_NOT_FOUND\x10\x01\x12\x1d\n" +
@@ -2405,7 +2430,8 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	" RESOURCE_CONDITION_INVALID_STATE\x10\x03\x12)\n" +
 	"%RESOURCE_CONDITION_INVALID_PARAMETERS\x10\x04\x12\x1d\n" +
 	"\x19RESOURCE_CONDITION_LAGGED\x10\x05\x12&\n" +
-	"\"RESOURCE_CONDITION_INVALID_OPTIONS\x10\x062\xce\a\n" +
+	"\"RESOURCE_CONDITION_INVALID_OPTIONS\x10\x06\x12\"\n" +
+	"\x1eRESOURCE_CONDITION_UNAVAILABLE\x10\a2\xce\a\n" +
 	"\x10ExecutionService\x12h\n" +
 	"\rCreateSession\x12*.ferretd.execution.v1.CreateSessionRequest\x1a+.ferretd.execution.v1.CreateSessionResponse\x12_\n" +
 	"\n" +
