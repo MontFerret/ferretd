@@ -78,14 +78,16 @@ func (r *sessionRegistry) beginCreate(id workspace.ID, operation *construction) 
 	return sessionCreation{workspace: id, group: group, operation: operation}, nil
 }
 
-func (r *sessionRegistry) finishCreate(creation sessionCreation) {
+func (r *sessionRegistry) finishCreate(creation sessionCreation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	discard := creation.group.finishCreate(creation.operation)
+	discard, closedErr := creation.group.finishCreate(creation.operation)
 	if discard && r.groups[creation.workspace] == creation.group {
 		delete(r.groups, creation.workspace)
 	}
+
+	return closedErr
 }
 
 func (r *sessionRegistry) commitCreate(
@@ -150,8 +152,8 @@ func (c runtimeCreation) session() *session {
 	return c.parent
 }
 
-func (c runtimeCreation) finish() {
-	c.parent.finishRuntimeCreate(c.operation)
+func (c runtimeCreation) finish() error {
+	return c.parent.finishRuntimeCreate(c.operation)
 }
 
 func (r *sessionRegistry) beginClose(id SessionID, retained *sessionEntry) (*sessionEntry, bool) {

@@ -454,69 +454,88 @@ func TestWorkspaceCloseCancelsWireAcquisition(t *testing.T) {
 }
 
 func TestWireSessionCloseReleasesPlansBeforeBinding(t *testing.T) {
-	events := make(chan string, 16)
-	wire := newWireFixture(t, 41,
-		wireserver.WithUnaryInterceptors(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
-			response, err := next(ctx, request)
+	for _, failClose := range []bool{false, true} {
+		name := "success"
 
-			if strings.HasSuffix(info.FullMethod, "/ClosePlan") {
-				events <- "plan"
-			}
-
-			return response, err
-		}),
-		wireserver.WithStreamInterceptors(func(host any, stream grpc.ServerStream, info *grpc.StreamServerInfo, next grpc.StreamHandler) error {
-			if strings.HasSuffix(info.FullMethod, "/Connect") {
-				defer func() { events <- "binding" }()
-			}
-
-			return next(host, stream)
-		}),
-	)
-	owner := newWireOwner(t, runtimes.DefinitionConfig{Name: "application", Provider: runtimes.ProviderWire, Endpoint: wire.endpoint, Insecure: true})
-	workspaces := workspace.New()
-	root := t.TempDir()
-	writeSourceFile(t, root, "query.fql", "RETURN TASK3_APPLICATION_VALUE()")
-
-	opened, err := workspaces.Open(t.Context(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	manager, err := exec.New(workspaces, owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = manager.Close(context.Background()); _ = workspaces.Clear(context.Background()) })
-
-	compiled, err := manager.CreateSession(t.Context(), opened.ID(), "query.fql", "application")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	debugger, err := manager.CreateDebugRuntime(t.Context(), compiled.ID, nil, exec.RuntimeOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	manager.RegisterSessionCloseHook(func(context.Context, exec.SessionID) error { events <- "child"; return debugger.Close() })
-
-	if err := manager.CloseSession(t.Context(), compiled.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	for _, want := range []string{"child", "plan", "plan", "binding"} {
-		select {
-		case got := <-events:
-			if got != want {
-				t.Fatalf("cleanup step = %s, want %s", got, want)
-			}
-		case <-ctx.Done():
-			t.Fatal("cleanup did not finish")
+		if failClose {
+			name = "plan close failure"
 		}
+
+		t.Run(name, func(t *testing.T) {
+			events := make(chan string, 16)
+			wire := newWireFixture(t, 41,
+				wireserver.WithUnaryInterceptors(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
+					response, err := next(ctx, request)
+
+					if strings.HasSuffix(info.FullMethod, "/ClosePlan") {
+						events <- "plan"
+
+						if failClose {
+							return nil, status.Error(codes.Internal, "hosted plan close failed")
+						}
+					}
+
+					return response, err
+				}),
+				wireserver.WithStreamInterceptors(func(host any, stream grpc.ServerStream, info *grpc.StreamServerInfo, next grpc.StreamHandler) error {
+					if strings.HasSuffix(info.FullMethod, "/Connect") {
+						defer func() { events <- "binding" }()
+					}
+
+					return next(host, stream)
+				}),
+			)
+			owner := newWireOwner(t, runtimes.DefinitionConfig{Name: "application", Provider: runtimes.ProviderWire, Endpoint: wire.endpoint, Insecure: true})
+			workspaces := workspace.New()
+			root := t.TempDir()
+			writeSourceFile(t, root, "query.fql", "RETURN TASK3_APPLICATION_VALUE()")
+
+			opened, err := workspaces.Open(t.Context(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			manager, err := exec.New(workspaces, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			t.Cleanup(func() { _ = manager.Close(context.Background()); _ = workspaces.Clear(context.Background()) })
+
+			compiled, err := manager.CreateSession(t.Context(), opened.ID(), "query.fql", "application")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			debugger, err := manager.CreateDebugRuntime(t.Context(), compiled.ID, nil, exec.RuntimeOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			manager.RegisterSessionCloseHook(func(context.Context, exec.SessionID) error { events <- "child"; return debugger.Close() })
+
+			closeErr := manager.CloseSession(t.Context(), compiled.ID)
+			if failClose {
+				if closeErr == nil || !strings.Contains(closeErr.Error(), "hosted plan close failed") {
+					t.Fatalf("Session close = %v", closeErr)
+				}
+			} else if closeErr != nil {
+				t.Fatal(closeErr)
+			}
+
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			for _, want := range []string{"child", "plan", "plan", "binding"} {
+				select {
+				case got := <-events:
+					if got != want {
+						t.Fatalf("cleanup step = %s, want %s", got, want)
+					}
+				case <-ctx.Done():
+					t.Fatal("cleanup did not finish")
+				}
+			}
+		})
 	}
 }
 

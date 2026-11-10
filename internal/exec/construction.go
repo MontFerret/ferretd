@@ -1,11 +1,17 @@
 package exec
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
-// construction retains only cancellation while its caller owns the temporary
-// operation context. The parent lock protects membership, never cancellation.
+// construction retains cancellation and rollback outcomes while its caller owns
+// the temporary operation context. Only the constructor accesses cleanupErr;
+// admission settlement transfers it under the parent lock. Cancellation may run
+// concurrently and never requires that lock.
 type construction struct {
-	cancel context.CancelCauseFunc
+	cancel     context.CancelCauseFunc
+	cleanupErr error
 }
 
 func newConstruction(ctx context.Context) (*construction, context.Context) {
@@ -20,4 +26,10 @@ func (c *construction) finish() {
 
 func (c *construction) stop(cause error) {
 	c.cancel(cause)
+}
+
+func (c *construction) recordCleanup(err error) error {
+	c.cleanupErr = errors.Join(c.cleanupErr, err)
+
+	return err
 }

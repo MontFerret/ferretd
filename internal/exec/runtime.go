@@ -47,18 +47,6 @@ type (
 	}
 )
 
-func newRuntimeInput(parameters Parameters, options RuntimeOptions) (runtimeInput, error) {
-	normalizedOptions, err := options.normalized()
-	if err != nil {
-		return runtimeInput{}, err
-	}
-
-	return runtimeInput{
-		parameters: parameters.Clone(),
-		options:    normalizedOptions,
-	}, nil
-}
-
 func newExecutionRuntime(target runtimeTarget, input runtimeInput) *executionRuntime {
 	ctx, cancel := context.WithCancelCause(context.Background())
 

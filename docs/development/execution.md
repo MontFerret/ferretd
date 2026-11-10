@@ -168,6 +168,13 @@ entries only.
 Each Session owns the gate that admits ordinary and debug runtime creation.
 Session close stops that gate, cancels pending constructors outside locks, and
 waits for every admitted creator to publish or roll back, then marks the ordinary child set closing and invokes debug child cleanup.
+Before leaving admission, each constructor checks parent closure and transfers
+its rollback cleanup failures to that closing parent's retained result under the
+same lock. Teardown collects those failures after waiting for constructors.
+Preparation and cancellation errors remain creation failures; they do not make
+parent cleanup fail. Rollback settled while admission remains open stays with
+the creation caller.
+
 A completed Execution remains in its Session group while that parent is closing,
 including while the parent waits for admitted creators. This preserves child
 cleanup errors until the parent has collected them.
@@ -188,7 +195,11 @@ workspaces. The manager borrows its acquisition owner and never closes it. Works
 manager close cancel pending Session preparation before waiting. Temporary
 construction contexts link caller cancellation with parent closure, preserving
 both context identities and domain causes; publication checks prevent adopting
-resources after closure. Cleanup settles cooperatively and retains failures,
+resources after closure. Failed construction also checks parent state when
+leaving admission, preserving its closed classification independently of which
+cancellation cause arrived first. Successfully published resources keep their
+success even if their parent closes before construction returns.
+Cleanup settles cooperatively and retains failures,
 even when a close waiter cancels. Composition closes the owner afterward.
 Binding disconnection does not trigger reacquisition or replay; a new compiled
 Session obtains a new binding.

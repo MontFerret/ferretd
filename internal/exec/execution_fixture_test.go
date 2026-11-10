@@ -146,7 +146,7 @@ func newHookedManager(
 		t.Fatalf("commit Session creation: %v", err)
 	}
 
-	manager.sessions.finishCreate(creation)
+	_ = manager.sessions.finishCreate(creation)
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
 	})

@@ -16,6 +16,7 @@ type planSpy struct {
 	closed       bool
 	closeOnce    sync.Once
 	closeErr     error
+	closeFn      func() error
 	lastOptions  sessionOptionsSpy
 	newSessionFn func(context.Context, ...api.SessionOption) (api.Session, error)
 	newDebugFn   func(context.Context, ...api.SessionOption) (apidebugger.Session, error)
@@ -91,7 +92,9 @@ func (p *planSpy) Close() error {
 		p.closed = true
 		p.mu.Unlock()
 
-		if p.runtime.planClose != nil {
+		if p.closeFn != nil {
+			p.closeErr = p.closeFn()
+		} else if p.runtime.planClose != nil {
 			p.closeErr = p.runtime.planClose()
 		}
 	})

@@ -20,10 +20,6 @@ type RuntimeOptions struct {
 	WorkingDirectory string
 }
 
-func (o RuntimeOptions) normalized() (RuntimeOptions, error) {
-	return o.normalizedFor(runtimes.ProviderNative)
-}
-
 func (o RuntimeOptions) normalizedFor(provider runtimes.Provider) (RuntimeOptions, error) {
 	o.OutputContentType = strings.TrimSpace(o.OutputContentType)
 	if o.OutputContentType == "" {

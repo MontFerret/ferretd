@@ -24,17 +24,17 @@ func TestParentCloseCancelsSessionPreparation(t *testing.T) {
 				started := make(chan struct{})
 				cleanupErr := errors.New("unpublished plan cleanup")
 				var closes atomic.Int32
-				fixture.runtime.planClose = func() error { closes.Add(1); return cleanupErr }
-				t.Cleanup(func() { fixture.runtime.planClose = nil })
+				plan := &planSpy{runtime: fixture.runtime, closeFn: func() error { closes.Add(1); return cleanupErr }}
 
 				if phase == "compile" {
 					fixture.runtime.compileFn = func(ctx context.Context) (api.Plan, error) {
 						close(started)
 						<-ctx.Done()
 
-						return &planSpy{runtime: fixture.runtime}, ctx.Err()
+						return plan, ctx.Err()
 					}
 				} else {
+					fixture.runtime.compileFn = func(context.Context) (api.Plan, error) { return plan, nil }
 					fixture.runtime.paramsFn = func(ctx context.Context) ([]string, error) {
 						close(started)
 						<-ctx.Done()
@@ -71,8 +71,8 @@ func TestParentCloseCancelsSessionPreparation(t *testing.T) {
 					t.Fatalf("parent close = %v", err)
 				}
 
-				if closes.Load() != 2 {
-					t.Fatalf("plan closes = %d, want existing and unpublished plans", closes.Load())
+				if closes.Load() != 1 {
+					t.Fatalf("unpublished plan closes = %d, want 1", closes.Load())
 				}
 			})
 		}
@@ -93,7 +93,7 @@ func TestSessionCloseCancelsDebugPreparation(t *testing.T) {
 					close(started)
 					<-ctx.Done()
 
-					return &planSpy{runtime: fixture.runtime}, ctx.Err()
+					return &planSpy{runtime: fixture.runtime, closeFn: func() error { debugCloses.Add(1); return cleanupErr }}, ctx.Err()
 				}
 			} else {
 				parent.compileDebug = func(context.Context) (api.Plan, error) {
@@ -126,12 +126,12 @@ func TestSessionCloseCancelsDebugPreparation(t *testing.T) {
 				t.Fatalf("debug creation = %v", err)
 			}
 
-			if phase == "new session" && (!errors.Is(err, cleanupErr) || debugCloses.Load() != 1) {
+			if !errors.Is(err, cleanupErr) || debugCloses.Load() != 1 {
 				t.Fatalf("debug rollback = %v, closes %d", err, debugCloses.Load())
 			}
 
-			if err := receiveConstructionError(t, closed, "Session close"); err != nil {
-				t.Fatal(err)
+			if err := receiveConstructionError(t, closed, "Session close"); !errors.Is(err, cleanupErr) {
+				t.Fatalf("Session close = %v, want cleanup failure", err)
 			}
 		})
 	}

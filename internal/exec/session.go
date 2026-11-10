@@ -12,8 +12,9 @@ import (
 )
 
 // session owns its binding and immutable reusable Universal Plans. Its mutex owns
-// pending construction, debug compilation, and Plan leases. The child gate orders
-// execution-runtime creation before close. No operation holds the Session mutex while waiting on the gate.
+// pending construction, retained rollback errors, debug compilation, and Plan
+// leases. The child gate orders execution-runtime creation before close. No
+// operation holds the Session mutex while waiting on the gate.
 type session struct {
 	mu sync.Mutex
 
@@ -24,6 +25,7 @@ type session struct {
 	fsRoot       string
 	binding      *runtimes.Binding
 	pending      map[*construction]struct{}
+	cleanupErr   error
 	compileDebug func(context.Context) (api.Plan, error)
 	plan         api.Plan
 	debugPlan    api.Plan
@@ -73,7 +75,7 @@ func (s *session) snapshot() SessionSnapshot {
 	}
 }
 
-func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget, error) {
+func (s *session) acquireDebugRuntimeTarget(ctx context.Context, operation *construction) (runtimeTarget, error) {
 	for {
 		s.mu.Lock()
 		if err := constructionError(ctx); err != nil {
@@ -145,7 +147,7 @@ func (s *session) acquireDebugRuntimeTarget(ctx context.Context) (runtimeTarget,
 
 		if err != nil || closing {
 			if plan != nil {
-				err = errors.Join(err, plan.Close())
+				err = errors.Join(err, operation.recordCleanup(plan.Close()))
 			}
 
 			if closing {
@@ -213,12 +215,22 @@ func (s *session) beginRuntimeCreate(operation *construction) bool {
 	return true
 }
 
-func (s *session) finishRuntimeCreate(operation *construction) {
+func (s *session) finishRuntimeCreate(operation *construction) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var closedErr error
+
+	if !s.children.Accepting() {
+		s.cleanupErr = errors.Join(s.cleanupErr, operation.cleanupErr)
+		closedErr = ErrSessionClosed
+	}
+
+	// Retain rollback errors before EndCreate can wake committed teardown.
 	delete(s.pending, operation)
 	s.children.EndCreate()
+
+	return closedErr
 }
 
 func (s *session) beginClose() bool {
@@ -228,8 +240,12 @@ func (s *session) beginClose() bool {
 	return s.children.BeginClose()
 }
 
-func (s *session) waitForRuntimeCreates() {
+func (s *session) waitForRuntimeCreates() error {
 	s.children.WaitForCreates()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.cleanupErr
 }
 
 func (s *session) releasePlans() (api.Plan, api.Plan) {

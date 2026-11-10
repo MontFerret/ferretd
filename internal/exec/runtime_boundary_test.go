@@ -24,15 +24,11 @@ func TestSessionFilesystemPrecedence(t *testing.T) {
 	}{
 		{name: "no override"},
 		{name: "workspace", root: root, want: root, calls: 1},
-		{name: "explicit", root: root, override: override, want: canonical, calls: 1},
-		{name: "explicit without workspace", override: override, want: canonical, calls: 1},
+		{name: "explicit", root: root, override: canonical, want: canonical, calls: 1},
+		{name: "explicit without workspace", override: canonical, want: canonical, calls: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			input, err := newRuntimeInput(nil, RuntimeOptions{WorkingDirectory: test.override})
-			if err != nil {
-				t.Fatal(err)
-			}
-
+			input := runtimeInput{options: RuntimeOptions{OutputContentType: defaultOutputContentType, WorkingDirectory: test.override}}
 			runtime := newExecutionRuntime(runtimeTarget{fsRoot: test.root}, input)
 			t.Cleanup(func() { runtime.cancel(errExecutionCanceled) })
 
@@ -114,11 +110,7 @@ func TestSessionOwnsDeclaredParameterNames(t *testing.T) {
 func TestRuntimeParametersAreIsolatedFromOptionConsumers(t *testing.T) {
 	parameters := Parameters{"nested": map[string]any{"items": []any{"original"}}}
 
-	input, err := newRuntimeInput(parameters, RuntimeOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	input := runtimeInput{parameters: parameters.Clone(), options: RuntimeOptions{OutputContentType: defaultOutputContentType}}
 	runtime := newExecutionRuntime(runtimeTarget{}, input)
 	t.Cleanup(func() { runtime.cancel(errExecutionCanceled) })
 

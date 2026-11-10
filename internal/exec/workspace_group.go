@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/MontFerret/ferretd/internal/lifecycle"
@@ -14,9 +15,10 @@ import (
 type workspaceGroup struct {
 	mu sync.Mutex
 
-	gate     lifecycle.Gate
-	sessions map[SessionID]*sessionEntry
-	pending  map[*construction]struct{}
+	gate       lifecycle.Gate
+	sessions   map[SessionID]*sessionEntry
+	pending    map[*construction]struct{}
+	cleanupErr error
 }
 
 func newWorkspaceGroup() *workspaceGroup {
@@ -36,14 +38,22 @@ func (g *workspaceGroup) beginCreate(operation *construction) bool {
 	return true
 }
 
-func (g *workspaceGroup) finishCreate(operation *construction) bool {
+func (g *workspaceGroup) finishCreate(operation *construction) (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	var closedErr error
+
+	if !g.gate.Accepting() {
+		g.cleanupErr = errors.Join(g.cleanupErr, operation.cleanupErr)
+		closedErr = workspace.ErrClosed
+	}
+
+	// Retain rollback errors before EndCreate can wake committed teardown.
 	delete(g.pending, operation)
 	idle := g.gate.EndCreate()
 
-	return idle && g.gate.Accepting() && len(g.sessions) == 0
+	return idle && closedErr == nil && len(g.sessions) == 0, closedErr
 }
 
 func (g *workspaceGroup) add(entry *sessionEntry) bool {
@@ -84,8 +94,12 @@ func (g *workspaceGroup) beginClose() bool {
 	return g.gate.BeginClose()
 }
 
-func (g *workspaceGroup) waitForCreates() {
+func (g *workspaceGroup) waitForCreates() error {
 	g.gate.WaitForCreates()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	return g.cleanupErr
 }
 
 func (g *workspaceGroup) retainedSessions() []*sessionEntry {

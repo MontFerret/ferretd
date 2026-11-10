@@ -489,7 +489,7 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 		t.Fatalf("begin Session creation during workspace close error = %v, want workspace.ErrClosed", err)
 	}
 
-	manager.sessions.finishCreate(creation)
+	_ = manager.sessions.finishCreate(creation)
 
 	if err := manager.CloseWorkspace(context.Background(), workspaceID); err != nil {
 		t.Fatalf("wait for CloseWorkspace: %v", err)
@@ -513,7 +513,8 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 		if err != nil {
 			t.Fatalf("begin Execution creation: %v", err)
 		}
-		defer creation.finish()
+
+		defer func() { _ = creation.finish() }()
 
 		parent := creation.session()
 		go func() {
@@ -536,11 +537,7 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 			t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
 		}
 
-		input, err := newRuntimeInput(nil, RuntimeOptions{})
-		if err != nil {
-			t.Fatalf("prepare runtime input: %v", err)
-		}
-
+		input := runtimeInput{options: RuntimeOptions{OutputContentType: defaultOutputContentType}}
 		admitted = newExecution(
 			ExecutionID("admitted-execution"),
 			newExecutionRuntime(parent.runtimeTarget(), input),
@@ -589,7 +586,7 @@ func TestManagerCloseWaitsForAdmittedSessionCreation(t *testing.T) {
 		t.Fatalf("begin Session creation after Manager close error = %v, want ErrClosed", err)
 	}
 
-	manager.sessions.finishCreate(creation)
+	_ = manager.sessions.finishCreate(creation)
 
 	if err := <-closed; err != nil {
 		t.Fatalf("Close: %v", err)

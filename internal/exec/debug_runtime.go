@@ -91,7 +91,7 @@ func (m *Manager) CreateDebugRuntime(
 	id SessionID,
 	parameters Parameters,
 	options RuntimeOptions,
-) (*DebugRuntime, error) {
+) (created *DebugRuntime, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -103,7 +103,14 @@ func (m *Manager) CreateDebugRuntime(
 	if err != nil {
 		return nil, err
 	}
-	defer creation.finish()
+
+	defer func() {
+		closedErr := creation.finish()
+
+		if resultErr != nil {
+			resultErr = errors.Join(resultErr, closedErr, constructionError(ctx), constructionError(operationCtx))
+		}
+	}()
 
 	parent := creation.session()
 
@@ -112,7 +119,7 @@ func (m *Manager) CreateDebugRuntime(
 		return nil, err
 	}
 
-	target, err := parent.acquireDebugRuntimeTarget(operationCtx)
+	target, err := parent.acquireDebugRuntimeTarget(operationCtx, operation)
 	if err != nil {
 		err = errors.Join(err, constructionError(operationCtx))
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
@@ -137,7 +144,7 @@ func (m *Manager) CreateDebugRuntime(
 		runtime.cancel(errExecutionCanceled)
 
 		if debugger != nil {
-			err = errors.Join(err, debugger.Close())
+			err = errors.Join(err, operation.recordCleanup(debugger.Close()))
 		}
 
 		parent.releaseDebugRuntime()

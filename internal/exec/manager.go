@@ -69,7 +69,7 @@ func (m *Manager) CreateSession(
 	workspaceID workspace.ID,
 	relativePath string,
 	runtimeName string,
-) (SessionSnapshot, error) {
+) (snapshot SessionSnapshot, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
@@ -81,15 +81,22 @@ func (m *Manager) CreateSession(
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
-	defer m.sessions.finishCreate(creation)
 
-	created, err := m.prepareSession(operationCtx, workspaceID, relativePath, runtimeName)
+	defer func() {
+		closedErr := m.sessions.finishCreate(creation)
+
+		if resultErr != nil {
+			resultErr = errors.Join(resultErr, closedErr, constructionError(ctx), constructionError(operationCtx))
+		}
+	}()
+
+	created, err := m.prepareSession(operationCtx, operation, workspaceID, relativePath, runtimeName)
 	if err != nil {
-		return SessionSnapshot{}, errors.Join(err, constructionError(operationCtx))
+		return SessionSnapshot{}, err
 	}
 
 	if err := m.sessions.commitCreate(operationCtx, creation, created); err != nil {
-		return SessionSnapshot{}, errors.Join(err, created.closeUnpublished())
+		return SessionSnapshot{}, errors.Join(err, operation.recordCleanup(created.closeUnpublished()))
 	}
 
 	return created.snapshot(), nil
@@ -97,6 +104,7 @@ func (m *Manager) CreateSession(
 
 func (m *Manager) prepareSession(
 	ctx context.Context,
+	operation *construction,
 	workspaceID workspace.ID,
 	relativePath string,
 	runtimeName string,
@@ -141,10 +149,10 @@ func (m *Manager) prepareSession(
 	defer func() {
 		if created == nil {
 			if plan != nil {
-				resultErr = errors.Join(resultErr, plan.Close())
+				resultErr = errors.Join(resultErr, operation.recordCleanup(plan.Close()))
 			}
 
-			resultErr = errors.Join(resultErr, binding.Release())
+			resultErr = errors.Join(resultErr, operation.recordCleanup(binding.Release()))
 		}
 	}()
 
@@ -242,7 +250,7 @@ func (m *Manager) CreateExecution(
 	sessionID SessionID,
 	parameters Parameters,
 	options RuntimeOptions,
-) (ExecutionSnapshot, error) {
+) (snapshot ExecutionSnapshot, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return ExecutionSnapshot{}, err
 	}
@@ -259,7 +267,14 @@ func (m *Manager) CreateExecution(
 	if err != nil {
 		return ExecutionSnapshot{}, err
 	}
-	defer creation.finish()
+
+	defer func() {
+		closedErr := creation.finish()
+
+		if resultErr != nil {
+			resultErr = errors.Join(resultErr, closedErr, constructionError(ctx), constructionError(operationCtx))
+		}
+	}()
 
 	parent := creation.session()
 
@@ -362,9 +377,8 @@ func (m *Manager) Close(ctx context.Context) error {
 
 func (m *Manager) finishWorkspaceClose(closing workspaceClose) {
 	closing.group.cancelPending()
-	closing.group.waitForCreates()
+	result := closing.group.waitForCreates()
 
-	var result error
 	for _, entry := range closing.group.retainedSessions() {
 		result = errors.Join(
 			result,
@@ -378,7 +392,7 @@ func (m *Manager) finishWorkspaceClose(closing workspaceClose) {
 func (m *Manager) finishSessionClose(entry *sessionEntry) {
 	session := entry.session
 	session.cancelPending()
-	session.waitForRuntimeCreates()
+	result := session.waitForRuntimeCreates()
 
 	children := m.executions.beginSessionClose(session.id)
 	for _, closing := range children {
@@ -387,7 +401,6 @@ func (m *Manager) finishSessionClose(entry *sessionEntry) {
 		}
 	}
 
-	var result error
 	for _, closing := range children {
 		result = errors.Join(result, closing.entry.execution.close.Wait(context.Background()))
 	}

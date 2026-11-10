@@ -276,7 +276,7 @@ func TestSessionCloseRetainsCompletedChildWhileWaitingForCreation(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	finishCreation := sync.OnceFunc(creation.finish)
+	finishCreation := sync.OnceFunc(func() { _ = creation.finish() })
 	t.Cleanup(finishCreation)
 
 	childResult := make(chan error, 1)
