@@ -2,6 +2,7 @@ package dap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	protocol "github.com/google/go-dap"
@@ -32,6 +33,7 @@ const (
 )
 
 func (s *Server) watchDebugSession(subscription debug.Subscription) {
+	defer close(s.watchDone)
 	defer func() {
 		s.eventMu.Lock()
 		s.initialStop = nil
@@ -39,29 +41,32 @@ func (s *Server) watchDebugSession(subscription debug.Subscription) {
 		s.eventMu.Unlock()
 	}()
 
-	for event := range subscription.Events {
-		s.eventMu.Lock()
-		s.handleDebugEvent(event)
-		s.eventMu.Unlock()
-	}
+	for {
+		select {
+		case <-s.watchStop:
+			return
+		case event, ok := <-subscription.Events:
+			if !ok {
+				for err := range subscription.Errors {
+					if err != nil {
+						s.failWatch(fmt.Errorf("debug session watch failed: %w", err))
+					}
+				}
 
-	for err := range subscription.Errors {
-		if err == nil {
-			continue
+				return
+			}
+
+			s.eventMu.Lock()
+			s.stateMu.Lock()
+			closed := s.ownedClosed || s.closing || (s.pendingLaunch != nil && s.pendingLaunch.cause != nil)
+			s.stateMu.Unlock()
+
+			if !closed {
+				s.handleDebugEvent(event)
+			}
+
+			s.eventMu.Unlock()
 		}
-
-		s.logger.Error().Err(err).Msg("DAP debug session watch failed")
-
-		s.eventMu.Lock()
-		if sendErr := s.sendOutput(outputCategoryStderr, fmt.Sprintf("debug session watch failed: %v\n", err)); sendErr != nil {
-			s.logger.Error().Err(sendErr).Msg("send DAP output event failed")
-		}
-
-		if sendErr := s.sendTerminated(); sendErr != nil {
-			s.logger.Error().Err(sendErr).Msg("send DAP terminated event failed")
-		}
-
-		s.eventMu.Unlock()
 	}
 }
 
@@ -246,9 +251,38 @@ func (s *Server) sendExited(code int) error {
 }
 
 func (s *Server) sendTerminated() error {
+	if s.terminalSent {
+		return nil
+	}
+
+	s.terminalSent = true
+
 	return s.sendEvent(eventTerminated, func(base protocol.ProtocolMessage) protocol.Message {
 		return &protocol.TerminatedEvent{
 			Event: protocol.Event{ProtocolMessage: base, Event: eventTerminated},
 		}
 	})
+}
+
+// failWatch signals dispatch before any event-lock acquisition. A blocked
+// request must release eventMu before dispatch can settle the failed watch.
+func (s *Server) failWatch(err error) {
+	s.stateMu.Lock()
+
+	s.watchFailure = errors.Join(s.watchFailure, err)
+	if s.pendingLaunch != nil && s.pendingLaunch.cause == nil {
+		s.pendingLaunch.cause = err
+	}
+
+	interrupt := s.activeCancel
+	s.stateMu.Unlock()
+
+	if interrupt != nil {
+		interrupt(err)
+	}
+
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
 }

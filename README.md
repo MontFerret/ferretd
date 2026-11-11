@@ -239,10 +239,11 @@ an existing binding; a new explicit acquisition performs a fresh handshake.
 
 Without a file, the catalog contains only `local`. Omitting `defaultRuntime`
 selects `local`; explicit blank or unknown defaults fail startup.
-`serve` accepts Wire defaults without connecting at startup or during discovery;
-`CreateSession` performs acquisition. Standalone `dap` still requires a native
-default and rejects Wire defaults before runtime allocation. Unused Wire targets
-never connect.
+Both `serve` and standalone `dap` accept Wire defaults without connecting at
+startup or during discovery/initialization. Compiled Session creation performs
+acquisition. DAP launch selects `runtimeName` or uses its process default; see the
+[capability and acknowledgment contract](docs/dap.md#runtime-selection-compatibility)
+before sending an explicit selector. Unused Wire targets never connect.
 
 Explicit missing, unreadable, malformed, or invalid files fail startup. The
 loader requires a JSON object and rejects unknown fields, null typed fields,

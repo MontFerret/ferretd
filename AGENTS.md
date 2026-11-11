@@ -74,7 +74,10 @@ translate; they do not become alternate owners of domain behavior.
   events, detached debugger event content, and debug child cleanup.
 * `internal/dap` owns DAP composition as well as protocol translation. Its
   composition owns a separate runtime owner, with the same
-  child-before-binding-before-owner cleanup as the daemon.
+  child-before-binding-before-owner cleanup as the daemon. Named launch selection
+  goes only through compiled Session creation. Framed ingress may signal pending
+  launch and active-operation cancellation independently of serialized dispatch;
+  cancellation and blocking worker/watch settlement must not wait for `eventMu`.
 * Ferret's upstream `github.com/MontFerret/ferret/v2/uapi` package is the sole
   bridge from the Universal Runtime API to native runtime, Plan, Session,
   debugger, and diagnostic types. Composition uses its owning constructor;

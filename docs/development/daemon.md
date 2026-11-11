@@ -37,9 +37,9 @@ read an explicit file once through its context-aware loader and pass parsed
 configuration through `daemon.Options.RuntimeConfig` or `dap.Options.RuntimeConfig`.
 Programmatic construction uses the same catalog constructor. Each composition
 validates one catalog before `uapi.New` or other owned services. Standalone DAP
-also rejects unsupported defaults there; daemon Wire acquisition stays lazy. The daemon passes that catalog explicitly to gRPC;
-adapters
-and execution/debug managers never load configuration files.
+keeps runtime acquisition lazy until compiled Session creation. The daemon passes
+that catalog explicitly to gRPC; adapters and execution/debug managers never load
+configuration files.
 
 The implicit `local` definition is always present, labeled `Built-in Ferret`,
 with provider `native`. Additional definitions use provider `wire`, a unique
@@ -47,9 +47,8 @@ case-sensitive name without surrounding whitespace, a nonblank endpoint, an
 optional label, and an optional positive duration string for `connectTimeout`.
 Empty labels use the name; omitted timeouts use `5s`. An omitted default selects
 `local`; blank or unknown defaults are invalid. Wire defaults are valid catalog
-metadata and supported by daemon Session creation. Standalone DAP still rejects
-them until DAP launch selection is implemented. Resolution itself never connects
-or falls back after an unknown selection.
+metadata and supported by daemon and DAP Session creation. Resolution itself
+never connects or falls back after an unknown selection.
 
 The loader requires one JSON object, rejects unknown fields, null typed fields,
 invalid types, and trailing values, and reports explicit file failures. Relative

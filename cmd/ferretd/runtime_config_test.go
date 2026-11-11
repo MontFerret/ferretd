@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -105,12 +106,7 @@ func TestRuntimeConfigurationProcessErrorsUseStderr(t *testing.T) {
 			{"null", writeRuntimeConfig(t, "null"), "invalid runtime configuration"},
 			{"unknown field", writeRuntimeConfig(t, `{"unexpected":true}`), "invalid runtime configuration"},
 			{"unknown default", writeRuntimeConfig(t, `{"defaultRuntime":"missing"}`), "runtime not found"},
-			{"Wire default", writeRuntimeConfig(t, `{"defaultRuntime":"app","runtimes":[{"name":"app","provider":"wire","endpoint":"tcp://application.invalid:9000"}]}`), "unsupported default runtime"},
 		} {
-			if command == "serve" && test.name == "Wire default" {
-				continue
-			}
-
 			t.Run(command+"/"+test.name, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 				defer cancel()
@@ -144,4 +140,46 @@ func writeRuntimeConfig(t *testing.T, data string) string {
 	}
 
 	return path
+}
+
+func TestDAPProcessWireDefaultInitializesBeforeAcquisition(t *testing.T) {
+	binary := buildDAPProcess(t)
+	path := writeRuntimeConfig(t, `{"defaultRuntime":"application","runtimes":[{"name":"application","provider":"wire","endpoint":"tcp://127.0.0.1:1","insecure":true,"connectTimeout":"20ms"}]}`)
+	client := newDAPProcessClient(t, binary, "--runtime-config", path)
+	client.send("initialize", map[string]any{})
+	initialized := client.response("initialize")
+
+	var capabilities map[string]bool
+	if err := json.Unmarshal(initialized.Body, &capabilities); err != nil || !capabilities["supportsFerretRuntimeSelection"] || !capabilities["supportsCancelRequest"] {
+		t.Fatalf("initialize body = %s, %v", initialized.Body, err)
+	}
+
+	program := filepath.Join(t.TempDir(), "query.fql")
+	if err := os.WriteFile(program, []byte("RETURN 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	client.send("launch", map[string]any{"program": program})
+
+	failure := client.read()
+	if failure.Type != "response" || failure.Command != "launch" || failure.Success || !strings.Contains(string(failure.Body), "application") {
+		t.Fatalf("unavailable default response = %+v", failure)
+	}
+
+	client.send("launch", map[string]any{"program": program, "runtimeName": "local", "stopOnEntry": true})
+	client.event("initialized")
+	client.send("configurationDone", map[string]any{})
+	client.response("configurationDone")
+
+	acknowledgment := client.response("launch")
+	if !strings.Contains(string(acknowledgment.Body), `"runtimeName":"local"`) {
+		t.Fatalf("launch body = %s", acknowledgment.Body)
+	}
+
+	client.event("stopped")
+	client.disconnect()
+
+	if !strings.Contains(client.stderr.String(), `"runtime_name":"local"`) {
+		t.Fatal("missing runtime correlation on stderr")
+	}
 }

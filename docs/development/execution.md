@@ -173,7 +173,9 @@ its rollback cleanup failures to that closing parent's retained result under the
 same lock. Teardown collects those failures after waiting for constructors.
 Preparation and cancellation errors remain creation failures; they do not make
 parent cleanup fail. Rollback settled while admission remains open stays with
-the creation caller.
+the creation caller. `PreparationCleanupError` marks those cleanup causes while
+preserving their identity and text, allowing composition to retain them in its
+final close result separately from retryable preparation failures.
 
 A completed Execution remains in its Session group while that parent is closing,
 including while the parent waits for admitted creators. This preserves child

@@ -26,21 +26,22 @@ func (s *Server) sendResponse(
 	build func(protocol.ProtocolMessage) protocol.Message,
 	enrichers ...logEnricher,
 ) error {
-	return s.send(build, func(sequence int) {
-		event := s.logger.Debug().
-			Str("direction", "->").
-			Str("kind", "response").
-			Str("command", request.Command).
-			Int("request_seq", request.Seq).
-			Int("response_seq", sequence).
-			Bool("success", true)
+	return s.send(build, func(sequence int) { s.logResponse(request, sequence, enrichers...) })
+}
 
-		for _, enrich := range enrichers {
-			enrich(event)
-		}
+func (s *Server) logResponse(request *protocol.Request, sequence int, enrichers ...logEnricher) {
+	event := s.logger.Debug().
+		Str("direction", "->").
+		Str("kind", "response").
+		Str("command", request.Command).
+		Int("request_seq", request.Seq).
+		Int("response_seq", sequence).
+		Bool("success", true)
+	for _, enrich := range enrichers {
+		enrich(event)
+	}
 
-		event.Msg("DAP response")
-	})
+	event.Msg("DAP response")
 }
 
 func (s *Server) sendEvent(
@@ -79,10 +80,27 @@ func (s *Server) logRequestFailure(request *protocol.Request, err error, enriche
 	event.Msg("DAP request failed")
 }
 
+// Dispatch attaches this immutable context once, before the watch starts.
+// Ingress never reads or mutates the logger.
 func (s *Server) attachSessionLogger(owned ownedSession) {
 	s.logger = s.logger.With().
+		Str("runtime_name", owned.runtimeName).
 		Str("workspace_id", owned.workspace.String()).
 		Str("execution_session_id", owned.session.String()).
 		Str("debug_session_id", owned.debug.String()).
 		Logger()
+}
+
+func (o ownedSession) logIDs(event *zerolog.Event) {
+	if o.workspace != "" {
+		event.Str("workspace_id", o.workspace.String())
+	}
+
+	if o.session != "" {
+		event.Str("execution_session_id", o.session.String())
+	}
+
+	if o.debug != "" {
+		event.Str("debug_session_id", o.debug.String())
+	}
 }

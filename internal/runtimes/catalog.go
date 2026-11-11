@@ -46,7 +46,7 @@ const (
 )
 
 // NewCatalog validates configuration without constructing or connecting runtimes.
-// Wire defaults are valid; acquisition remains lazy and entry points enforce support.
+// Wire defaults are valid; catalog construction never acquires a runtime.
 func NewCatalog(config Config) (*Catalog, error) {
 	c := &Catalog{
 		defaultName: LocalName,

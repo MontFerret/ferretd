@@ -18,7 +18,8 @@ import (
 
 // New creates a single-session DAP server over non-nil input and output using
 // the supplied options. It returns an error when either stream is nil or its
-// owned service graph cannot be constructed.
+// owned service graph cannot be constructed. Run may close interruptible streams
+// when ending the adapter to unblock ingress or an in-flight framed write.
 func New(input io.Reader, output io.Writer, options Options) (*Server, error) {
 	return bootstrap(input, output, options, func() (api.Runtime, error) { return uapi.New(runtimes.NativeVersion) })
 }
@@ -35,16 +36,6 @@ func bootstrap(input io.Reader, output io.Writer, options Options, createRuntime
 	catalog, err := runtimes.NewCatalog(options.RuntimeConfig)
 	if err != nil {
 		return nil, err
-	}
-
-	definition, err := catalog.Resolve("")
-	if err != nil {
-		return nil, err
-	}
-
-	// DAP launch selection does not yet support Wire defaults.
-	if definition.Provider != runtimes.ProviderNative {
-		return nil, fmt.Errorf("%w: %q requires Wire DAP support", runtimes.ErrUnsupportedDefault, definition.Name)
 	}
 
 	options = options.normalized()
@@ -90,19 +81,23 @@ func newServer(input io.Reader, output io.Writer, options Options, runtime api.R
 	}
 
 	readerClose, _ := input.(io.Closer)
+	writerClose, _ := output.(io.Closer)
 
 	return &Server{
-		reader:       bufio.NewReader(input),
-		readerClose:  readerClose,
-		writer:       output,
-		workspaces:   workspaces,
-		executions:   executions,
-		debugs:       debugs,
-		runtimeOwner: owner,
-		catalog:      catalog,
-		logger:       options.Logger.With().Str("component", "dap").Logger(),
-		handles:      newHandleTable(),
-		breakpoints:  newBreakpointIDs(),
+		queuedLaunches: make(map[*launchAttempt]struct{}),
+		wake:           make(chan struct{}, 1),
+		reader:         bufio.NewReader(input),
+		readerClose:    readerClose,
+		writer:         output,
+		writerClose:    writerClose,
+		workspaces:     workspaces,
+		executions:     executions,
+		debugs:         debugs,
+		runtimeOwner:   owner,
+		catalog:        catalog,
+		logger:         options.Logger.With().Str("component", "dap").Logger(),
+		handles:        newHandleTable(),
+		breakpoints:    newBreakpointIDs(),
 		client: clientOptions{
 			pathFormat:      pathFormatPath,
 			linesStartAt1:   true,

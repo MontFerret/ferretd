@@ -32,7 +32,6 @@ func TestRuntimeConfigurationPrecedesAllocation(t *testing.T) {
 	}{
 		{"invalid", runtimes.Config{DefaultRuntime: new("missing")}, runtimes.ErrInvalidConfig},
 		{"invalid endpoint", runtimes.Config{Runtimes: []runtimes.DefinitionConfig{{Name: "app", Provider: runtimes.ProviderWire, Endpoint: "tcp://localhost:0"}}}, runtimes.ErrInvalidConfig},
-		{"wire default", runtimes.Config{DefaultRuntime: new("app"), Runtimes: []runtimes.DefinitionConfig{{Name: "app", Provider: runtimes.ProviderWire, Endpoint: "tcp://application.invalid:9000"}}}, runtimes.ErrUnsupportedDefault},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server, err := bootstrap(strings.NewReader(""), io.Discard, Options{RuntimeConfig: test.config}, func() (api.Runtime, error) {

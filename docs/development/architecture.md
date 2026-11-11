@@ -40,7 +40,7 @@ debug adapter client
     -> internal/dap
     -> internal/workspace + internal/exec + internal/debug
     -> Universal Runtime API
-        -> Ferret uapi -> native Ferret debugger
+        -> Ferret uapi -> native debugger, or Wire -> hosted debugger
 ```
 
 The `lsp` and `dap` commands compose in-process services independently of
@@ -51,9 +51,10 @@ each transfer a native Universal runtime from Ferret's `uapi.New` to an independ
 plan cleanup.
 
 Daemon and DAP composition first build independent immutable runtime catalogs
-from the same optional startup schema. Daemon Sessions select exact names or the
-configured default, acquiring Wire lazily. Standalone DAP still requires a native
-default and rejects Wire defaults before native runtime allocation.
+from the same optional startup schema. Daemon Sessions and DAP launch select
+exact names or the configured default,
+acquiring Wire lazily during compiled Session creation. Initialization never
+probes runtime reachability or debugger support.
 
 ## Dependency direction
 
@@ -138,8 +139,7 @@ Discovery is an in-memory metadata operation and makes no reachability or
 capability claims. Internal Wire acquisition uses the owning `wire/client.New`
 constructor and creates an independent logical connection and channel each time.
 Each compiled Session acquires independently and retains its resolved name.
-Daemon Wire defaults remain lazy; standalone DAP launch selection is pending and
-Wire defaults are rejected there. No Wire definition connects at startup.
+Daemon and DAP Wire defaults remain lazy. No Wire definition connects at startup.
 
 Acquisition registers pending construction before I/O and publishes only while
 the owner and caller permit it. Shutdown cancels and waits for construction and
