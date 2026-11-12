@@ -143,7 +143,7 @@ RETURN [value, result]`))
 			}
 
 			completed, err := session.Continue(t.Context())
-			if err != nil || completed.Reason != apidebugger.ReasonCompleted || completed.Output == nil || string(completed.Output.Content) != "[[1,2],3]" {
+			if err != nil || completed.Reason != apidebugger.ReasonCompleted || completed.Output == nil || string(completed.Output.Data) != "[[1,2],3]" {
 				t.Fatalf("completion=%+v err=%v", completed, err)
 			}
 		})
@@ -157,7 +157,7 @@ func TestDebugPauseAndCancellationReachNativeExecution(t *testing.T) {
 			t.Cleanup(cancel)
 			entered, release := make(chan struct{}), make(chan struct{})
 
-			runtime, err := uapi.New(ferret.WithFunctionsRegistrar(func(ns runtime.Namespace) {
+			runtime, err := uapi.New("test", ferret.WithFunctionsRegistrar(func(ns runtime.Namespace) {
 				ns.Function().A0().Add("WAIT_NATIVE", func(ctx context.Context) (runtime.Value, error) {
 					close(entered)
 					select {
@@ -226,6 +226,19 @@ func TestDebugPauseAndCancellationReachNativeExecution(t *testing.T) {
 				if mode == "pause" {
 					if response.err != nil || response.event == nil || response.event.Reason != apidebugger.ReasonPause {
 						t.Fatalf("pause=%+v", response)
+					}
+
+					completed, err := session.Continue(ctx)
+					if err != nil || completed == nil || completed.Reason != apidebugger.ReasonCompleted {
+						t.Fatalf("completion = %+v, %v", completed, err)
+					}
+
+					if err := session.Close(); err != nil {
+						t.Fatal(err)
+					}
+
+					if completed.Output == nil || string(completed.Output.Data) != "1" {
+						t.Fatalf("content after debugger cleanup = %+v", completed.Output)
 					}
 				} else if response.event == nil || response.event.Reason != apidebugger.ReasonTerminated || !errors.Is(errors.Join(response.err, response.event.Error), context.Canceled) {
 					t.Fatalf("termination event=%+v err=%v", response.event, response.err)

@@ -51,8 +51,12 @@ translate; they do not become alternate owners of domain behavior.
 * `cmd/ferretd` owns process startup, Cobra command behavior, signal handling,
   process-facing output, and top-level composition.
 * `internal/daemon` owns long-running service lifecycle and coordination. Its
-  composition constructs and owns the shared Universal runtime with Ferret's
-  `uapi.New`.
+  composition transfers the shared native `uapi.New` root to a runtime owner
+  and closes child services and their Session bindings before the owner.
+* `internal/runtimes` owns strict startup configuration, immutable catalogs,
+  endpoint validation, runtime acquisition, and root cleanup. Each owner owns
+  one shared native root and fresh independent Wire roots per acquisition.
+  Callers borrow binding runtimes and settle all children before release.
 * `internal/transport` owns local endpoint discovery, listening, and dialing.
 * `internal/grpc` and `internal/lsp` own their protocol translation, framing,
   handles, and transport-facing state.
@@ -61,18 +65,24 @@ translate; they do not become alternate owners of domain behavior.
 * `internal/workspace` owns process-local workspace identity, discovery,
   retained source and syntax state, refresh, and close coordination.
 * `internal/exec` owns compiled Sessions, the shared per-run execution state,
-  caller parameters (`Parameters`), one-shot Executions, lazy debug Plans,
-  DebugRuntime leases, and execution lifecycle observation. It borrows one
-  composition-owned `api.Runtime` and never closes it.
+  caller parameters (`Parameters`), live output handles and their settlement,
+  detached retained `api.Content`, one-shot Executions, lazy debug Plans,
+  DebugRuntime leases, Session runtime bindings, and execution lifecycle observation.
+  It borrows the composition-owned acquisition owner, releases bindings after
+  child and plan settlement, and never closes that owner or borrowed runtimes.
 * `internal/debug` owns retained DebugSessions, debugger commands, inspection,
-  events, and debug child cleanup.
+  events, detached debugger event content, and debug child cleanup.
 * `internal/dap` owns DAP composition as well as protocol translation. Its
-  composition constructs and owns the shared Universal runtime with Ferret's
-  `uapi.New`.
+  composition owns a separate runtime owner, with the same
+  child-before-binding-before-owner cleanup as the daemon. Named launch selection
+  goes only through compiled Session creation. Framed ingress may signal pending
+  launch and active-operation cancellation independently of serialized dispatch;
+  cancellation and blocking worker/watch settlement must not wait for `eventMu`.
 * Ferret's upstream `github.com/MontFerret/ferret/v2/uapi` package is the sole
   bridge from the Universal Runtime API to native runtime, Plan, Session,
   debugger, and diagnostic types. Composition uses its owning constructor;
-  do not recreate a local runtime adapter.
+  do not recreate a local runtime adapter. Supply the selected Ferret Core
+  version, independently of the daemon version.
 * `internal/source`, `internal/diagnostic`, and `internal/lifecycle` own their
   protocol-neutral shared concepts. Do not move those semantics into adapters
   or process setup.
@@ -150,6 +160,10 @@ protobuf code changes only through source/configuration changes and regeneration
   mutexes, atomics, channels, and once-guards for the same transition without a
   concrete ordering or performance reason.
 * Preserve ordering between state changes and externally visible events.
+* Successful `Session.Run` acquires a live output handle; ordinary execution
+  completes only after `Collect` and owned output/session cleanup settle. Keep
+  the invocation context alive through settlement. Retain detached content,
+  including present-empty and partial content, and copy mutable observer data.
 * Share lifecycle machinery only when semantics and ownership genuinely match;
   similar execution and debug state does not make one generic session model.
 * Test cancellation, cleanup, stale state, repeated operations, and concurrency

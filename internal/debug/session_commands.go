@@ -141,7 +141,7 @@ func (d *session) runCommand(command func() (*apidebugger.Event, error), runtime
 
 	if err != nil {
 		if event != nil {
-			d.output = cloneOutput(event.Output)
+			d.output = cloneContent(event.Output)
 		}
 
 		if d.terminating {

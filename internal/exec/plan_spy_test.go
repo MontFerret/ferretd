@@ -16,6 +16,7 @@ type planSpy struct {
 	closed       bool
 	closeOnce    sync.Once
 	closeErr     error
+	closeFn      func() error
 	lastOptions  sessionOptionsSpy
 	newSessionFn func(context.Context, ...api.SessionOption) (api.Session, error)
 	newDebugFn   func(context.Context, ...api.SessionOption) (apidebugger.Session, error)
@@ -23,7 +24,15 @@ type planSpy struct {
 
 var _ api.Plan = (*planSpy)(nil)
 
-func (p *planSpy) Params() ([]string, error) {
+func (p *planSpy) Params(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if p.runtime.paramsFn != nil {
+		return p.runtime.paramsFn(ctx)
+	}
+
 	return p.runtime.parameters, p.runtime.paramsErr
 }
 
@@ -83,7 +92,9 @@ func (p *planSpy) Close() error {
 		p.closed = true
 		p.mu.Unlock()
 
-		if p.runtime.planClose != nil {
+		if p.closeFn != nil {
+			p.closeErr = p.closeFn()
+		} else if p.runtime.planClose != nil {
 			p.closeErr = p.runtime.planClose()
 		}
 	})

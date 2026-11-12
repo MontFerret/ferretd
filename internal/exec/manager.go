@@ -9,6 +9,7 @@ import (
 
 	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -16,7 +17,7 @@ type (
 	// Manager orchestrates process-local daemon Sessions and Executions.
 	Manager struct {
 		workspaces *workspace.Manager
-		runtime    api.Runtime
+		runtimes   *runtimes.Owner
 		sessions   *sessionRegistry
 		executions *executionRegistry
 
@@ -28,20 +29,20 @@ type (
 	SessionCloseHook func(context.Context, SessionID) error
 )
 
-// New creates an execution manager that borrows the workspace manager and runtime.
+// New creates an execution manager that borrows the workspace manager and runtime acquisition owner.
 // It returns an error when either required dependency is nil.
-func New(workspaces *workspace.Manager, runtime api.Runtime) (*Manager, error) {
+func New(workspaces *workspace.Manager, owner *runtimes.Owner) (*Manager, error) {
 	if workspaces == nil {
 		return nil, errNilWorkspaceManager
 	}
 
-	if runtime == nil {
-		return nil, errNilRuntime
+	if owner == nil {
+		return nil, errNilRuntimeOwner
 	}
 
 	result := &Manager{
 		workspaces: workspaces,
-		runtime:    runtime,
+		runtimes:   owner,
 		sessions:   newSessionRegistry(),
 		executions: newExecutionRegistry(),
 	}
@@ -67,24 +68,35 @@ func (m *Manager) CreateSession(
 	ctx context.Context,
 	workspaceID workspace.ID,
 	relativePath string,
-) (SessionSnapshot, error) {
+	runtimeName string,
+) (snapshot SessionSnapshot, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
 
-	creation, err := m.sessions.beginCreate(workspaceID)
-	if err != nil {
-		return SessionSnapshot{}, err
-	}
-	defer m.sessions.finishCreate(creation)
+	operation, operationCtx := newConstruction(ctx)
+	defer operation.finish()
 
-	created, err := m.prepareSession(ctx, workspaceID, relativePath)
+	creation, err := m.sessions.beginCreate(workspaceID, operation)
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
 
-	if err := m.sessions.commitCreate(ctx, creation, created); err != nil {
-		return SessionSnapshot{}, errors.Join(err, created.closeUnpublished())
+	defer func() {
+		closedErr := m.sessions.finishCreate(creation)
+
+		if resultErr != nil {
+			resultErr = errors.Join(resultErr, closedErr, constructionError(ctx), constructionError(operationCtx))
+		}
+	}()
+
+	created, err := m.prepareSession(operationCtx, operation, workspaceID, relativePath, runtimeName)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+
+	if err := m.sessions.commitCreate(operationCtx, creation, created); err != nil {
+		return SessionSnapshot{}, errors.Join(err, operation.recordCleanup(created.closeUnpublished()))
 	}
 
 	return created.snapshot(), nil
@@ -92,9 +104,11 @@ func (m *Manager) CreateSession(
 
 func (m *Manager) prepareSession(
 	ctx context.Context,
+	operation *construction,
 	workspaceID workspace.ID,
 	relativePath string,
-) (*session, error) {
+	runtimeName string,
+) (created *session, resultErr error) {
 	parent, err := m.workspaces.Get(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -126,12 +140,24 @@ func (m *Manager) prepareSession(
 
 	apiSource := api.NewSource(file.Path, text)
 
-	plan, err := m.runtime.Compile(ctx, apiSource)
+	binding, err := m.runtimes.Acquire(ctx, runtimeName)
 	if err != nil {
-		if plan != nil {
-			err = errors.Join(err, plan.Close())
-		}
+		return nil, err
+	}
 
+	var plan api.Plan
+	defer func() {
+		if created == nil {
+			if plan != nil {
+				resultErr = errors.Join(resultErr, operation.recordCleanup(plan.Close()))
+			}
+
+			resultErr = errors.Join(resultErr, operation.recordCleanup(binding.Release()))
+		}
+	}()
+
+	plan, err = binding.Runtime().Compile(ctx, apiSource)
+	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, workspace.ErrClosed) || errors.Is(err, workspace.ErrDocumentNotFound) {
 			return nil, err
@@ -151,12 +177,12 @@ func (m *Manager) prepareSession(
 	}
 
 	if err := ctx.Err(); err != nil {
-		return nil, errors.Join(err, plan.Close())
+		return nil, err
 	}
 
-	parameters, err := plan.Params()
+	parameters, err := plan.Params(ctx)
 	if err != nil {
-		err = errors.Join(fmt.Errorf("retrieve plan parameters: %w", err), plan.Close())
+		err = fmt.Errorf("retrieve plan parameters: %w", err)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, err
 		}
@@ -170,14 +196,20 @@ func (m *Manager) prepareSession(
 
 	id, err := newSessionID()
 	if err != nil {
-		return nil, errors.Join(err, plan.Close())
+		return nil, err
 	}
 
 	compileDebug := func(ctx context.Context) (api.Plan, error) {
-		return m.runtime.CompileDebug(ctx, apiSource)
+		return binding.Runtime().CompileDebug(ctx, apiSource)
 	}
 
-	return newSession(id, sourceSnapshot, plan, parameters, text, parent.Root(), compileDebug), nil
+	fsRoot := ""
+
+	if binding.Provider() == runtimes.ProviderNative {
+		fsRoot = parent.Root()
+	}
+
+	return newSession(id, sourceSnapshot, plan, parameters, text, fsRoot, compileDebug, binding), nil
 }
 
 // GetSession returns an immutable Session snapshot.
@@ -218,13 +250,8 @@ func (m *Manager) CreateExecution(
 	sessionID SessionID,
 	parameters Parameters,
 	options RuntimeOptions,
-) (ExecutionSnapshot, error) {
+) (snapshot ExecutionSnapshot, resultErr error) {
 	if err := ctx.Err(); err != nil {
-		return ExecutionSnapshot{}, err
-	}
-
-	input, err := newRuntimeInput(parameters, options)
-	if err != nil {
 		return ExecutionSnapshot{}, err
 	}
 
@@ -233,13 +260,33 @@ func (m *Manager) CreateExecution(
 		return ExecutionSnapshot{}, err
 	}
 
-	creation, err := m.sessions.beginRuntimeCreate(sessionID)
+	operation, operationCtx := newConstruction(ctx)
+	defer operation.finish()
+
+	creation, err := m.sessions.beginRuntimeCreate(sessionID, operation)
 	if err != nil {
 		return ExecutionSnapshot{}, err
 	}
-	defer creation.finish()
+
+	defer func() {
+		closedErr := creation.finish()
+
+		if resultErr != nil {
+			resultErr = errors.Join(resultErr, closedErr, constructionError(ctx), constructionError(operationCtx))
+		}
+	}()
 
 	parent := creation.session()
+
+	input, err := parent.prepareInput(parameters, options)
+	if err != nil {
+		return ExecutionSnapshot{}, err
+	}
+
+	if err := parent.publicationError(operationCtx); err != nil {
+		return ExecutionSnapshot{}, err
+	}
+
 	runtime := newExecutionRuntime(parent.runtimeTarget(), input)
 	execution := newExecution(id, runtime)
 	m.executions.add(execution, parent)
@@ -329,9 +376,9 @@ func (m *Manager) Close(ctx context.Context) error {
 }
 
 func (m *Manager) finishWorkspaceClose(closing workspaceClose) {
-	closing.group.waitForCreates()
+	closing.group.cancelPending()
+	result := closing.group.waitForCreates()
 
-	var result error
 	for _, entry := range closing.group.retainedSessions() {
 		result = errors.Join(
 			result,
@@ -344,7 +391,8 @@ func (m *Manager) finishWorkspaceClose(closing workspaceClose) {
 
 func (m *Manager) finishSessionClose(entry *sessionEntry) {
 	session := entry.session
-	session.waitForRuntimeCreates()
+	session.cancelPending()
+	result := session.waitForRuntimeCreates()
 
 	children := m.executions.beginSessionClose(session.id)
 	for _, closing := range children {
@@ -353,7 +401,6 @@ func (m *Manager) finishSessionClose(entry *sessionEntry) {
 		}
 	}
 
-	var result error
 	for _, closing := range children {
 		result = errors.Join(result, closing.entry.execution.close.Wait(context.Background()))
 	}
@@ -372,6 +419,8 @@ func (m *Manager) finishSessionClose(entry *sessionEntry) {
 	if debugPlan != nil {
 		result = errors.Join(result, debugPlan.Close())
 	}
+
+	result = errors.Join(result, session.binding.Release())
 
 	session.finishClose(result)
 	m.sessions.finishClose(entry)

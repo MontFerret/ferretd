@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/MontFerret/ferretd/internal/runtimes"
 )
 
 const defaultOutputContentType = "application/json"
@@ -13,12 +15,12 @@ const defaultOutputContentType = "application/json"
 // debugger execution.
 type RuntimeOptions struct {
 	OutputContentType string
-	// WorkingDirectory overrides the workspace FS root when nonempty.
+	// WorkingDirectory overrides the bound runtime's FS root when nonempty.
 	// Empty means no explicit override; transports resolve presence beforehand.
 	WorkingDirectory string
 }
 
-func (o RuntimeOptions) normalized() (RuntimeOptions, error) {
+func (o RuntimeOptions) normalizedFor(provider runtimes.Provider) (RuntimeOptions, error) {
 	o.OutputContentType = strings.TrimSpace(o.OutputContentType)
 	if o.OutputContentType == "" {
 		o.OutputContentType = defaultOutputContentType
@@ -31,6 +33,10 @@ func (o RuntimeOptions) normalized() (RuntimeOptions, error) {
 	workingDirectory := strings.TrimSpace(o.WorkingDirectory)
 	if workingDirectory == "" {
 		return RuntimeOptions{}, fmt.Errorf("%w: working directory must not be blank", ErrInvalidExecutionOptions)
+	}
+
+	if provider == runtimes.ProviderWire {
+		return o, nil
 	}
 
 	if !filepath.IsAbs(workingDirectory) {

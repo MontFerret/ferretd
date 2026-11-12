@@ -9,14 +9,29 @@ import (
 
 	executionv1 "github.com/MontFerret/ferretd/gen/ferretd/execution/v1"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 func toExecutionStatusError(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		code := status.FromContextError(err).Code()
+		switch {
+		case errors.Is(err, runtimes.ErrRuntimeUnavailable):
+			return resourceStatusError(code, err, executionv1.ResourceKind_RESOURCE_KIND_RUNTIME, executionv1.ResourceCondition_RESOURCE_CONDITION_UNAVAILABLE)
+		case errors.Is(err, exec.ErrSessionClosed):
+			return resourceStatusError(code, err, executionv1.ResourceKind_RESOURCE_KIND_SESSION, executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED)
+		case errors.Is(err, workspace.ErrClosed):
+			return resourceStatusError(code, err, executionv1.ResourceKind_RESOURCE_KIND_WORKSPACE, executionv1.ResourceCondition_RESOURCE_CONDITION_CLOSED)
+		default:
+			return status.FromContextError(err).Err()
+		}
+	}
+
 	var compilation *exec.CompilationError
 
 	if errors.As(err, &compilation) {
-		base := status.New(codes.InvalidArgument, exec.ErrCompilationFailed.Error())
+		base := status.New(codes.InvalidArgument, err.Error())
 
 		withDetails, detailErr := base.WithDetails(&executionv1.CompilationFailure{
 			Source:      toProtoSourceSnapshot(compilation.Source),
@@ -30,8 +45,10 @@ func toExecutionStatusError(err error) error {
 	}
 
 	switch {
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return status.FromContextError(err).Err()
+	case errors.Is(err, runtimes.ErrRuntimeNotFound):
+		return resourceStatusError(codes.NotFound, err, executionv1.ResourceKind_RESOURCE_KIND_RUNTIME, executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND)
+	case errors.Is(err, runtimes.ErrRuntimeUnavailable):
+		return resourceStatusError(codes.Unavailable, err, executionv1.ResourceKind_RESOURCE_KIND_RUNTIME, executionv1.ResourceCondition_RESOURCE_CONDITION_UNAVAILABLE)
 	case errors.Is(err, workspace.ErrNotFound):
 		return resourceStatusError(codes.NotFound, err, executionv1.ResourceKind_RESOURCE_KIND_WORKSPACE, executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND)
 	case errors.Is(err, workspace.ErrDocumentNotFound):

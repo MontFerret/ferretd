@@ -9,9 +9,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MontFerret/api"
+
 	"github.com/MontFerret/ferretd/internal/transport"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
+
+func TestDaemonConstructionFailureReleasesNativeRoot(t *testing.T) {
+	runtime := newRuntimeLifecycleSpy()
+
+	if daemon, err := newDaemon(Options{}, runtime, nil); daemon != nil || err == nil || runtime.closeCalls.Load() != 1 {
+		t.Fatalf("failed owner construction = %v, %v; closes = %d", daemon, err, runtime.closeCalls.Load())
+	}
+
+	runtime = newRuntimeLifecycleSpy()
+	constructionErr := errors.New("native construction failed")
+
+	daemon, err := bootstrap(Options{Endpoint: testEndpoint(t)}, func() (api.Runtime, error) { return runtime, constructionErr })
+	if daemon != nil || !errors.Is(err, constructionErr) || runtime.closeCalls.Load() != 1 {
+		t.Fatalf("failed native construction = %v, %v; closes = %d", daemon, err, runtime.closeCalls.Load())
+	}
+}
 
 func TestDaemonClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 	runtime := newRuntimeLifecycleSpy()
@@ -21,7 +39,7 @@ func TestDaemonClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 		t.Fatalf("normalize options: %v", err)
 	}
 
-	daemon, err := newDaemon(options, runtime)
+	daemon, err := newDaemon(options, runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newDaemon: %v", err)
 	}
@@ -36,7 +54,7 @@ func TestDaemonClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	if _, err := daemon.executions.CreateSession(context.Background(), opened.ID(), "query.fql"); err != nil {
+	if _, err := daemon.executions.CreateSession(context.Background(), opened.ID(), "query.fql", ""); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
@@ -71,7 +89,7 @@ func TestDaemonStopCancellationDoesNotAbandonRuntimeCleanup(t *testing.T) {
 		t.Fatalf("normalize options: %v", err)
 	}
 
-	daemon, err := newDaemon(options, runtime)
+	daemon, err := newDaemon(options, runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newDaemon: %v", err)
 	}
@@ -117,7 +135,7 @@ func TestDaemonStartupFailureClosesOwnedRuntime(t *testing.T) {
 		t.Fatalf("normalize options: %v", err)
 	}
 
-	daemon, err := newDaemon(options, runtime)
+	daemon, err := newDaemon(options, runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newDaemon: %v", err)
 	}

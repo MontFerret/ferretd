@@ -41,6 +41,7 @@ func (s *executionService) CreateSession(
 		ctx,
 		workspace.ID(request.WorkspaceId.Value),
 		request.RelativePath,
+		request.RuntimeName,
 	)
 	if err != nil {
 		return nil, toExecutionStatusError(err)

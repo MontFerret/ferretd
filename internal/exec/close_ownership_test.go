@@ -271,12 +271,12 @@ func TestSessionCloseRetainsCompletedChildWhileWaitingForCreation(t *testing.T) 
 	want := errors.New("runtime Session close failed")
 	fixture := newCloseOwnershipFixtureWithRuntimeCloseError(t, want)
 
-	creation, err := fixture.manager.sessions.beginRuntimeCreate(fixture.sessionID)
+	creation, err := fixture.manager.sessions.beginRuntimeCreate(fixture.sessionID, newTestConstruction(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	finishCreation := sync.OnceFunc(creation.finish)
+	finishCreation := sync.OnceFunc(func() { _ = creation.finish() })
 	t.Cleanup(finishCreation)
 
 	childResult := make(chan error, 1)

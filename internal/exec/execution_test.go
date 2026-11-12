@@ -17,7 +17,7 @@ import (
 
 func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN @value")
-	fixture.runtime.run = parameterOutput
+	fixture.runtime.collect = parameterOutput
 	input := map[string]any{
 		"value":  7,
 		"nested": map[string]any{"items": []any{"one", "two"}},
@@ -57,7 +57,7 @@ func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
 
 	terminal, events := runAndObserve(t, fixture.manager, created.ID)
 	if terminal.State != StateCompleted || terminal.Output == nil ||
-		terminal.Output.ContentType != "application/json" || string(terminal.Output.Content) != "7" {
+		terminal.Output.Metadata.ContentType != "application/json" || string(terminal.Output.Data) != "7" {
 		t.Fatalf("terminal = %+v", terminal)
 	}
 
@@ -70,7 +70,7 @@ func TestExecutionLifecycleParametersAndRunOnce(t *testing.T) {
 
 func TestConcurrentExecutionsFromOneSessionAreIsolated(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN @value")
-	fixture.runtime.run = parameterOutput
+	fixture.runtime.collect = parameterOutput
 	values := []int{1, 2, 3, 4}
 	created := make([]ExecutionSnapshot, len(values))
 	for i, value := range values {
@@ -102,7 +102,7 @@ func TestConcurrentExecutionsFromOneSessionAreIsolated(t *testing.T) {
 
 	for i, result := range results {
 		if result.State != StateCompleted || result.Output == nil ||
-			string(result.Output.Content) != strconv.Itoa(i+1) {
+			string(result.Output.Data) != strconv.Itoa(i+1) {
 			t.Fatalf("result[%d] = %+v", i, result)
 		}
 	}
@@ -143,6 +143,7 @@ func TestRepeatedExecutionsDoNotRecompileSessionPlan(t *testing.T) {
 func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 	t.Run("partial session creation cleanup", func(t *testing.T) {
 		want := errors.New("session creation failed")
+		cleanupErr := errors.New("partial session cleanup")
 		var closes atomic.Int32
 		manager, snapshot, runtime := newHookedManager(
 			t,
@@ -150,7 +151,7 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 			withSessionCloseHook(func() error {
 				closes.Add(1)
 
-				return nil
+				return cleanupErr
 			}),
 		)
 		plan := retainedSession(t, manager, snapshot.ID).session.plan.(*planSpy)
@@ -168,6 +169,10 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 
 		if !strings.Contains(terminal.Failure.Message, want.Error()) {
 			t.Fatalf("failure = %+v, want %v", terminal.Failure, want)
+		}
+
+		if err := manager.CloseSession(t.Context(), snapshot.ID); !errors.Is(err, cleanupErr) {
+			t.Fatalf("parent cleanup = %v", err)
 		}
 
 		if closes.Load() != 1 {
@@ -206,8 +211,8 @@ func TestExecutionFailureCategoriesAndPartialOutput(t *testing.T) {
 		terminal, _ := runAndObserve(t, manager, created.ID)
 		assertFailure(t, terminal, FailureCleanup, true)
 
-		if string(terminal.Output.Content) != "1" {
-			t.Fatalf("partial output = %q, want 1", terminal.Output.Content)
+		if string(terminal.Output.Data) != "1" {
+			t.Fatalf("partial output = %q, want 1", terminal.Output.Data)
 		}
 	})
 }
@@ -242,7 +247,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 
 	t.Run("during run", func(t *testing.T) {
 		fixture := newExecutionFixture(t, "RETURN 1")
-		fixture.runtime.run = canceledOutput
+		fixture.runtime.collect = canceledOutput
 
 		created, err := fixture.manager.CreateExecution(
 			context.Background(),
@@ -293,7 +298,7 @@ func TestExecutionCancellationBeforeAndDuringRun(t *testing.T) {
 
 func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
-	fixture.runtime.run = canceledOutput
+	fixture.runtime.collect = canceledOutput
 
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
@@ -324,7 +329,7 @@ func TestSessionRefreshDoesNotCancelActiveExecution(t *testing.T) {
 	refreshed, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -402,7 +407,7 @@ func TestCancellationRacingSuccessNeverOverwritesTerminalState(t *testing.T) {
 
 func TestSessionAndWorkspaceCloseCascadeExecutions(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
-	fixture.runtime.run = canceledOutput
+	fixture.runtime.collect = canceledOutput
 
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
@@ -448,7 +453,7 @@ func TestSessionAndWorkspaceCloseCascadeExecutions(t *testing.T) {
 
 func TestCloseExecutionCancelsRunningAndEndsWatch(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
-	fixture.runtime.run = canceledOutput
+	fixture.runtime.collect = canceledOutput
 
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
@@ -493,7 +498,7 @@ func TestCloseExecutionCancelsRunningAndEndsWatch(t *testing.T) {
 
 func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 	fixture := newExecutionFixture(t, "RETURN 1")
-	fixture.runtime.run = canceledOutput
+	fixture.runtime.collect = canceledOutput
 
 	created, err := fixture.manager.CreateExecution(
 		context.Background(),
@@ -530,7 +535,7 @@ func TestManagerCloseCascadesRunningExecution(t *testing.T) {
 	if _, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	); !errors.Is(err, ErrClosed) {
 		t.Fatalf("CreateSession after Close error = %v, want ErrClosed", err)
 	}

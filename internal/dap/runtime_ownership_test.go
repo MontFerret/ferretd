@@ -11,13 +11,31 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/MontFerret/api"
+
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
+
+func TestServerConstructionFailureReleasesNativeRoot(t *testing.T) {
+	runtime := newRuntimeOwnershipSpy()
+
+	if server, err := newServer(strings.NewReader(""), io.Discard, Options{}, runtime, nil); server != nil || err == nil || runtime.closeCalls.Load() != 1 {
+		t.Fatalf("failed owner construction = %v, %v; closes = %d", server, err, runtime.closeCalls.Load())
+	}
+
+	runtime = newRuntimeOwnershipSpy()
+	constructionErr := errors.New("native construction failed")
+
+	server, err := bootstrap(strings.NewReader(""), io.Discard, Options{}, func() (api.Runtime, error) { return runtime, constructionErr })
+	if server != nil || !errors.Is(err, constructionErr) || runtime.closeCalls.Load() != 1 {
+		t.Fatalf("failed native construction = %v, %v; closes = %d", server, err, runtime.closeCalls.Load())
+	}
+}
 
 func TestServerClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 	runtime := newRuntimeOwnershipSpy()
 
-	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime)
+	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
@@ -32,7 +50,7 @@ func TestServerClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	if _, err := server.executions.CreateSession(context.Background(), opened.ID(), "query.fql"); err != nil {
+	if _, err := server.executions.CreateSession(context.Background(), opened.ID(), "query.fql", ""); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
@@ -75,7 +93,7 @@ func TestServerClosesChildrenBeforeOwnedRuntimeExactlyOnce(t *testing.T) {
 func TestServerRunCancellationClosesOwnedRuntime(t *testing.T) {
 	runtime := newRuntimeOwnershipSpy()
 
-	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime)
+	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

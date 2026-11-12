@@ -10,20 +10,19 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/MontFerret/api"
-
 	"github.com/MontFerret/ferretd/internal/exec"
 	grpcadapter "github.com/MontFerret/ferretd/internal/grpc"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/transport"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 // Daemon owns the services and lifecycle that make up ferretd.
 type Daemon struct {
-	workspaces *workspace.Manager
-	executions *exec.Manager
-	grpc       *grpcadapter.Server
-	runtime    api.Runtime
+	workspaces   *workspace.Manager
+	executions   *exec.Manager
+	grpc         *grpcadapter.Server
+	runtimeOwner *runtimes.Owner
 
 	endpoint transport.Endpoint
 	version  string
@@ -184,7 +183,7 @@ func (d *Daemon) startCleanup(listener net.Listener, serving bool) {
 			listenerErr = listener.Close()
 		}
 
-		runtimeErr := d.runtime.Close()
+		runtimeErr := d.runtimeOwner.Close(ctx)
 		d.finishStop(errors.Join(executionErr, workspaceErr, grpcErr, listenerErr, runtimeErr))
 	}()
 }

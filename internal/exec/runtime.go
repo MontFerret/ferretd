@@ -35,28 +35,17 @@ type (
 		ctx       context.Context
 		cancel    context.CancelCauseFunc
 		session   io.Closer
+		output    api.Output
 		closeOnce sync.Once
 		closeErr  error
 	}
 
 	runtimeRunResult struct {
-		output   *api.Output
+		output   *api.Content
 		err      error
 		category FailureCategory
 	}
 )
-
-func newRuntimeInput(parameters Parameters, options RuntimeOptions) (runtimeInput, error) {
-	normalizedOptions, err := options.normalized()
-	if err != nil {
-		return runtimeInput{}, err
-	}
-
-	return runtimeInput{
-		parameters: parameters.Clone(),
-		options:    normalizedOptions,
-	}, nil
-}
 
 func newExecutionRuntime(target runtimeTarget, input runtimeInput) *executionRuntime {
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -72,12 +61,10 @@ func newExecutionRuntime(target runtimeTarget, input runtimeInput) *executionRun
 func (r *executionRuntime) run() runtimeRunResult {
 	session, err := r.target.plan.NewSession(r.ctx, r.sessionOptions()...)
 	if err != nil {
-		if session != nil {
-			err = errors.Join(err, session.Close())
-		}
+		r.session = session
 
 		return runtimeRunResult{
-			err:      err,
+			err:      errors.Join(err, r.closeResources()),
 			category: FailureSessionCreation,
 		}
 	}
@@ -92,11 +79,21 @@ func (r *executionRuntime) run() runtimeRunResult {
 	r.session = session
 
 	output, runErr := session.Run(r.ctx)
-	retainedOutput := cloneOutput(output)
+	r.output = output
 
-	closeErr := r.closeSession()
+	var content *api.Content
+
+	if runErr == nil {
+		if output == nil {
+			runErr = errors.New("runtime returned no output")
+		} else {
+			content, runErr = output.Collect(r.ctx)
+		}
+	}
+
+	closeErr := r.closeResources()
 	result := runtimeRunResult{
-		output:   retainedOutput,
+		output:   content,
 		err:      errors.Join(runErr, closeErr),
 		category: FailureRuntime,
 	}
@@ -126,10 +123,18 @@ func (r *executionRuntime) sessionOptions() []api.SessionOption {
 	return options
 }
 
-func (r *executionRuntime) closeSession() error {
+// closeResources settles output before the caller-owned session. Ordinary runs
+// invoke it after collection; their close workers wait for runDone before
+// reentering. Debug runtimes have no live output handle.
+func (r *executionRuntime) closeResources() error {
 	r.closeOnce.Do(func() {
+		if r.output != nil {
+			r.closeErr = r.output.Close()
+			r.output = nil
+		}
+
 		if r.session != nil {
-			r.closeErr = r.session.Close()
+			r.closeErr = errors.Join(r.closeErr, r.session.Close())
 		}
 	})
 

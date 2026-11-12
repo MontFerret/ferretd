@@ -49,7 +49,7 @@ func TestCreateSessionCompilesImmutableSourceAndParameters(t *testing.T) {
 	second, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
@@ -69,7 +69,7 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	second, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
@@ -91,7 +91,7 @@ func TestCreateSessionRefreshesSavedSourceAndKeepsSessionsImmutable(t *testing.T
 	third, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("unchanged CreateSession: %v", err)
@@ -119,7 +119,7 @@ func TestCreateSessionDiscoversSourceCreatedAfterWorkspaceOpen(t *testing.T) {
 
 	writeSourceFile(t, root, "created.fql", "RETURN 42")
 
-	session, err := manager.CreateSession(context.Background(), opened.ID(), "created.fql")
+	session, err := manager.CreateSession(context.Background(), opened.ID(), "created.fql", "")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		_, err := fixture.manager.CreateSession(
 			context.Background(),
 			fixture.workspace.ID(),
-			"query.fql",
+			"query.fql", "",
 		)
 
 		var compilation *exec.CompilationError
@@ -155,7 +155,7 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		recovered, err := fixture.manager.CreateSession(
 			context.Background(),
 			fixture.workspace.ID(),
-			"query.fql",
+			"query.fql", "",
 		)
 		if err != nil {
 			t.Fatalf("recovered CreateSession: %v", err)
@@ -175,7 +175,7 @@ func TestCreateSessionRefreshesCompilationAndUnavailableDiagnostics(t *testing.T
 		_, err := fixture.manager.CreateSession(
 			context.Background(),
 			fixture.workspace.ID(),
-			"query.fql",
+			"query.fql", "",
 		)
 		if !errors.Is(err, workspace.ErrDocumentNotFound) {
 			t.Fatalf("CreateSession error = %v, want ErrDocumentNotFound", err)
@@ -191,7 +191,7 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 	second, err := fixture.manager.CreateSession(
 		context.Background(),
 		fixture.workspace.ID(),
-		"query.fql",
+		"query.fql", "",
 	)
 	if err != nil {
 		t.Fatalf("second CreateSession: %v", err)
@@ -224,7 +224,7 @@ func TestOldSessionLazilyCompilesMatchingDebugPlanAfterRefresh(t *testing.T) {
 		t.Fatalf("Continue: %v", err)
 	}
 
-	if event.Reason != apidebugger.ReasonCompleted || event.Output == nil || string(event.Output.Content) != "1" {
+	if event.Reason != apidebugger.ReasonCompleted || event.Output == nil || string(event.Output.Data) != "1" {
 		t.Fatalf("debug completion = %+v, want first Session output 1", event)
 	}
 }
@@ -293,7 +293,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
 		if terminal.State != exec.StateCompleted || terminal.Output == nil ||
-			string(terminal.Output.Content) != `"workspace"` {
+			string(terminal.Output.Data) != `"workspace"` {
 			t.Fatalf("terminal = %+v, want workspace output", terminal)
 		}
 	})
@@ -335,7 +335,7 @@ func TestExecutionWorkingDirectorySelectsSessionFilesystem(t *testing.T) {
 
 		terminal, _ := runAndObserve(t, fixture.manager, created.ID)
 		if terminal.State != exec.StateCompleted || terminal.Output == nil ||
-			string(terminal.Output.Content) != `"runtime"` {
+			string(terminal.Output.Data) != `"runtime"` {
 			t.Fatalf("terminal = %+v, want runtime output", terminal)
 		}
 	})
@@ -416,7 +416,7 @@ func TestConcurrentExecutionsUseIndependentWorkingDirectories(t *testing.T) {
 
 	for index, result := range results {
 		want := `"` + strconv.Itoa(index+1) + `"`
-		if result.State != exec.StateCompleted || result.Output == nil || string(result.Output.Content) != want {
+		if result.State != exec.StateCompleted || result.Output == nil || string(result.Output.Data) != want {
 			t.Fatalf("result[%d] = %+v, want %s", index, result, want)
 		}
 	}

@@ -2,7 +2,6 @@ package dap
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -45,242 +44,70 @@ func (s *Server) handleInitialize(
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
-		return &protocol.InitializeResponse{
+		return &initializeResponse{
 			Response: response,
-			Body: protocol.Capabilities{
-				SupportsConfigurationDoneRequest: true,
-				SupportsEvaluateForHovers:        true,
-				SupportsTerminateRequest:         true,
+			Body: initializeCapabilities{
+				SupportsFerretRuntimeSelection: true,
+				Capabilities: protocol.Capabilities{
+					SupportsCancelRequest:            true,
+					SupportsConfigurationDoneRequest: true,
+					SupportsEvaluateForHovers:        true,
+					SupportsTerminateRequest:         true,
+				},
 			},
 		}
 	})
 }
 
-func (s *Server) handleLaunch(ctx context.Context, request *protocol.LaunchRequest) error {
-	s.traceRequest(request.GetRequest(), func(event *zerolog.Event) {
-		event.Int("arguments_bytes", len(request.Arguments))
-	})
-
-	s.stateMu.Lock()
-	if !s.initialized || s.launched {
-		s.stateMu.Unlock()
-
-		return s.sendFailure(request.GetRequest(), errors.New("launch requires one successful initialize"))
-	}
-
-	s.stateMu.Unlock()
-
-	var arguments launchArguments
-	decoder := json.NewDecoder(strings.NewReader(string(request.Arguments)))
-
-	if err := decoder.Decode(&arguments); err != nil {
-		return s.sendFailure(request.GetRequest(), fmt.Errorf("invalid launch arguments: %w", err))
-	}
-
-	paths, err := arguments.resolvePaths()
-	if err != nil {
-		return s.sendFailure(
-			request.GetRequest(),
-			err,
-			func(event *zerolog.Event) {
-				event.Str("program", arguments.Program).Str("cwd", arguments.CWD)
-			},
-			arguments.logWorkingDirectory,
-		)
-	}
-
-	runtimeOptions, err := arguments.runtimeOptions()
-	if err != nil {
-		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
-			event.Str("program", paths.program).Str("root", paths.root)
-		}, arguments.logWorkingDirectory)
-	}
-
-	opened, err := s.workspaces.Open(ctx, paths.root)
-	if err != nil {
-		return s.sendFailure(request.GetRequest(), err, func(event *zerolog.Event) {
-			event.Str("program", paths.program).Str("root", paths.root)
-		}, arguments.logWorkingDirectory)
-	}
-
-	session, err := s.executions.CreateSession(ctx, opened.ID(), paths.relativePath)
-	if err != nil {
-		_ = s.workspaces.Close(context.Background(), opened.ID())
-
-		return s.sendFailure(
-			request.GetRequest(),
-			err,
-			func(event *zerolog.Event) {
-				event.
-					Str("program", paths.program).
-					Str("root", paths.root).
-					Str("workspace_id", opened.ID().String())
-			},
-			arguments.logWorkingDirectory,
-		)
-	}
-
-	debugSession, err := s.debugs.CreateSession(
-		ctx,
-		session.ID,
-		arguments.Parameters,
-		runtimeOptions,
-	)
-	if err != nil {
-		_ = s.executions.CloseSession(context.Background(), session.ID)
-		_ = s.workspaces.Close(context.Background(), opened.ID())
-
-		return s.sendFailure(
-			request.GetRequest(),
-			err,
-			func(event *zerolog.Event) {
-				event.
-					Str("program", paths.program).
-					Str("root", paths.root).
-					Str("workspace_id", opened.ID().String()).
-					Str("execution_session_id", session.ID.String())
-			},
-			arguments.logWorkingDirectory,
-		)
-	}
-
-	watch, err := s.debugs.WatchSession(ctx, debugSession.ID)
-	if err != nil {
-		_ = s.debugs.CloseSession(context.Background(), debugSession.ID)
-		_ = s.executions.CloseSession(context.Background(), session.ID)
-		_ = s.workspaces.Close(context.Background(), opened.ID())
-
-		return s.sendFailure(
-			request.GetRequest(),
-			err,
-			func(event *zerolog.Event) {
-				event.
-					Str("program", paths.program).
-					Str("root", paths.root).
-					Str("workspace_id", opened.ID().String()).
-					Str("execution_session_id", session.ID.String()).
-					Str("debug_session_id", debugSession.ID.String())
-
-				if directory := debugSession.Options.WorkingDirectory; directory != "" {
-					event.Str("working_directory", directory)
-				}
-			},
-		)
-	}
-
-	s.stateMu.Lock()
-	s.owned = ownedSession{
-		workspace:       opened.ID(),
-		session:         session.ID,
-		debug:           debugSession.ID,
-		root:            paths.root,
-		program:         paths.program,
-		programIdentity: paths.identity,
-		stopOnEntry:     arguments.StopOnEntry,
-		coordinates:     newSourceCoordinates(session.Text, s.client),
-	}
-	s.attachSessionLogger(s.owned)
-	s.watch = watch
-	s.launched = true
-	s.pendingLaunch = request.GetRequest()
-	s.stateMu.Unlock()
-
-	event := s.logger.Info().
-		Str("program", paths.program).
-		Str("root", paths.root).
-		Bool("stop_on_entry", arguments.StopOnEntry)
-
-	if directory := debugSession.Options.WorkingDirectory; directory != "" {
-		event.Str("working_directory", directory)
-	}
-
-	event.Msg("DAP debug session created")
-
-	if err := s.sendEvent(eventInitialized, func(base protocol.ProtocolMessage) protocol.Message {
-		return &protocol.InitializedEvent{Event: protocol.Event{ProtocolMessage: base, Event: eventInitialized}}
-	}); err != nil {
-		return err
-	}
-
-	s.eventMu.Lock()
-	s.initialStop = &initialStop{}
-	s.eventMu.Unlock()
-
-	go s.watchDebugSession(watch)
-
-	return nil
-}
-
-func (s *Server) resolvePendingLaunch() error {
-	request := s.takePendingLaunch()
-	if request == nil {
-		return nil
-	}
-
-	return s.sendResponse(request, func(base protocol.ProtocolMessage) protocol.Message {
-		response := s.response(request)
-		response.ProtocolMessage = base
-
-		return &protocol.LaunchResponse{Response: response}
-	})
-}
-
-func (s *Server) failPendingLaunch(requestErr error) error {
-	request := s.takePendingLaunch()
-	if request == nil {
-		return nil
-	}
-
-	return s.sendFailure(request, requestErr)
-}
-
-func (s *Server) takePendingLaunch() *protocol.Request {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-
-	request := s.pendingLaunch
-	s.pendingLaunch = nil
-
-	return request
-}
-
 func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.ConfigurationDoneRequest) error {
 	s.traceRequest(request.GetRequest())
-
 	s.stateMu.Lock()
-	if !s.launched || s.configured {
+	if !s.launched || s.ownedClosed || s.configured {
 		s.stateMu.Unlock()
 
-		return s.sendFailure(
-			request.GetRequest(),
-			errors.New("configurationDone requires one successful launch"),
-		)
+		return s.sendFailure(request.GetRequest(), errors.New("configurationDone requires one successful launch"))
 	}
 
 	debugID := s.owned.debug
 	s.stateMu.Unlock()
-
 	s.eventMu.Lock()
-	defer s.eventMu.Unlock()
-
 	if err := s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
 		response := s.response(request.GetRequest())
 		response.ProtocolMessage = base
 
 		return &protocol.ConfigurationDoneResponse{Response: response}
 	}); err != nil {
+		s.eventMu.Unlock()
+
 		return err
 	}
 
 	if _, err := s.debugs.StartSession(ctx, debugID); err != nil {
-		s.initialStop = nil
-		result := s.failPendingLaunch(err)
+		s.stateMu.Lock()
 
+		interrupted := s.closing
+		if attempt := s.pendingLaunch; attempt != nil && attempt.cause != nil {
+			attempt.cause = errors.Join(attempt.cause, err)
+			interrupted = true
+		}
+
+		s.stateMu.Unlock()
+		s.initialStop = nil
+		s.eventMu.Unlock()
+
+		if interrupted {
+			// Reconciliation and queued controls own cancellation responses and
+			// settlement. Ending dispatch here would drop their acknowledgments.
+			return nil
+		}
+
+		cleanupErr := s.closeOwnedLaunch()
+		result := s.failPendingLaunch(errors.Join(err, cleanupErr))
 		s.stateMu.Lock()
 		s.disconnected = true
 		s.stateMu.Unlock()
 
-		return errors.Join(result, s.cleanup())
+		return result
 	}
 
 	s.initialStop.frozen = true
@@ -290,8 +117,10 @@ func (s *Server) handleConfigurationDone(ctx context.Context, request *protocol.
 	s.configured = true
 	s.stateMu.Unlock()
 	s.logger.Info().Msg("DAP configuration completed")
+	result := s.resolvePendingLaunch()
+	s.eventMu.Unlock()
 
-	return s.resolvePendingLaunch()
+	return result
 }
 
 func (s *Server) handleSetBreakpoints(ctx context.Context, request *sourceBreakpointsRequest) error {
@@ -996,82 +825,6 @@ func (s *Server) sendEmptyEvaluateResponse(
 			event.Bool("stale", true)
 		}
 	})
-}
-
-func (s *Server) handleTerminate(ctx context.Context, request *protocol.TerminateRequest) error {
-	restart := request.Arguments != nil && request.Arguments.Restart
-	restartFields := func(event *zerolog.Event) {
-		event.Bool("restart", restart)
-	}
-	s.traceRequest(request.GetRequest(), restartFields)
-
-	debugID, ok := s.configuredDebug(false)
-	if !ok || restart {
-		return s.sendFailure(
-			request.GetRequest(),
-			errors.New("terminate requires a launched session and does not support restart"),
-			restartFields,
-		)
-	}
-
-	s.eventMu.Lock()
-	defer s.eventMu.Unlock()
-
-	if err := s.failPendingLaunch(errors.New("launch terminated before configurationDone")); err != nil {
-		return err
-	}
-
-	if _, err := s.debugs.TerminateSession(ctx, debugID); err != nil {
-		return s.sendFailure(request.GetRequest(), err, restartFields)
-	}
-
-	s.invalidateHandles("terminate")
-
-	return s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
-		response := s.response(request.GetRequest())
-		response.ProtocolMessage = base
-
-		return &protocol.TerminateResponse{Response: response}
-	})
-}
-
-func (s *Server) handleDisconnect(_ context.Context, request *protocol.DisconnectRequest) error {
-	restart := request.Arguments != nil && request.Arguments.Restart
-	suspend := request.Arguments != nil && request.Arguments.SuspendDebuggee
-	disconnectFields := func(event *zerolog.Event) {
-		event.Bool("restart", restart).Bool("suspend_debuggee", suspend)
-	}
-	s.traceRequest(request.GetRequest(), disconnectFields)
-
-	if restart || suspend {
-		return s.sendFailure(
-			request.GetRequest(),
-			errors.New("disconnect restart and suspend are not supported"),
-			disconnectFields,
-		)
-	}
-
-	s.eventMu.Lock()
-	defer s.eventMu.Unlock()
-
-	if err := s.failPendingLaunch(errors.New("launch disconnected before configurationDone")); err != nil {
-		return err
-	}
-
-	if err := s.sendResponse(request.GetRequest(), func(base protocol.ProtocolMessage) protocol.Message {
-		response := s.response(request.GetRequest())
-		response.ProtocolMessage = base
-
-		return &protocol.DisconnectResponse{Response: response}
-	}); err != nil {
-		return err
-	}
-
-	s.stateMu.Lock()
-	s.disconnected = true
-	s.stateMu.Unlock()
-
-	return s.cleanup()
 }
 
 func (s *Server) configuredDebug(requireConfigured bool) (debug.SessionID, bool) {

@@ -62,12 +62,12 @@ func benchmarkBreakpointServer(b *testing.B) (*Server, string) {
 		b.Fatal(err)
 	}
 
-	runtime, err := uapi.New()
+	runtime, err := uapi.New("test")
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime)
+	server, err := newServer(strings.NewReader(""), io.Discard, Options{}.normalized(), runtime, mustNewRuntimeCatalog(b))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func benchmarkBreakpointServer(b *testing.B) (*Server, string) {
 
 	server.owned.workspace = workspace.ID()
 
-	session, err := server.executions.CreateSession(ctx, workspace.ID(), "query.fql")
+	session, err := server.executions.CreateSession(ctx, workspace.ID(), "query.fql", "")
 	if err != nil {
 		b.Fatal(err)
 	}

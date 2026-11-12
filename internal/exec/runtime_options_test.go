@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/MontFerret/ferretd/internal/runtimes"
 )
 
 func TestRuntimeOptionsNormalized(t *testing.T) {
@@ -22,7 +24,7 @@ func TestRuntimeOptionsNormalized(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := test.input.normalized()
+			got, err := test.input.normalizedFor(runtimes.ProviderNative)
 			if err != nil {
 				t.Fatalf("normalized: %v", err)
 			}
@@ -36,7 +38,7 @@ func TestRuntimeOptionsNormalized(t *testing.T) {
 
 func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 	t.Run("absent", func(t *testing.T) {
-		got, err := (RuntimeOptions{}).normalized()
+		got, err := (RuntimeOptions{}).normalizedFor(runtimes.ProviderNative)
 		if err != nil {
 			t.Fatalf("normalized: %v", err)
 		}
@@ -55,7 +57,7 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 		configured := "  " + root + "  "
 		input := RuntimeOptions{WorkingDirectory: configured}
 
-		got, err := input.normalized()
+		got, err := input.normalizedFor(runtimes.ProviderNative)
 		if err != nil {
 			t.Fatalf("normalized: %v", err)
 		}
@@ -82,7 +84,7 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 			t.Skipf("create directory symlink: %v", err)
 		}
 
-		got, err := (RuntimeOptions{WorkingDirectory: link}).normalized()
+		got, err := (RuntimeOptions{WorkingDirectory: link}).normalizedFor(runtimes.ProviderNative)
 		if err != nil {
 			t.Fatalf("normalized: %v", err)
 		}
@@ -119,7 +121,7 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := (RuntimeOptions{WorkingDirectory: test.path}).normalized()
+			_, err := (RuntimeOptions{WorkingDirectory: test.path}).normalizedFor(runtimes.ProviderNative)
 			if !errors.Is(err, ErrInvalidExecutionOptions) {
 				t.Fatalf("normalized error = %v, want ErrInvalidExecutionOptions", err)
 			}
@@ -139,13 +141,40 @@ func TestRuntimeOptionsWorkingDirectoryValidation(t *testing.T) {
 
 			t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 
-			_, err := (RuntimeOptions{WorkingDirectory: root}).normalized()
+			_, err := (RuntimeOptions{WorkingDirectory: root}).normalizedFor(runtimes.ProviderNative)
 			if err == nil {
 				t.Skip("current user can open a mode-000 directory")
 			}
 
 			if !errors.Is(err, ErrInvalidExecutionOptions) {
 				t.Fatalf("normalized error = %v, want ErrInvalidExecutionOptions", err)
+			}
+		})
+	}
+}
+
+func TestRuntimeOptionsWireWorkingDirectory(t *testing.T) {
+	for _, test := range []struct {
+		name, directory string
+		invalid         bool
+	}{
+		{name: "absent"},
+		{name: "blank", directory: " \t\n", invalid: true},
+		{name: "relative host path", directory: "host/data"},
+		{name: "exact host path", directory: `  X:\application\data  `},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := (RuntimeOptions{WorkingDirectory: test.directory}).normalizedFor(runtimes.ProviderWire)
+			if test.invalid {
+				if !errors.Is(err, ErrInvalidExecutionOptions) {
+					t.Fatalf("normalization = %v", err)
+				}
+
+				return
+			}
+
+			if err != nil || got.WorkingDirectory != test.directory || got.OutputContentType != defaultOutputContentType {
+				t.Fatalf("normalization = %+v, %v", got, err)
 			}
 		})
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/MontFerret/api"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	localsource "github.com/MontFerret/ferretd/internal/source"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
@@ -29,15 +30,13 @@ func mustNewManager(t testing.TB, workspaces *workspace.Manager) *Manager {
 func newManagerWithRuntime(t testing.TB, workspaces *workspace.Manager, runtime *runtimeSpy) *Manager {
 	t.Helper()
 
-	manager, err := New(workspaces, runtime)
+	manager, err := New(workspaces, newTestOwner(t, runtime))
 	if err != nil {
-		_ = runtime.Close()
 		t.Fatalf("New: %v", err)
 	}
 
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
-		_ = runtime.Close()
 	})
 
 	return manager
@@ -73,7 +72,7 @@ func newExecutionFixture(t *testing.T, query string) executionFixture {
 	runtime := newRuntimeSpy()
 	manager := newManagerWithRuntime(t, workspaces, runtime)
 
-	session, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql")
+	session, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql", "")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -113,6 +112,13 @@ func newHookedManager(
 		URI:          localsource.URI("file:///query.fql"),
 		Revision:     1,
 	}
+	owner := newTestOwner(t, runtime)
+
+	binding, err := owner.Acquire(t.Context(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	session := newSession(
 		SessionID("session"),
 		snapshot,
@@ -123,14 +129,15 @@ func newHookedManager(
 		func(ctx context.Context) (api.Plan, error) {
 			return runtime.CompileDebug(ctx, api.NewSource("/query.fql", query))
 		},
+		binding,
 	)
 
-	manager, err := New(workspace.New(), runtime)
+	manager, err := New(workspace.New(), owner)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	creation, err := manager.sessions.beginCreate(workspaceID)
+	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t))
 	if err != nil {
 		t.Fatalf("begin Session creation: %v", err)
 	}
@@ -139,10 +146,9 @@ func newHookedManager(
 		t.Fatalf("commit Session creation: %v", err)
 	}
 
-	manager.sessions.finishCreate(creation)
+	_ = manager.sessions.finishCreate(creation)
 	t.Cleanup(func() {
 		_ = manager.Close(context.Background())
-		_ = runtime.Close()
 	})
 
 	return manager, session.snapshot(), runtime
@@ -217,14 +223,54 @@ func runAndObserve(t *testing.T, manager *Manager, id ExecutionID) (ExecutionSna
 	return terminal, events
 }
 
-func parameterOutput(_ context.Context, options sessionOptionsSpy) (*api.Output, error) {
+func parameterOutput(_ context.Context, options sessionOptionsSpy) (*api.Content, error) {
 	content, err := json.Marshal(options.params["value"])
 
-	return &api.Output{ContentType: options.contentType, Content: content}, err
+	return &api.Content{Metadata: api.Metadata{ContentType: options.contentType}, Data: content}, err
 }
 
-func canceledOutput(ctx context.Context, _ sessionOptionsSpy) (*api.Output, error) {
+func canceledOutput(ctx context.Context, _ sessionOptionsSpy) (*api.Content, error) {
 	<-ctx.Done()
 
 	return nil, ctx.Err()
+}
+
+func newTestOwner(t testing.TB, runtime api.Runtime) *runtimes.Owner {
+	t.Helper()
+
+	catalog, err := runtimes.NewCatalog(runtimes.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := runtimes.NewOwner(catalog, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = owner.Close(context.Background()) })
+
+	return owner
+}
+
+func newTestConstruction(t testing.TB) *construction {
+	t.Helper()
+	operation, _ := newConstruction(t.Context())
+	t.Cleanup(operation.finish)
+
+	return operation
+}
+
+func newTestBinding(t testing.TB, runtime api.Runtime) *runtimes.Binding {
+	t.Helper()
+	owner := newTestOwner(t, runtime)
+
+	binding, err := owner.Acquire(t.Context(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = binding.Release() })
+
+	return binding
 }

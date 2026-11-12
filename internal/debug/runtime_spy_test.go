@@ -20,11 +20,19 @@ func newRuntimeSpy() *runtimeSpy {
 	return &runtimeSpy{}
 }
 
+func (r *runtimeSpy) Version(ctx context.Context) (api.Version, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	return "test", nil
+}
+
 func (r *runtimeSpy) Run(
 	context.Context,
 	api.Source,
 	...api.SessionOption,
-) (*api.Output, error) {
+) (api.Output, error) {
 	return nil, errors.New("not implemented")
 }
 

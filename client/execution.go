@@ -2,7 +2,9 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -12,15 +14,25 @@ import (
 
 // ExecutionClient provides Session and Execution operations over a negotiated connection.
 type ExecutionClient struct {
-	client executionv1.ExecutionServiceClient
+	client    executionv1.ExecutionServiceClient
+	serverAPI APIVersion
 }
 
 // CreateSession discovers or refreshes and compiles the latest saved contents
 // of one eligible workspace document into an immutable Session.
 func (c *ExecutionClient) CreateSession(ctx context.Context, request CreateSessionRequest) (Session, error) {
+	if err := ctx.Err(); err != nil {
+		return Session{}, err
+	}
+
+	if request.RuntimeName != "" && !c.supportsRuntimeSelection() {
+		return Session{}, fmt.Errorf("%w: runtime selection requires daemon API 1.3 (server %d.%d)", ErrUnsupportedOperation, c.serverAPI.Major, c.serverAPI.Minor)
+	}
+
 	response, err := c.client.CreateSession(ctx, &executionv1.CreateSessionRequest{
 		WorkspaceId:  &workspacev1.WorkspaceId{Value: request.WorkspaceID},
 		RelativePath: request.RelativePath,
+		RuntimeName:  request.RuntimeName,
 	})
 	if err != nil {
 		return Session{}, mapCreateSessionError(ctx, err)
@@ -30,7 +42,22 @@ func (c *ExecutionClient) CreateSession(ctx context.Context, request CreateSessi
 		return Session{}, errIncompleteExecutionSession
 	}
 
-	return fromProtoSession(response.Session)
+	result, err := fromProtoSession(response.Session)
+	if err == nil {
+		err = c.validateSessionRuntime(result.RuntimeName, request.RuntimeName)
+	}
+
+	if err != nil {
+		if response.Session != nil && response.Session.Id != nil && response.Session.Id.Value != "" {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			err = errors.Join(err, c.CloseSession(cleanupCtx, SessionID(response.Session.Id.Value)))
+		}
+
+		return Session{}, err
+	}
+
+	return result, nil
 }
 
 // GetSession returns one daemon Session by ID.
@@ -46,7 +73,16 @@ func (c *ExecutionClient) GetSession(ctx context.Context, id SessionID) (Session
 		return Session{}, errIncompleteExecutionSession
 	}
 
-	return fromProtoSession(response.Session)
+	result, err := fromProtoSession(response.Session)
+	if err == nil {
+		err = c.validateSessionRuntime(result.RuntimeName, "")
+	}
+
+	if err != nil {
+		return Session{}, err
+	}
+
+	return result, nil
 }
 
 // CloseSession idempotently closes a Session and all child Executions.
@@ -152,4 +188,16 @@ func (c *ExecutionClient) WatchExecution(ctx context.Context, id ExecutionID) (*
 	}
 
 	return &ExecutionWatcher{ctx: ctx, stream: stream}, nil
+}
+
+func (c *ExecutionClient) supportsRuntimeSelection() bool {
+	return c.serverAPI.Major == 1 && c.serverAPI.Minor >= 3
+}
+
+func (c *ExecutionClient) validateSessionRuntime(name, selected string) error {
+	if (c.supportsRuntimeSelection() && name == "") || (selected != "" && name != selected) {
+		return errInvalidSessionRuntime
+	}
+
+	return nil
 }

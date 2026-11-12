@@ -34,11 +34,11 @@ type (
 	}
 )
 
-func newDAPProcessClient(t *testing.T, binary string) *dapProcessClient {
+func newDAPProcessClient(t *testing.T, binary string, arguments ...string) *dapProcessClient {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	t.Cleanup(cancel)
-	client := &dapProcessClient{t: t, command: exec.CommandContext(ctx, binary, "dap")}
+	client := &dapProcessClient{t: t, command: exec.CommandContext(ctx, binary, append([]string{"dap"}, arguments...)...)}
 	client.command.Stderr = &client.stderr
 
 	input, err := client.command.StdinPipe()

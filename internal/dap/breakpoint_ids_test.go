@@ -19,14 +19,14 @@ import (
 )
 
 func TestDAPOlderQueuedStopPreservesNewerCommandHits(t *testing.T) {
-	native, err := uapi.New()
+	native, err := uapi.New("test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var output bytes.Buffer
 
-	server, err := newServer(strings.NewReader(""), &output, Options{}.normalized(), native)
+	server, err := newServer(strings.NewReader(""), &output, Options{}.normalized(), native, mustNewRuntimeCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestDAPOlderQueuedStopPreservesNewerCommandHits(t *testing.T) {
 }
 
 func TestDAPFailedReplacementPreservesIdentitiesAndNativeSet(t *testing.T) {
-	native, err := uapi.New()
+	native, err := uapi.New("test")
 	if err != nil {
 		t.Fatal(err)
 	}

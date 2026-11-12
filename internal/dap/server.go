@@ -12,10 +12,9 @@ import (
 	protocol "github.com/google/go-dap"
 	"github.com/rs/zerolog"
 
-	"github.com/MontFerret/api"
-
 	"github.com/MontFerret/ferretd/internal/debug"
 	"github.com/MontFerret/ferretd/internal/exec"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -25,128 +24,81 @@ type (
 		reader      *bufio.Reader
 		readerClose io.Closer
 		writer      io.Writer
+		writerClose io.Closer
 
 		// writeMu protects the framed writer and outbound sequence. Successful-send
 		// trace records remain inside the same ordering boundary.
 		writeMu sync.Mutex
-		// eventMu preserves ordering between debugger commands and lifecycle events,
-		// and protects the initial stop's configuration-time bindings.
+		// eventMu preserves command/event ordering and protects initial-stop
+		// bindings, breakpoint IDs, and terminal-event deduplication.
 		eventMu sync.Mutex
-		// stateMu protects owned resources, client options, the watch, pending launch,
-		// and request/event lifecycle flags.
+		// stateMu protects resource handoff, client options, watches, cancellation
+		// registration, pending launch, and adapter closing state.
 		stateMu sync.Mutex
 
-		workspaces    *workspace.Manager
-		executions    *exec.Manager
-		debugs        *debug.Manager
-		runtime       api.Runtime
-		logger        zerolog.Logger
-		handles       *handleTable
-		owned         ownedSession
-		client        clientOptions
-		watch         debug.Subscription
-		pendingLaunch *protocol.Request
-		sequence      int
-		initialized   bool
-		launched      bool
-		configured    bool
-		disconnected  bool
-		initialStop   *initialStop
-		breakpoints   *breakpointIDs
-		cleanupOnce   sync.Once
-		cleanupErr    error
+		workspaces     *workspace.Manager
+		executions     *exec.Manager
+		debugs         *debug.Manager
+		runtimeOwner   *runtimes.Owner
+		catalog        *runtimes.Catalog
+		logger         zerolog.Logger
+		handles        *handleTable
+		owned          ownedSession
+		client         clientOptions
+		watch          debug.Subscription
+		pendingLaunch  *launchAttempt
+		queuedLaunches map[*launchAttempt]struct{}
+		currentLaunch  *launchAttempt
+		activeLaunch   *launchAttempt
+		activeCancel   context.CancelCauseFunc
+		runStop        context.CancelFunc
+		closing        bool
+		failure        error
+		rollbackErr    error
+		ownedClosed    bool
+		ownedCloseErr  error
+		watchStop      chan struct{}
+		watchDone      chan struct{}
+		terminalSent   bool
+		sequence       int
+		initialized    bool
+		launched       bool
+		configured     bool
+		disconnected   bool
+		initialStop    *initialStop
+		breakpoints    *breakpointIDs
+		watchFailure   error
+		wake           chan struct{}
+		cleanupOnce    sync.Once
+		cleanupErr     error
 	}
 
 	ownedSession struct {
-		workspace       workspace.ID
-		session         exec.SessionID
-		debug           debug.SessionID
-		root            string
-		program         string
-		programIdentity sourceIdentity
-		stopOnEntry     bool
-		coordinates     *sourceCoordinates
+		workspace        workspace.ID
+		session          exec.SessionID
+		debug            debug.SessionID
+		root             string
+		program          string
+		programIdentity  sourceIdentity
+		stopOnEntry      bool
+		coordinates      *sourceCoordinates
+		runtimeName      string
+		workingDirectory string
 	}
 )
-
-// Run reads and serves DAP requests until disconnect or stream EOF.
-func (s *Server) Run(ctx context.Context) (result error) {
-	s.logger.Info().Msg("DAP session started")
-
-	stopCancellation := make(chan struct{})
-
-	if s.readerClose != nil {
-		go func() {
-			select {
-			case <-ctx.Done():
-				_ = s.readerClose.Close()
-			case <-stopCancellation:
-			}
-		}()
-	}
-
-	defer func() {
-		close(stopCancellation)
-		result = errors.Join(result, s.cleanup())
-
-		status := "completed"
-
-		if errors.Is(result, context.Canceled) {
-			status = "canceled"
-		} else if result != nil {
-			status = "failed"
-		}
-
-		s.logger.Info().Str("status", status).Msg("DAP session ended")
-	}()
-
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		message, initializeOptions, err := readProtocolMessage(s.reader)
-		if err != nil {
-			if contextErr := ctx.Err(); contextErr != nil {
-				return contextErr
-			}
-
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-
-			return fmt.Errorf("read DAP message: %w", err)
-		}
-
-		request, ok := message.(protocol.RequestMessage)
-		if !ok {
-			continue
-		}
-
-		if err := s.dispatch(ctx, request, initializeOptions); err != nil {
-			return err
-		}
-
-		s.stateMu.Lock()
-		disconnected := s.disconnected
-		s.stateMu.Unlock()
-
-		if disconnected {
-			return nil
-		}
-	}
-}
 
 func (s *Server) dispatch(
 	ctx context.Context,
 	request protocol.RequestMessage,
 	initializeOptions initializeClientOptions,
+	attempt *launchAttempt,
+	targets []*launchAttempt,
 ) error {
 	switch typed := request.(type) {
 	case *protocol.InitializeRequest:
 		return s.handleInitialize(typed, initializeOptions)
 	case *protocol.LaunchRequest:
-		return s.handleLaunch(ctx, typed)
+		return s.handleLaunch(ctx, typed, attempt)
 	case *protocol.ConfigurationDoneRequest:
 		return s.handleConfigurationDone(ctx, typed)
 	case *sourceBreakpointsRequest:
@@ -172,7 +124,9 @@ func (s *Server) dispatch(
 	case *protocol.EvaluateRequest:
 		return s.handleEvaluate(ctx, typed)
 	case *protocol.TerminateRequest:
-		return s.handleTerminate(ctx, typed)
+		return s.handleTerminate(ctx, typed, targets)
+	case *protocol.CancelRequest:
+		return s.handleCancel(typed)
 	case *protocol.DisconnectRequest:
 		return s.handleDisconnect(ctx, typed)
 	default:
@@ -189,8 +143,22 @@ func (s *Server) send(
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
+	s.stateMu.Lock()
+	closing := s.closing
+	s.stateMu.Unlock()
+
+	if closing {
+		return errAdapterClosing
+	}
+
 	s.sequence++
+
 	message := build(protocol.ProtocolMessage{Seq: s.sequence})
+	if message == nil {
+		s.sequence--
+
+		return nil
+	}
 
 	switch typed := message.(type) {
 	case protocol.ResponseMessage:
@@ -202,7 +170,10 @@ func (s *Server) send(
 	}
 
 	if err := protocol.WriteProtocolMessage(s.writer, message); err != nil {
-		return fmt.Errorf("write DAP message: %w", err)
+		failure := fmt.Errorf("write DAP message: %w", err)
+		s.stop(failure)
+
+		return failure
 	}
 
 	if sent != nil {
@@ -222,6 +193,16 @@ func (s *Server) sendFailureWithDiagnostic(
 	diagnosticErr error,
 	enrichers ...logEnricher,
 ) error {
+	return s.sendFailureDetails(request, requestErr, requestErr, diagnosticErr, enrichers...)
+}
+
+func (s *Server) sendFailureDetails(
+	request *protocol.Request,
+	requestErr error,
+	details error,
+	diagnosticErr error,
+	enrichers ...logEnricher,
+) error {
 	s.logRequestFailure(request, diagnosticErr, enrichers...)
 	message := requestErr.Error()
 
@@ -236,7 +217,7 @@ func (s *Server) sendFailureWithDiagnostic(
 			},
 			Body: protocol.ErrorResponseBody{Error: &protocol.ErrorMessage{
 				Id:       1,
-				Format:   message,
+				Format:   details.Error(),
 				ShowUser: true,
 			}},
 		}
@@ -249,42 +230,4 @@ func (s *Server) response(request *protocol.Request) protocol.Response {
 		Success:    true,
 		Command:    request.Command,
 	}
-}
-
-func (s *Server) cleanup() error {
-	s.cleanupOnce.Do(func() {
-		var result error
-		s.takePendingLaunch()
-		s.invalidateHandles("cleanup")
-
-		if s.watch.Cancel != nil {
-			s.watch.Cancel()
-		}
-
-		ctx := context.Background()
-
-		if s.owned.debug != "" {
-			if _, err := s.debugs.TerminateSession(ctx, s.owned.debug); err != nil {
-				s.logger.Error().Err(err).Msg("DAP debug session cleanup termination failed")
-			}
-
-			result = errors.Join(result, s.debugs.CloseSession(ctx, s.owned.debug))
-		}
-
-		if s.owned.session != "" {
-			result = errors.Join(result, s.executions.CloseSession(ctx, s.owned.session))
-		}
-
-		if s.owned.workspace != "" {
-			result = errors.Join(result, s.workspaces.Close(ctx, s.owned.workspace))
-		}
-
-		result = errors.Join(result, s.debugs.Close(ctx))
-		result = errors.Join(result, s.executions.Close(ctx))
-		result = errors.Join(result, s.workspaces.Clear(ctx))
-		result = errors.Join(result, s.runtime.Close())
-		s.cleanupErr = result
-	})
-
-	return s.cleanupErr
 }

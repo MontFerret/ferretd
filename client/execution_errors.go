@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	errInvalidSessionRuntime      = errors.New("daemon returned an invalid session runtime acknowledgment")
 	errIncompleteExecutionSession = errors.New("daemon returned an incomplete execution session")
 	errIncompleteExecution        = errors.New("daemon returned an incomplete execution")
 	errIncompleteExecutionEvent   = errors.New("daemon returned an incomplete execution event")
@@ -14,6 +15,10 @@ var (
 	ErrExecutionSourceNotFound = errors.New("execution source not found")
 	// ErrExecutionSourceClosed reports a workspace that can no longer compile sources.
 	ErrExecutionSourceClosed = errors.New("execution source is closed")
+	// ErrRuntimeNotFound reports an unknown selected execution runtime.
+	ErrRuntimeNotFound = errors.New("runtime not found")
+	// ErrRuntimeUnavailable reports failure to acquire the selected execution runtime.
+	ErrRuntimeUnavailable = errors.New("runtime unavailable")
 	// ErrSessionNotFound reports an unknown daemon Session.
 	ErrSessionNotFound = errors.New("execution session not found")
 	// ErrSessionClosed reports a Session that no longer accepts child Executions.
@@ -30,19 +35,24 @@ var (
 	ErrExecutionWatcherLagged = errors.New("execution watcher lagged")
 	// ErrExecutionServiceClosed reports a daemon execution manager that is shutting down.
 	ErrExecutionServiceClosed = errors.New("execution service is closed")
-	// ErrCompilationFailed reports Ferret compiler diagnostics without creating a Session.
+	// ErrCompilationFailed reports runtime preparation failure without creating a Session.
 	ErrCompilationFailed = errors.New("execution compilation failed")
 )
 
-// CompilationError retains structured diagnostics for a failed CreateSession call.
+// CompilationError retains diagnostics and the cause of failed Session preparation.
 type CompilationError struct {
 	Source      SourceSnapshot
 	Diagnostics []Diagnostic
 	cause       error
+	message     string
 }
 
 // Error describes the source that failed compilation.
 func (e *CompilationError) Error() string {
+	if len(e.Diagnostics) == 0 && e.message != "" {
+		return e.message
+	}
+
 	return fmt.Sprintf("%v: %s", ErrCompilationFailed, e.Source.RelativePath)
 }
 

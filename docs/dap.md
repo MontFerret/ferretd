@@ -5,6 +5,32 @@ stdout. Stdout contains framed DAP messages only. Adapter diagnostics are
 newline-delimited JSON records on the process stderr stream; process-facing
 errors are also written to stderr.
 
+## Runtime configuration
+
+Standalone DAP accepts the same startup definitions as `ferretd serve`:
+
+```sh
+ferretd dap --runtime-config /absolute/path/runtimes.json
+```
+
+See the [runtime configuration example](../README.md#runtime-definitions-and-discovery)
+for the JSON schema. The implicit built-in `local` runtime is the default when
+the flag or `defaultRuntime` is omitted. Additional Wire definitions and Wire defaults are accepted after strict
+configuration validation. Startup and initialization never connect to or probe
+Wire targets. Launch is the acquisition boundary; an unavailable default fails
+launch without falling back to `local`.
+
+An explicitly requested missing, unreadable, malformed, or invalid file fails
+the process with diagnostics on stderr and no stdout bytes. Configuration uses
+one strict JSON object, rejecting unknown fields, invalid types, null typed
+fields, and trailing values. Relative file paths use the process working
+directory. Pass the same absolute configuration path to `serve` and `dap` for
+consistent definitions. Each reads once and constructs its own immutable catalog,
+runtime acquisition owner, shared native root, and service graph. Its compiled
+Session owns the selected binding; DAP closes children and plans before that binding
+and closes the owner afterward. It does not connect to `serve`. There is no live
+reload. Sharing a file shares definitions, never live instances.
+
 ## Diagnostics
 
 DAP lifecycle transitions, rejected or failed requests, debugger stops, and
@@ -17,8 +43,8 @@ ferretd dap --log-level debug
 
 The shared `--log-level` option accepts `debug`, `info`, `warn`, or `error`.
 Debug records identify message direction and ordering and include compact fields
-such as source paths, breakpoint counts, thread IDs, frame handles, variable
-references, and evaluation-expression length. Existing workspace, execution
+such as `runtime_name`, source paths, breakpoint counts, thread IDs, frame handles,
+variable references, and evaluation-expression length. Existing workspace, execution
 Session, and DebugSession IDs correlate records after a successful launch.
 Successful responses that intentionally short-circuit empty evaluations include
 `empty=true` together with the request's context, frame handle, and expression
@@ -32,7 +58,8 @@ source instead records the underlying path-resolution error.
 
 Launch diagnostics distinguish the source `program`, workspace `root`, and
 explicit runtime `working_directory`. Successful launch records use the
-canonical working directory; the field is omitted when no override was supplied.
+native canonical directory or exact Wire host value; the field is omitted when
+no override was supplied.
 
 Diagnostics never serialize whole DAP payloads. Query contents, parameters,
 environment variables, evaluation expressions and results, source contents, and
@@ -60,8 +87,11 @@ Launch arguments:
   `cwd`;
 * `cwd` (optional): an existing compilation/workspace root containing `program`;
   when omitted, the program directory is used;
-* `workingDirectory` (optional, Ferret-specific): an absolute path to an
-  accessible directory used as the running program's filesystem root;
+* `runtimeName` (optional, Ferret-specific): an exact configured runtime name;
+  omitted or empty uses this adapter process's configured default;
+* `noDebug` (optional, default `false`): must be a boolean; `true` is unsupported;
+* `workingDirectory` (optional, Ferret-specific): a runtime filesystem root,
+  interpreted and validated by the selected runtime's provider;
 * `parameters` (optional): a JSON object bound as Ferret query parameters;
 * `stopOnEntry` (optional, default `false`): report the synthetic initial entry
   suspension when `true`. When `false`, suppress only that entry suspension;
@@ -80,7 +110,9 @@ retroactively reclassify or suppress that initial stop.
 
 Launch arguments may contain additional client-supplied properties. The adapter
 ignores properties it does not recognize while continuing to decode and validate
-the supported Ferret arguments above.
+the supported arguments above. Explicit null/non-string `runtimeName` and
+null/non-boolean `noDebug` fail before acquisition. Names are never trimmed,
+interpreted as endpoints, or replaced with another target on failure.
 
 An explicitly selected `program` may be beneath a directory excluded from
 automatic workspace discovery, such as `.tmp`, `testdata`, or a nested Go module.
@@ -94,12 +126,13 @@ use this runtime root, while source resolution, breakpoints, and stack-frame
 paths continue to use the workspace and launched source. The adapter does not
 change its process working directory.
 
-Omitting `workingDirectory` preserves the existing workspace-root runtime
-behavior. A supplied value must be a nonblank string containing an absolute
-path; relative paths are not resolved against `cwd`. The execution layer trims
-surrounding whitespace, resolves symlinks, and validates directory access.
-Explicit `null`, empty or whitespace-only strings, non-string values, missing
-paths, regular files, and unresolvable symlinks fail the launch request.
+Omitting `workingDirectory` retains no explicit override. Native execution uses
+the workspace root; Wire execution inherits the application's runtime default,
+without transmitting a local root. Explicit null, blank, and non-string values
+fail launch. Native overrides must be absolute: execution trims whitespace,
+resolves symlinks, and validates directory access. Wire overrides retain exact
+bytes, including host-specific/relative paths; their interpretation and validation
+belong to the host. No local path check or OS normalization is applied to Wire.
 
 Example launch configuration:
 
@@ -107,10 +140,10 @@ Example launch configuration:
 {
   "type": "ferretd",
   "request": "launch",
-  "name": "Debug query",
+  "name": "Debug application query",
+  "runtimeName": "application",
   "program": "/project/queries/main.fql",
   "cwd": "/project",
-  "workingDirectory": "/project/runtime",
   "parameters": {
     "url": "https://example.com"
   },
@@ -118,12 +151,67 @@ Example launch configuration:
 }
 ```
 
+The IDE must separately configure the adapter executable with
+`--runtime-config /project/.ferret/runtimes.json`. Configuration paths, endpoints,
+credentials, and connection options are not launch arguments. This example does
+not imply existing IDE extensions already configure these layers.
+
+## Runtime selection compatibility
+
+Initialize responses include the Ferret extension
+`supportsFerretRuntimeSelection: true` alongside standard capabilities. Clients
+implementing selection must check it **before sending any nonempty runtimeName**,
+including `local`. Absent/false means explicit selection must be prevented: older
+adapters may silently ignore the unknown launch property. The capability promises
+only selector support, not reachability or debugger availability.
+
+Every successful launch acknowledges the resolved Session name:
+
+```json
+{"body": {"runtimeName": "application"}}
+```
+
+Verify explicit selections against this acknowledgment. It cannot replace the
+pre-launch capability check: the response follows execution-start admission.
+
+## Cancellation and shutdown
+
+The adapter advertises `supportsCancelRequest: true` for its single pending
+launch. `cancel` with the launch request's `requestId` requests cancellation during
+preparation and configuration, including blocked pre-configuration breakpoints.
+Missing, unknown, and completed IDs are successful no-ops. No progress
+cancellation is implemented. If cancellation wins, the original launch receives
+exactly one unsuccessful response with top-level `message: "cancelled"`; its
+error details retain preparation/cleanup causes. The cancel acknowledgment does
+not replace that response. A late cancel cannot stop a successfully launched query.
+
+A fully rolled-back attempt before publication permits a later valid launch.
+After a prepared session is exposed, cancellation ends that session; restart and
+relaunch are unsupported. Non-restart termination is valid during admitted launch
+preparation. Disconnect, EOF, process cancellation, and termination interrupt
+blocked runtime calls and settle owned resources. Termination and disconnect also
+cancel every launch already queued before the control, so rollback cannot admit
+another preparation ahead of shutdown. Targeted `cancel` affects only its matching
+launch. A control received during `configurationDone` retains its acknowledgment
+and normal launch-failure/event ordering. Cleanup is cooperative and may
+outlast acquisition cancellation; there is no fixed shutdown deadline.
+
+Input remains responsive through a bounded 64-request FIFO and one semantic
+dispatch worker. Controls are validated before their cancellation effects. Queue
+overflow is an exceptional adapter failure reported on stderr: active work is
+cancelled and cleanup proceeds without depending on another DAP response.
+
+Termination, disconnect (including terminate-related options), EOF, and adapter
+failure release the query's resources while leaving the hosting application and
+Wire server alive. There is no reconnection or query replay. Debugging steps
+through FQL around application functions, not inside their native Go bodies.
+
 ## Supported behavior
 
 The adapter supports source breakpoints, continue, pause, next, step-in,
 step-out, threads, stack traces, scopes, variables, frame-scoped evaluation,
-terminate, and disconnect. Breakpoints replace all prior breakpoints for the
-launched source atomically and bind to Ferret's next executable location in that
+terminate, disconnect, and pending-launch cancel. Breakpoints replace all prior
+breakpoints for the launched source atomically and bind to Ferret's next executable location in that
 file. Replacement is supported before execution, while paused, and while running;
 an empty set clears the source's breakpoints. A failed replacement leaves the
 previous set intact. Updates apply immediately without pausing or resuming

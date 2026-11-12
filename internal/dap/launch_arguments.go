@@ -10,6 +10,8 @@ import (
 )
 
 type launchArguments struct {
+	RuntimeName      json.RawMessage `json:"runtimeName,omitempty"`
+	NoDebug          json.RawMessage `json:"noDebug,omitempty"`
 	Program          string          `json:"program"`
 	CWD              string          `json:"cwd,omitempty"`
 	WorkingDirectory json.RawMessage `json:"workingDirectory,omitempty"`
@@ -44,4 +46,34 @@ func (a launchArguments) logWorkingDirectory(event *zerolog.Event) {
 	if err := json.Unmarshal(a.WorkingDirectory, &directory); err == nil && directory != nil {
 		event.Str("working_directory", *directory)
 	}
+}
+
+func (a launchArguments) runtimeName() (string, error) {
+	if len(a.RuntimeName) == 0 {
+		return "", nil
+	}
+
+	var name *string
+	if err := json.Unmarshal(a.RuntimeName, &name); err != nil || name == nil {
+		return "", fmt.Errorf("runtimeName must be a string")
+	}
+
+	return *name, nil
+}
+
+func (a launchArguments) validateDebugMode() error {
+	if len(a.NoDebug) == 0 {
+		return nil
+	}
+
+	var noDebug *bool
+	if err := json.Unmarshal(a.NoDebug, &noDebug); err != nil || noDebug == nil {
+		return fmt.Errorf("noDebug must be a boolean")
+	}
+
+	if *noDebug {
+		return fmt.Errorf("noDebug is not supported")
+	}
+
+	return nil
 }

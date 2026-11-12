@@ -16,7 +16,11 @@ type runtimeLifecyclePlan struct {
 
 var _ api.Plan = (*runtimeLifecyclePlan)(nil)
 
-func (p *runtimeLifecyclePlan) Params() ([]string, error) {
+func (p *runtimeLifecyclePlan) Params(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	return nil, nil
 }
 

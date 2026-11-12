@@ -12,6 +12,7 @@ import (
 
 func TestDAPProcessInitialStop(t *testing.T) {
 	binary := buildDAPProcess(t)
+	runtimeConfig := writeRuntimeConfig(t, `{"runtimes":[{"name":"application","provider":"wire","endpoint":"tcp://127.0.0.1:9000"}]}`)
 
 	for _, test := range []struct {
 		name        string
@@ -19,8 +20,10 @@ func TestDAPProcessInitialStop(t *testing.T) {
 		breakpoint  int
 		reason      string
 		line        int
+		config      bool
 	}{
 		{name: "suppressed entry"},
+		{name: "unused Wire target", config: true},
 		{name: "first statement breakpoint", breakpoint: 1, reason: "breakpoint", line: 1},
 		{name: "entry", stopOnEntry: true, reason: "entry", line: 1},
 		{name: "entry and breakpoint are one stop", stopOnEntry: true, breakpoint: 1, reason: "breakpoint", line: 1},
@@ -34,7 +37,13 @@ func TestDAPProcessInitialStop(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			client := newDAPProcessClient(t, binary)
+			var arguments []string
+
+			if test.config {
+				arguments = []string{"--runtime-config", runtimeConfig}
+			}
+
+			client := newDAPProcessClient(t, binary, arguments...)
 			client.send("initialize", map[string]any{"adapterID": "ferretd"})
 			client.response("initialize")
 			client.send("launch", map[string]any{"program": program, "cwd": root, "stopOnEntry": test.stopOnEntry})

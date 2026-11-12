@@ -7,6 +7,7 @@ option go_package = "github.com/MontFerret/ferretd/gen/ferretd/daemon/v1;daemonv
 service DaemonService {
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+  rpc ListRuntimes(ListRuntimesRequest) returns (ListRuntimesResponse);
 }
 
 message ApiVersion {
@@ -36,3 +37,17 @@ message ApiCompatibilityError {
 message ShutdownRequest {}
 
 message ShutdownResponse {}
+
+// RuntimeDescriptor describes a configured target, not connectivity or capabilities.
+message RuntimeDescriptor {
+  string name = 1;
+  string label = 2;
+  string provider = 3;
+}
+
+message ListRuntimesRequest {}
+
+message ListRuntimesResponse {
+  string default_runtime = 1;
+  repeated RuntimeDescriptor runtimes = 2;
+}

@@ -23,7 +23,11 @@ var (
 	_ api.SessionOptions = (*runtimeSessionOptions)(nil)
 )
 
-func (p *planSpy) Params() ([]string, error) {
+func (p *planSpy) Params(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	return nil, nil
 }
 

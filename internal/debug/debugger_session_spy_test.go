@@ -76,7 +76,7 @@ func (s *debuggerSessionSpy) Continue(ctx context.Context) (*apidebugger.Event, 
 
 	return &apidebugger.Event{
 		Reason: apidebugger.ReasonCompleted,
-		Output: &api.Output{ContentType: "application/json", Content: []byte("1")},
+		Output: &api.Content{Metadata: api.Metadata{ContentType: "application/json"}, Data: []byte("1")},
 	}, nil
 }
 

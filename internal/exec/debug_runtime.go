@@ -74,7 +74,7 @@ func (r *DebugRuntime) MaterializeFailure(err error) *RuntimeFailure {
 // observe the same session close result.
 func (r *DebugRuntime) Close() error {
 	r.runtime.cancel(errExecutionCanceled)
-	err := r.runtime.closeSession()
+	err := r.runtime.closeResources()
 	r.lease.release()
 
 	return err
@@ -91,26 +91,37 @@ func (m *Manager) CreateDebugRuntime(
 	id SessionID,
 	parameters Parameters,
 	options RuntimeOptions,
-) (*DebugRuntime, error) {
+) (created *DebugRuntime, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	input, err := newRuntimeInput(parameters, options)
+	operation, operationCtx := newConstruction(ctx)
+	defer operation.finish()
+
+	creation, err := m.sessions.beginRuntimeCreate(id, operation)
 	if err != nil {
 		return nil, err
 	}
 
-	creation, err := m.sessions.beginRuntimeCreate(id)
-	if err != nil {
-		return nil, err
-	}
-	defer creation.finish()
+	defer func() {
+		closedErr := creation.finish()
+
+		if resultErr != nil {
+			resultErr = errors.Join(resultErr, closedErr, constructionError(ctx), constructionError(operationCtx))
+		}
+	}()
 
 	parent := creation.session()
 
-	target, err := parent.acquireDebugRuntimeTarget(ctx)
+	input, err := parent.prepareInput(parameters, options)
 	if err != nil {
+		return nil, err
+	}
+
+	target, err := parent.acquireDebugRuntimeTarget(operationCtx, operation)
+	if err != nil {
+		err = errors.Join(err, constructionError(operationCtx))
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, ErrSessionClosed) || errors.Is(err, workspace.ErrClosed) ||
 			errors.Is(err, workspace.ErrDocumentNotFound) {
@@ -126,12 +137,14 @@ func (m *Manager) CreateDebugRuntime(
 
 	runtime := newExecutionRuntime(target, input)
 
-	debugger, err := target.plan.NewDebugSession(ctx, runtime.sessionOptions()...)
+	debugger, err := target.plan.NewDebugSession(operationCtx, runtime.sessionOptions()...)
+
+	err = errors.Join(err, parent.publicationError(operationCtx))
 	if err != nil {
 		runtime.cancel(errExecutionCanceled)
 
 		if debugger != nil {
-			err = errors.Join(err, debugger.Close())
+			err = errors.Join(err, operation.recordCleanup(debugger.Close()))
 		}
 
 		parent.releaseDebugRuntime()

@@ -345,6 +345,155 @@ func (*ShutdownResponse) Descriptor() ([]byte, []int) {
 	return file_ferretd_daemon_v1_daemon_proto_rawDescGZIP(), []int{6}
 }
 
+// RuntimeDescriptor describes a configured target, not connectivity or capabilities.
+type RuntimeDescriptor struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	Provider      string                 `protobuf:"bytes,3,opt,name=provider,proto3" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RuntimeDescriptor) Reset() {
+	*x = RuntimeDescriptor{}
+	mi := &file_ferretd_daemon_v1_daemon_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuntimeDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuntimeDescriptor) ProtoMessage() {}
+
+func (x *RuntimeDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_ferretd_daemon_v1_daemon_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuntimeDescriptor.ProtoReflect.Descriptor instead.
+func (*RuntimeDescriptor) Descriptor() ([]byte, []int) {
+	return file_ferretd_daemon_v1_daemon_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RuntimeDescriptor) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RuntimeDescriptor) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *RuntimeDescriptor) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+type ListRuntimesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRuntimesRequest) Reset() {
+	*x = ListRuntimesRequest{}
+	mi := &file_ferretd_daemon_v1_daemon_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRuntimesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRuntimesRequest) ProtoMessage() {}
+
+func (x *ListRuntimesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ferretd_daemon_v1_daemon_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRuntimesRequest.ProtoReflect.Descriptor instead.
+func (*ListRuntimesRequest) Descriptor() ([]byte, []int) {
+	return file_ferretd_daemon_v1_daemon_proto_rawDescGZIP(), []int{8}
+}
+
+type ListRuntimesResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	DefaultRuntime string                 `protobuf:"bytes,1,opt,name=default_runtime,json=defaultRuntime,proto3" json:"default_runtime,omitempty"`
+	Runtimes       []*RuntimeDescriptor   `protobuf:"bytes,2,rep,name=runtimes,proto3" json:"runtimes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListRuntimesResponse) Reset() {
+	*x = ListRuntimesResponse{}
+	mi := &file_ferretd_daemon_v1_daemon_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRuntimesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRuntimesResponse) ProtoMessage() {}
+
+func (x *ListRuntimesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ferretd_daemon_v1_daemon_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRuntimesResponse.ProtoReflect.Descriptor instead.
+func (*ListRuntimesResponse) Descriptor() ([]byte, []int) {
+	return file_ferretd_daemon_v1_daemon_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListRuntimesResponse) GetDefaultRuntime() string {
+	if x != nil {
+		return x.DefaultRuntime
+	}
+	return ""
+}
+
+func (x *ListRuntimesResponse) GetRuntimes() []*RuntimeDescriptor {
+	if x != nil {
+		return x.Runtimes
+	}
+	return nil
+}
+
 var File_ferretd_daemon_v1_daemon_proto protoreflect.FileDescriptor
 
 const file_ferretd_daemon_v1_daemon_proto_rawDesc = "" +
@@ -373,10 +522,19 @@ const file_ferretd_daemon_v1_daemon_proto_rawDesc = "" +
 	"\n" +
 	"server_api\x18\x02 \x01(\v2\x1d.ferretd.daemon.v1.ApiVersionR\tserverApi\"\x11\n" +
 	"\x0fShutdownRequest\"\x12\n" +
-	"\x10ShutdownResponse2\xb6\x01\n" +
+	"\x10ShutdownResponse\"Y\n" +
+	"\x11RuntimeDescriptor\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1a\n" +
+	"\bprovider\x18\x03 \x01(\tR\bprovider\"\x15\n" +
+	"\x13ListRuntimesRequest\"\x81\x01\n" +
+	"\x14ListRuntimesResponse\x12'\n" +
+	"\x0fdefault_runtime\x18\x01 \x01(\tR\x0edefaultRuntime\x12@\n" +
+	"\bruntimes\x18\x02 \x03(\v2$.ferretd.daemon.v1.RuntimeDescriptorR\bruntimes2\x97\x02\n" +
 	"\rDaemonService\x12P\n" +
 	"\aGetInfo\x12!.ferretd.daemon.v1.GetInfoRequest\x1a\".ferretd.daemon.v1.GetInfoResponse\x12S\n" +
-	"\bShutdown\x12\".ferretd.daemon.v1.ShutdownRequest\x1a#.ferretd.daemon.v1.ShutdownResponseB>Z<github.com/MontFerret/ferretd/gen/ferretd/daemon/v1;daemonv1b\x06proto3"
+	"\bShutdown\x12\".ferretd.daemon.v1.ShutdownRequest\x1a#.ferretd.daemon.v1.ShutdownResponse\x12_\n" +
+	"\fListRuntimes\x12&.ferretd.daemon.v1.ListRuntimesRequest\x1a'.ferretd.daemon.v1.ListRuntimesResponseB>Z<github.com/MontFerret/ferretd/gen/ferretd/daemon/v1;daemonv1b\x06proto3"
 
 var (
 	file_ferretd_daemon_v1_daemon_proto_rawDescOnce sync.Once
@@ -390,7 +548,7 @@ func file_ferretd_daemon_v1_daemon_proto_rawDescGZIP() []byte {
 	return file_ferretd_daemon_v1_daemon_proto_rawDescData
 }
 
-var file_ferretd_daemon_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_ferretd_daemon_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_ferretd_daemon_v1_daemon_proto_goTypes = []any{
 	(*ApiVersion)(nil),            // 0: ferretd.daemon.v1.ApiVersion
 	(*GetInfoRequest)(nil),        // 1: ferretd.daemon.v1.GetInfoRequest
@@ -399,6 +557,9 @@ var file_ferretd_daemon_v1_daemon_proto_goTypes = []any{
 	(*ApiCompatibilityError)(nil), // 4: ferretd.daemon.v1.ApiCompatibilityError
 	(*ShutdownRequest)(nil),       // 5: ferretd.daemon.v1.ShutdownRequest
 	(*ShutdownResponse)(nil),      // 6: ferretd.daemon.v1.ShutdownResponse
+	(*RuntimeDescriptor)(nil),     // 7: ferretd.daemon.v1.RuntimeDescriptor
+	(*ListRuntimesRequest)(nil),   // 8: ferretd.daemon.v1.ListRuntimesRequest
+	(*ListRuntimesResponse)(nil),  // 9: ferretd.daemon.v1.ListRuntimesResponse
 }
 var file_ferretd_daemon_v1_daemon_proto_depIdxs = []int32{
 	0, // 0: ferretd.daemon.v1.GetInfoRequest.client_api:type_name -> ferretd.daemon.v1.ApiVersion
@@ -406,15 +567,18 @@ var file_ferretd_daemon_v1_daemon_proto_depIdxs = []int32{
 	2, // 2: ferretd.daemon.v1.GetInfoResponse.server_info:type_name -> ferretd.daemon.v1.ServerInfo
 	0, // 3: ferretd.daemon.v1.ApiCompatibilityError.client_api:type_name -> ferretd.daemon.v1.ApiVersion
 	0, // 4: ferretd.daemon.v1.ApiCompatibilityError.server_api:type_name -> ferretd.daemon.v1.ApiVersion
-	1, // 5: ferretd.daemon.v1.DaemonService.GetInfo:input_type -> ferretd.daemon.v1.GetInfoRequest
-	5, // 6: ferretd.daemon.v1.DaemonService.Shutdown:input_type -> ferretd.daemon.v1.ShutdownRequest
-	3, // 7: ferretd.daemon.v1.DaemonService.GetInfo:output_type -> ferretd.daemon.v1.GetInfoResponse
-	6, // 8: ferretd.daemon.v1.DaemonService.Shutdown:output_type -> ferretd.daemon.v1.ShutdownResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	7, // 5: ferretd.daemon.v1.ListRuntimesResponse.runtimes:type_name -> ferretd.daemon.v1.RuntimeDescriptor
+	1, // 6: ferretd.daemon.v1.DaemonService.GetInfo:input_type -> ferretd.daemon.v1.GetInfoRequest
+	5, // 7: ferretd.daemon.v1.DaemonService.Shutdown:input_type -> ferretd.daemon.v1.ShutdownRequest
+	8, // 8: ferretd.daemon.v1.DaemonService.ListRuntimes:input_type -> ferretd.daemon.v1.ListRuntimesRequest
+	3, // 9: ferretd.daemon.v1.DaemonService.GetInfo:output_type -> ferretd.daemon.v1.GetInfoResponse
+	6, // 10: ferretd.daemon.v1.DaemonService.Shutdown:output_type -> ferretd.daemon.v1.ShutdownResponse
+	9, // 11: ferretd.daemon.v1.DaemonService.ListRuntimes:output_type -> ferretd.daemon.v1.ListRuntimesResponse
+	9, // [9:12] is the sub-list for method output_type
+	6, // [6:9] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_ferretd_daemon_v1_daemon_proto_init() }
@@ -428,7 +592,7 @@ func file_ferretd_daemon_v1_daemon_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ferretd_daemon_v1_daemon_proto_rawDesc), len(file_ferretd_daemon_v1_daemon_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

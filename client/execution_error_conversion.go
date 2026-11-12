@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
@@ -11,6 +12,10 @@ import (
 )
 
 func mapCreateSessionError(ctx context.Context, err error) error {
+	if classified := executionResourceError(err); classified != nil {
+		return errors.Join(classified, ctx.Err())
+	}
+
 	mapped := mapError(ctx, err)
 
 	grpcStatus, ok := status.FromError(mapped)
@@ -30,7 +35,7 @@ func mapCreateSessionError(ctx context.Context, err error) error {
 	}
 
 	if classified := executionResourceError(mapped); classified != nil {
-		return classified
+		return errors.Join(classified, ctx.Err())
 	}
 
 	switch grpcStatus.Code() {
@@ -48,6 +53,10 @@ func mapSessionError(ctx context.Context, err error) error {
 }
 
 func mapCreateExecutionError(ctx context.Context, err error) error {
+	if classified := executionResourceError(err); classified != nil {
+		return errors.Join(classified, ctx.Err())
+	}
+
 	mapped := mapExecutionStatus(ctx, err, ErrSessionNotFound, ErrSessionClosed)
 
 	grpcStatus, ok := status.FromError(mapped)
@@ -63,6 +72,10 @@ func mapExecutionError(ctx context.Context, err error) error {
 }
 
 func mapWatchExecutionError(ctx context.Context, err error) error {
+	if classified := executionResourceError(err); classified != nil {
+		return errors.Join(classified, ctx.Err())
+	}
+
 	mapped := mapExecutionError(ctx, err)
 
 	grpcStatus, ok := status.FromError(mapped)
@@ -76,7 +89,7 @@ func mapWatchExecutionError(ctx context.Context, err error) error {
 func mapExecutionStatus(ctx context.Context, err, notFound, failedPrecondition error) error {
 	mapped := mapError(ctx, err)
 	if classified := executionResourceError(mapped); classified != nil {
-		return classified
+		return errors.Join(classified, ctx.Err())
 	}
 
 	grpcStatus, ok := status.FromError(mapped)
@@ -111,7 +124,15 @@ func executionResourceError(err error) error {
 			return nil
 		}
 
-		return fmt.Errorf("%w: %s", classification, grpcStatus.Message())
+		result := fmt.Errorf("%w: %w", classification, err)
+		switch grpcStatus.Code() {
+		case codes.Canceled:
+			return errors.Join(result, context.Canceled)
+		case codes.DeadlineExceeded:
+			return errors.Join(result, context.DeadlineExceeded)
+		default:
+			return result
+		}
 	}
 
 	return nil
@@ -122,6 +143,10 @@ func resourceClassification(
 	condition executionv1.ResourceCondition,
 ) error {
 	switch {
+	case resource == executionv1.ResourceKind_RESOURCE_KIND_RUNTIME && condition == executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND:
+		return ErrRuntimeNotFound
+	case resource == executionv1.ResourceKind_RESOURCE_KIND_RUNTIME && condition == executionv1.ResourceCondition_RESOURCE_CONDITION_UNAVAILABLE:
+		return ErrRuntimeUnavailable
 	case resource == executionv1.ResourceKind_RESOURCE_KIND_WORKSPACE &&
 		condition == executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND:
 		return ErrWorkspaceNotFound
@@ -163,6 +188,9 @@ func resourceClassification(
 
 func compilationErrorFromProto(value *executionv1.CompilationFailure, cause error) error {
 	result := &CompilationError{cause: cause}
+	if grpcStatus, ok := status.FromError(cause); ok {
+		result.message = grpcStatus.Message()
+	}
 
 	if value != nil {
 		result.Diagnostics = fromProtoDiagnostics(value.Diagnostics)

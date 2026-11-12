@@ -12,30 +12,40 @@ import (
 
 func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	root := t.TempDir()
+	// kqueue can deliver Create before installing the file's watch. Use
+	// pre-existing files for the update and deletion checks below.
 	writeWorkspaceSource(t, root, "existing.fql", "RETURN 1")
+	writeWorkspaceSource(t, root, "invalid.fql", "RETURN")
 	manager, opened := openWatchedWorkspace(t, root)
 
-	writeWorkspaceSource(t, root, "created.fql", "RETURN 2")
+	// Publish complete creations so the first event cannot observe partial data.
+	staging := t.TempDir()
+	writeWorkspaceSource(t, staging, "created.fql", "RETURN 2")
+
+	if err := os.Rename(filepath.Join(staging, "created.fql"), filepath.Join(root, "created.fql")); err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+
 	waitForWorkspaceChange(t, opened, "created source", func() bool {
 		document, ok := opened.Document("created.fql")
 
 		return ok && document.Content() == "RETURN 2"
 	})
 
-	created, _ := opened.Document("created.fql")
-	writeWorkspaceSource(t, root, "created.fql", "RETURN 3")
+	existing, _ := opened.Document("existing.fql")
+	writeWorkspaceSource(t, root, "existing.fql", "RETURN 3")
 	waitForWorkspaceChange(t, opened, "updated source", func() bool {
-		document, ok := opened.Document("created.fql")
+		document, ok := opened.Document("existing.fql")
 
-		return ok && document.Content() == "RETURN 3" && document.Revision() > created.Revision()
+		return ok && document.Content() == "RETURN 3" && document.Revision() > existing.Revision()
 	})
 
-	if err := os.Rename(filepath.Join(root, "created.fql"), filepath.Join(root, "renamed.fql")); err != nil {
+	if err := os.Rename(filepath.Join(root, "existing.fql"), filepath.Join(root, "renamed.fql")); err != nil {
 		t.Fatalf("Rename .fql to .fql: %v", err)
 	}
 
 	waitForWorkspaceChange(t, opened, "renamed source", func() bool {
-		_, oldFound := opened.Document("created.fql")
+		_, oldFound := opened.Document("existing.fql")
 		renamed, newFound := opened.Document("renamed.fql")
 
 		return !oldFound && newFound && renamed.Content() == "RETURN 3"
@@ -61,16 +71,31 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		return found && document.Content() == "RETURN 3"
 	})
 
-	writeWorkspaceSource(t, root, "new-directory/nested.fql", "RETURN 4")
+	writeWorkspaceSource(t, staging, "new-directory/nested.fql", "RETURN 4")
+
+	if err := os.Rename(filepath.Join(staging, "new-directory"), filepath.Join(root, "new-directory")); err != nil {
+		t.Fatalf("create directory: %v", err)
+	}
+
 	waitForWorkspaceChange(t, opened, "new directory source", func() bool {
 		document, found := opened.Document("new-directory/nested.fql")
 
 		return found && document.Content() == "RETURN 4"
 	})
 
-	if err := os.Rename(filepath.Join(root, "new-directory"), filepath.Join(root, "moved-directory")); err != nil {
-		t.Fatalf("Rename directory: %v", err)
-	}
+	// Windows cannot rename a directory while reconciliation holds descendant
+	// handles. Serialize this mutation with scans using the existing gate.
+	func() {
+		if err := opened.beginMutation(t.Context()); err != nil {
+			t.Fatalf("begin directory rename: %v", err)
+		}
+
+		defer opened.finishMutation()
+
+		if err := os.Rename(filepath.Join(root, "new-directory"), filepath.Join(root, "moved-directory")); err != nil {
+			t.Fatalf("Rename directory: %v", err)
+		}
+	}()
 
 	waitForWorkspaceChange(t, opened, "renamed directory", func() bool {
 		_, oldFound := opened.Document("new-directory/nested.fql")
@@ -79,9 +104,17 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		return !oldFound && newFound && moved.Content() == "RETURN 4"
 	})
 
-	if err := os.RemoveAll(filepath.Join(root, "moved-directory")); err != nil {
-		t.Fatalf("Remove directory: %v", err)
-	}
+	func() {
+		if err := opened.beginMutation(t.Context()); err != nil {
+			t.Fatalf("begin directory removal: %v", err)
+		}
+
+		defer opened.finishMutation()
+
+		if err := os.RemoveAll(filepath.Join(root, "moved-directory")); err != nil {
+			t.Fatalf("Remove directory: %v", err)
+		}
+	}()
 
 	waitForWorkspaceChange(t, opened, "deleted directory", func() bool {
 		_, found := opened.Document("moved-directory/nested.fql")
@@ -112,7 +145,6 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		t.Fatal("dynamic directory symlink source was retained")
 	}
 
-	writeWorkspaceSource(t, root, "invalid.fql", "RETURN")
 	waitForWorkspaceChange(t, opened, "invalid source diagnostics", func() bool {
 		document, found := opened.Document("invalid.fql")
 

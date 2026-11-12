@@ -2,9 +2,11 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/MontFerret/ferretd/internal/lifecycle"
+	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 // workspaceGroup owns Session creation admission and retained membership for
@@ -13,28 +15,45 @@ import (
 type workspaceGroup struct {
 	mu sync.Mutex
 
-	gate     lifecycle.Gate
-	sessions map[SessionID]*sessionEntry
+	gate       lifecycle.Gate
+	sessions   map[SessionID]*sessionEntry
+	pending    map[*construction]struct{}
+	cleanupErr error
 }
 
 func newWorkspaceGroup() *workspaceGroup {
-	return &workspaceGroup{sessions: make(map[SessionID]*sessionEntry)}
+	return &workspaceGroup{sessions: make(map[SessionID]*sessionEntry), pending: make(map[*construction]struct{})}
 }
 
-func (g *workspaceGroup) beginCreate() bool {
+func (g *workspaceGroup) beginCreate(operation *construction) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	return g.gate.BeginCreate()
+	if !g.gate.BeginCreate() {
+		return false
+	}
+
+	g.pending[operation] = struct{}{}
+
+	return true
 }
 
-func (g *workspaceGroup) finishCreate() bool {
+func (g *workspaceGroup) finishCreate(operation *construction) (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	var closedErr error
+
+	if !g.gate.Accepting() {
+		g.cleanupErr = errors.Join(g.cleanupErr, operation.cleanupErr)
+		closedErr = workspace.ErrClosed
+	}
+
+	// Retain rollback errors before EndCreate can wake committed teardown.
+	delete(g.pending, operation)
 	idle := g.gate.EndCreate()
 
-	return idle && g.gate.Accepting() && len(g.sessions) == 0
+	return idle && closedErr == nil && len(g.sessions) == 0, closedErr
 }
 
 func (g *workspaceGroup) add(entry *sessionEntry) bool {
@@ -75,8 +94,12 @@ func (g *workspaceGroup) beginClose() bool {
 	return g.gate.BeginClose()
 }
 
-func (g *workspaceGroup) waitForCreates() {
+func (g *workspaceGroup) waitForCreates() error {
 	g.gate.WaitForCreates()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	return g.cleanupErr
 }
 
 func (g *workspaceGroup) retainedSessions() []*sessionEntry {
@@ -97,4 +120,18 @@ func (g *workspaceGroup) finishClose(err error) {
 
 func (g *workspaceGroup) waitClose(ctx context.Context) error {
 	return g.gate.WaitClose(ctx)
+}
+
+func (g *workspaceGroup) cancelPending() {
+	g.mu.Lock()
+	pending := make([]*construction, 0, len(g.pending))
+	for operation := range g.pending {
+		pending = append(pending, operation)
+	}
+
+	g.mu.Unlock()
+
+	for _, operation := range pending {
+		operation.stop(workspace.ErrClosed)
+	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/MontFerret/api"
 	"github.com/MontFerret/ferret/v2/uapi"
 	"github.com/MontFerret/ferretd/internal/debug"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/source"
 )
 
@@ -76,8 +77,8 @@ func TestNewConstructsNativeRuntimeAdapter(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	if _, ok := server.runtime.(*uapi.Runtime); !ok {
-		t.Fatalf("New runtime = %T, want native Ferret adapter", server.runtime)
+	if _, ok := nativeRuntimeForTest(t, server.runtimeOwner).(*uapi.Runtime); !ok {
+		t.Fatalf("New runtime = %T, want native Ferret adapter", nativeRuntimeForTest(t, server.runtimeOwner))
 	}
 
 	if err := server.cleanup(); err != nil {
@@ -94,7 +95,7 @@ func newTestClient(t *testing.T) *testClient {
 func newTestClientWithOptions(t *testing.T, options Options) *testClient {
 	t.Helper()
 
-	runtime, err := uapi.New()
+	runtime, err := uapi.New("test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,13 +110,21 @@ func newTestClientWithRuntime(t *testing.T, options Options, runtime api.Runtime
 	clientOutput, serverOutput := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	server, err := newServer(serverInput, serverOutput, options.normalized(), runtime)
+	catalog, err := runtimes.NewCatalog(options.RuntimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server, err := newServer(serverInput, serverOutput, options.normalized(), runtime, catalog)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
 	done := make(chan error, 1)
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
+
 		err := server.Run(ctx)
 		_ = serverInput.Close()
 		_ = serverOutput.Close()
@@ -134,6 +143,12 @@ func newTestClientWithRuntime(t *testing.T, options Options, runtime api.Runtime
 		cancel()
 		_ = clientInput.Close()
 		_ = clientOutput.Close()
+
+		select {
+		case <-stopped:
+		case <-time.After(5 * time.Second):
+			t.Error("server did not stop during test cleanup")
+		}
 	})
 
 	return client

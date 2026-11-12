@@ -7,21 +7,21 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MontFerret/api"
 	apidiagnostics "github.com/MontFerret/api/diagnostics"
+	"github.com/MontFerret/ferretd/internal/runtimes"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
 func TestNewRequiresDependencies(t *testing.T) {
-	runtime := newRuntimeSpy()
+	runtime := newTestOwner(t, newRuntimeSpy())
 	tests := []struct {
 		name       string
 		workspaces *workspace.Manager
-		runtime    api.Runtime
+		runtime    *runtimes.Owner
 		want       error
 	}{
 		{name: "workspace manager", runtime: runtime, want: errNilWorkspaceManager},
-		{name: "runtime", workspaces: workspace.New(), want: errNilRuntime},
+		{name: "runtime", workspaces: workspace.New(), want: errNilRuntimeOwner},
 	}
 
 	for _, test := range tests {
@@ -50,7 +50,7 @@ func TestManagerDoesNotOwnWorkspaceManager(t *testing.T) {
 
 	runtime := newRuntimeSpy()
 
-	manager, err := New(workspaces, runtime)
+	manager, err := New(workspaces, newTestOwner(t, runtime))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -88,9 +88,9 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 	}
 
 	runtime := newRuntimeSpy()
-	runtime.run = parameterOutput
+	runtime.collect = parameterOutput
 
-	manager, err := New(workspaces, runtime)
+	manager, err := New(workspaces, newTestOwner(t, runtime))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 		_ = workspaces.Clear(context.Background())
 	})
 
-	snapshot, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql")
+	snapshot, err := manager.CreateSession(context.Background(), opened.ID(), "query.fql", "")
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestManagerCompilesRetainedSourceAndAppliesUniversalSessionOptions(t *testi
 	}
 
 	terminal, _ := runAndObserve(t, manager, created.ID)
-	if terminal.State != StateCompleted || terminal.Output == nil || string(terminal.Output.Content) != "7" {
+	if terminal.State != StateCompleted || terminal.Output == nil || string(terminal.Output.Data) != "7" {
 		t.Fatalf("terminal = %+v", terminal)
 	}
 
@@ -215,14 +215,14 @@ func TestManagerClosesPlanReturnedWithCompileFailure(t *testing.T) {
 	runtime.compilePlan = failedPlan
 	runtime.compileErr = want
 
-	manager, err := New(workspaces, runtime)
+	manager, err := New(workspaces, newTestOwner(t, runtime))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
 	t.Cleanup(func() { _ = workspaces.Clear(context.Background()) })
 
-	_, err = manager.CreateSession(context.Background(), opened.ID(), "query.fql")
+	_, err = manager.CreateSession(context.Background(), opened.ID(), "query.fql", "")
 
 	var compilation *CompilationError
 	if !errors.Is(err, want) || !errors.As(err, &compilation) {
@@ -262,7 +262,7 @@ func TestManagerCloseSettlesMultipleWorkspaceGroups(t *testing.T) {
 			t.Fatalf("workspace Open: %v", err)
 		}
 
-		session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
+		session, err := manager.CreateSession(ctx, opened.ID(), "query.fql", "")
 		if err != nil {
 			t.Fatalf("CreateSession: %v", err)
 		}
@@ -340,7 +340,7 @@ func TestCreateSessionExplicitAdmissionEnforcesWorkspaceBoundary(t *testing.T) {
 	}
 
 	for _, selected := range []string{"testdata/ignored.fql", "nested/query.fql"} {
-		if _, err := manager.CreateSession(context.Background(), opened.ID(), selected); err != nil {
+		if _, err := manager.CreateSession(context.Background(), opened.ID(), selected, ""); err != nil {
 			t.Fatalf("explicit CreateSession %q: %v", selected, err)
 		}
 	}
@@ -354,7 +354,7 @@ func TestCreateSessionExplicitAdmissionEnforcesWorkspaceBoundary(t *testing.T) {
 	}
 	for _, relativePath := range paths {
 		t.Run(relativePath, func(t *testing.T) {
-			if _, err := manager.CreateSession(context.Background(), opened.ID(), relativePath); !errors.Is(err, workspace.ErrDocumentNotFound) {
+			if _, err := manager.CreateSession(context.Background(), opened.ID(), relativePath, ""); !errors.Is(err, workspace.ErrDocumentNotFound) {
 				t.Fatalf("CreateSession error = %v, want ErrDocumentNotFound", err)
 			}
 		})
@@ -382,7 +382,7 @@ func TestCreateSessionReturnsStructuredDiagnosticsWithoutRegistration(t *testing
 		_ = workspaces.Clear(context.Background())
 	})
 
-	_, err = manager.CreateSession(context.Background(), opened.ID(), "query.fql")
+	_, err = manager.CreateSession(context.Background(), opened.ID(), "query.fql", "")
 	if !errors.Is(err, ErrCompilationFailed) {
 		t.Fatalf("CreateSession error = %v, want ErrCompilationFailed", err)
 	}
@@ -473,7 +473,7 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 	manager := mustNewManager(t, workspace.New())
 	workspaceID := workspace.ID("workspace")
 
-	creation, err := manager.sessions.beginCreate(workspaceID)
+	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t))
 	if err != nil {
 		t.Fatalf("begin Session creation: %v", err)
 	}
@@ -485,11 +485,11 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 		t.Fatalf("CloseWorkspace error = %v, want context.Canceled", err)
 	}
 
-	if _, err := manager.sessions.beginCreate(workspaceID); !errors.Is(err, workspace.ErrClosed) {
+	if _, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t)); !errors.Is(err, workspace.ErrClosed) {
 		t.Fatalf("begin Session creation during workspace close error = %v, want workspace.ErrClosed", err)
 	}
 
-	manager.sessions.finishCreate(creation)
+	_ = manager.sessions.finishCreate(creation)
 
 	if err := manager.CloseWorkspace(context.Background(), workspaceID); err != nil {
 		t.Fatalf("wait for CloseWorkspace: %v", err)
@@ -509,11 +509,12 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 	closed := make(chan error, 1)
 	var admitted *execution
 	func() {
-		creation, err := manager.sessions.beginRuntimeCreate(snapshot.ID)
+		creation, err := manager.sessions.beginRuntimeCreate(snapshot.ID, newTestConstruction(t))
 		if err != nil {
 			t.Fatalf("begin Execution creation: %v", err)
 		}
-		defer creation.finish()
+
+		defer func() { _ = creation.finish() }()
 
 		parent := creation.session()
 		go func() {
@@ -536,11 +537,7 @@ func TestSessionCloseCollectsExecutionAdmittedBeforeClose(t *testing.T) {
 			t.Fatalf("CreateExecution after Session close error = %v, want ErrSessionNotFound", err)
 		}
 
-		input, err := newRuntimeInput(nil, RuntimeOptions{})
-		if err != nil {
-			t.Fatalf("prepare runtime input: %v", err)
-		}
-
+		input := runtimeInput{options: RuntimeOptions{OutputContentType: defaultOutputContentType}}
 		admitted = newExecution(
 			ExecutionID("admitted-execution"),
 			newExecutionRuntime(parent.runtimeTarget(), input),
@@ -573,7 +570,7 @@ func TestManagerCloseWaitsForAdmittedSessionCreation(t *testing.T) {
 	manager := mustNewManager(t, workspace.New())
 	workspaceID := workspace.ID("workspace")
 
-	creation, err := manager.sessions.beginCreate(workspaceID)
+	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t))
 	if err != nil {
 		t.Fatalf("begin Session creation: %v", err)
 	}
@@ -585,11 +582,11 @@ func TestManagerCloseWaitsForAdmittedSessionCreation(t *testing.T) {
 	}()
 	waitForSignal(t, closeContext.observed, "Manager close wait")
 
-	if _, err := manager.sessions.beginCreate(workspace.ID("other")); !errors.Is(err, ErrClosed) {
+	if _, err := manager.sessions.beginCreate(workspace.ID("other"), newTestConstruction(t)); !errors.Is(err, ErrClosed) {
 		t.Fatalf("begin Session creation after Manager close error = %v, want ErrClosed", err)
 	}
 
-	manager.sessions.finishCreate(creation)
+	_ = manager.sessions.finishCreate(creation)
 
 	if err := <-closed; err != nil {
 		t.Fatalf("Close: %v", err)

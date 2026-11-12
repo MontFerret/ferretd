@@ -21,11 +21,19 @@ func newRuntimeOwnershipSpy() *runtimeOwnershipSpy {
 	return &runtimeOwnershipSpy{}
 }
 
+func (r *runtimeOwnershipSpy) Version(ctx context.Context) (api.Version, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	return "test", nil
+}
+
 func (r *runtimeOwnershipSpy) Run(
 	context.Context,
 	api.Source,
 	...api.SessionOption,
-) (*api.Output, error) {
+) (api.Output, error) {
 	return nil, errors.New("not implemented")
 }
 

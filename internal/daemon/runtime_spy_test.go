@@ -25,11 +25,19 @@ func newRuntimeLifecycleSpy() *runtimeLifecycleSpy {
 	return &runtimeLifecycleSpy{closeStarted: make(chan struct{})}
 }
 
+func (r *runtimeLifecycleSpy) Version(ctx context.Context) (api.Version, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	return "test", nil
+}
+
 func (r *runtimeLifecycleSpy) Run(
 	context.Context,
 	api.Source,
 	...api.SessionOption,
-) (*api.Output, error) {
+) (api.Output, error) {
 	return nil, errors.New("not implemented")
 }
 

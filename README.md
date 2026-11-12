@@ -13,9 +13,12 @@ semantics remain owned by the main Ferret project.
 
 Execution uses the
 [Universal Runtime API](https://github.com/MontFerret/api). Each daemon or DAP
-service graph constructs and owns one shared runtime through Ferret's upstream
-`uapi.New()` adapter. Execution Sessions own reusable plans, individual runs own
-runtime sessions, and the execution manager borrows the composition runtime.
+service graph transfers one shared native root from Ferret's upstream
+`uapi.New` adapter to its own runtime acquisition owner. Each compiled Session
+owns one selected runtime binding and its reusable plans; individual runs own
+runtime sessions and live output handles. The execution manager borrows the
+composition owner and releases Session bindings after their children and plans. Runs collect detached content and settle output and session
+cleanup before publishing completion.
 
 ## Build
 
@@ -77,9 +80,11 @@ FERRETD_AUTH_TOKEN="$(openssl rand -base64 32)" \
   --endpoint tcp://127.0.0.1:0 \
   --auth-token-env FERRETD_AUTH_TOKEN
 ./bin/ferretd serve --log-level debug
+./bin/ferretd serve --runtime-config /absolute/path/runtimes.json
 ./bin/ferretd lsp
 ./bin/ferretd dap
 ./bin/ferretd dap --log-level debug
+./bin/ferretd dap --runtime-config /absolute/path/runtimes.json
 ```
 
 `serve` starts the local daemon and waits for an interrupt or a `Shutdown` RPC.
@@ -137,10 +142,40 @@ watcher, err := c.Executions().WatchExecution(ctx, execution.ID)
 running, err := c.Executions().RunExecution(ctx, execution.ID)
 ```
 
-`WorkingDirectory` is optional. When omitted, the Universal runtime session uses
-the parent workspace root. When supplied, it must resolve to an existing
-absolute local directory; it may be outside the workspace and is retained
-canonically in Execution snapshots.
+`WorkingDirectory` is optional. Native Sessions default to the workspace root;
+an override must resolve to an existing absolute local directory and is retained
+canonically. Wire Sessions inherit the hosted runtime's filesystem default when
+omitted. A nonblank Wire override is forwarded exactly as a runtime-host path,
+without daemon-side path normalization or existence checks; validation occurs on
+the runtime host during session creation or use. Source loading always uses the
+daemon workspace, independently of this execution filesystem.
+
+Select a configured application runtime when creating a Session (API 1.3+):
+
+```go
+session, err := c.Executions().CreateSession(ctx, client.CreateSessionRequest{
+    WorkspaceID:  workspace.ID,
+    RelativePath: "query.fql",
+    RuntimeName:  "application",
+})
+```
+
+`CreateSession` and `GetSession` report the resolved `Session.RuntimeName`.
+Executions and lazy debug compilation reuse that binding and the original source.
+Connection loss fails operations on existing Sessions; creating a new Session
+acquires afresh. Source names do not synchronize remote files or remap paths.
+
+Protocol clients must remember the negotiated server version and reject every
+explicit selector, including `local`, below API 1.3: an older protobuf server can
+ignore the field. API 1.3+ responses must report a nonempty name, and explicit
+selection must be acknowledged identically. Reject missing/mismatched names
+without retrying creation; attempt bounded detached cleanup when the rejected
+response contains a Session ID. The Go client uses a five-second cleanup timeout.
+Older compatible 1.x servers still support unselected calls; their empty name
+means unreported. Runtime lookup/acquisition failures expose `ErrRuntimeNotFound`
+and `ErrRuntimeUnavailable`, separately from daemon availability, source failures,
+and `CompilationError`. Compilation/preparation failures retain diagnostics when
+available and otherwise a readable cause.
 
 For the opt-in TCP transport, parse the endpoint from the `ferretd.ready` event
 and pass the same token explicitly:
@@ -157,6 +192,88 @@ c, err := client.Dial(
 The client rejects TCP endpoints without a bearer token and rejects bearer-token
 configuration for native endpoints before opening a connection.
 
+### Runtime definitions and discovery
+
+Both `serve` and standalone `dap` accept the same optional `--runtime-config`
+JSON file:
+
+```json
+{
+  "defaultRuntime": "local",
+  "runtimes": [
+    {
+      "name": "application",
+      "label": "My application",
+      "provider": "wire",
+      "endpoint": "tcp://127.0.0.1:9000",
+      "insecure": true,
+      "connectTimeout": "5s"
+    }
+  ]
+}
+```
+
+The built-in `local` target (`Built-in Ferret`, provider `native`) is always
+implicit and cannot be replaced. Additional definitions must use provider `wire`.
+Names are unique, case-sensitive, nonempty, and have no surrounding whitespace.
+An omitted or empty label uses the name; an omitted connection timeout uses
+`5s`. Supplied timeouts must be positive duration strings. Wire endpoints must
+use `tcp://host:port`, with a hostname or IP and a numeric port in `1..65535`.
+Bracketed IPv6 is supported; userinfo, paths, queries, and fragments are rejected.
+Syntax is validated without connecting, so unreachable targets remain valid.
+
+`insecure` is an optional boolean, defaulting to `false`. Omission or `false`
+uses Wire's TLS defaults with system trust and server identity verification;
+`true` explicitly selects plaintext. The development example opts into plaintext.
+Loopback addresses do not imply plaintext, and TLS failure never retries with
+weaker transport. Explicit null and nonboolean values are invalid.
+
+Internally, each acquisition of a Wire definition creates a fresh client and
+owned channel, even for the same target. Native bindings borrow one shared root.
+The connection timeout bounds startup; bounded detached Wire rollback can take
+additional time after cancellation. Cancelling startup after successful
+acquisition does not close the binding. Callers settle outputs, sessions/debuggers,
+and plans before releasing a binding; owner shutdown closes remaining roots
+after child services settle. Definitive connection loss does not revive or replay
+an existing binding; a new explicit acquisition performs a fresh handshake.
+
+Without a file, the catalog contains only `local`. Omitting `defaultRuntime`
+selects `local`; explicit blank or unknown defaults fail startup.
+Both `serve` and standalone `dap` accept Wire defaults without connecting at
+startup or during discovery/initialization. Compiled Session creation performs
+acquisition. DAP launch selects `runtimeName` or uses its process default; see the
+[capability and acknowledgment contract](docs/dap.md#runtime-selection-compatibility)
+before sending an explicit selector. Unused Wire targets never connect.
+
+Explicit missing, unreadable, malformed, or invalid files fail startup. The
+loader requires a JSON object and rejects unknown fields, null typed fields,
+invalid field types, and trailing JSON values. Relative file paths use the
+process working directory. Each service graph reads its file once and owns an
+immutable catalog snapshot. Pass the same absolute path to both commands for
+consistent definitions; DAP still constructs independent services and a runtime.
+Configuration is not reloaded, discovered from workspaces, or persisted through
+RPCs. The incoming daemon `--endpoint` and `--auth-token-env` options remain
+separate from these outbound target definitions.
+
+Use the supported Go client to discover metadata:
+
+```go
+catalog, err := c.ListRuntimes(ctx)
+if err != nil {
+	return err
+}
+fmt.Println(catalog.DefaultRuntime)
+for _, target := range catalog.Runtimes {
+	fmt.Println(target.Name, target.Label, target.Provider)
+}
+```
+
+Discovery returns definitions ordered by name and one authoritative default
+name. It does not dial endpoints, expose connection settings, or assert that a
+target is reachable, executable, or debug-capable. A compatible older 1.x daemon
+can still serve existing operations; unsupported discovery returns an error
+matching `client.ErrUnsupportedOperation` without fabricating definitions.
+
 Opening a workspace recursively discovers lowercase `.fql` files, loads their
 contents, and retains daemon-owned documents with Ferret syntax state and
 diagnostics. No Ferret project manifest is required. While the workspace remains
@@ -171,9 +288,11 @@ not close its workspaces, and `Close` is explicit and idempotent. The current
 workspace RPC continues to expose identity and lifecycle operations rather than
 documents or parser internals.
 
-Each daemon service graph owns one Universal runtime. `CreateSession` refreshes
-the latest saved contents of one explicitly selected workspace-relative `.fql`
-document and compiles it into an immutable reusable plan. A missed creation notification
+`CreateSession` resolves its optional `RuntimeName` exactly through the startup
+catalog; omission selects the daemon default. It first refreshes the latest saved contents of one explicitly selected workspace-relative `.fql`
+document, acquires that runtime, and compiles there into an immutable reusable
+plan. The Session retains its resolved name, binding, and source bytes until
+close. A missed creation notification
 is recovered during this refresh. Explicit selection also admits lowercase `.fql`
 regular files beneath discovery-excluded directories, including `.tmp`, `testdata`,
 and nested Go modules, without discovering neighboring excluded files.
@@ -181,11 +300,15 @@ Containment and nested-symlink restrictions remain. These admissions survive
 watcher reconciliation and same-path recreation until workspace close.
 Existing Sessions keep their original source revision and normal and lazy debug
 Plans. Each `Execution` owns isolated JSON-shaped parameter bindings and a fresh,
-one-shot runtime session. Its filesystem starts at the workspace root; an
-optional working directory changes only that runtime session's root. Source
+one-shot runtime session. Native filesystem defaults use the workspace root;
+Wire filesystem defaults belong to the hosted runtime. An optional working
+directory changes only that runtime session's root. Source
 containment and retained state remain workspace-owned.
 `RunExecution` returns the `RUNNING` snapshot immediately; execution then
-continues independently of the triggering RPC context. Clients can observe the
+continues independently of the triggering RPC context. It remains running until
+output collection and owned cleanup settle. Retained output preserves absent
+versus present-empty content and available content alongside failures, using the
+existing public content-type and data fields. Clients can observe the
 latest lifecycle event and subsequent events with `WatchExecution`, cancel an
 active execution, and retrieve terminal output or failure details until they
 explicitly close the resource. Closing a workspace cascades through its Sessions
@@ -209,7 +332,7 @@ parameters, expressions, or evaluated values. See
 
 ## Current Status
 
-The daemon exposes API v1.1 `DaemonService`, `WorkspaceService`, and
+The daemon exposes API v1.3 `DaemonService`, `WorkspaceService`, and
 `ExecutionService` contracts over permission-restricted native local transports
 or authenticated ephemeral IPv4 loopback TCP, plus the standard gRPC health
 service. The checked-in Go code under `gen/` is generated from `proto/` with

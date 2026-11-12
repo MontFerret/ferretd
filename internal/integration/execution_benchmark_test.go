@@ -30,13 +30,44 @@ func BenchmarkManagerCreateSessionUnchanged(b *testing.B) {
 	b.ResetTimer()
 
 	for range b.N {
-		session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
+		session, err := manager.CreateSession(ctx, opened.ID(), "query.fql", "")
 		if err != nil {
 			b.Fatalf("CreateSession: %v", err)
 		}
 
 		if err := manager.CloseSession(ctx, session.ID); err != nil {
 			b.Fatalf("CloseSession: %v", err)
+		}
+	}
+
+	b.StopTimer()
+	_ = manager.Close(ctx)
+	_ = workspaces.Clear(ctx)
+}
+
+func BenchmarkManagerCloseSession(b *testing.B) {
+	manager, session, workspaces := benchmarkExecutionManager(b)
+
+	ctx := context.Background()
+	if err := manager.CloseSession(ctx, session.ID); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		b.StopTimer()
+
+		created, err := manager.CreateSession(ctx, session.Source.Workspace, "query.fql", "")
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		b.StartTimer()
+
+		if err := manager.CloseSession(ctx, created.ID); err != nil {
+			b.Fatal(err)
 		}
 	}
 
@@ -152,7 +183,7 @@ func benchmarkExecutionManager(b *testing.B) (*exec.Manager, exec.SessionSnapsho
 
 	manager := mustNewManager(b, workspaces)
 
-	session, err := manager.CreateSession(ctx, opened.ID(), "query.fql")
+	session, err := manager.CreateSession(ctx, opened.ID(), "query.fql", "")
 	if err != nil {
 		b.Fatalf("CreateSession: %v", err)
 	}

@@ -27,7 +27,7 @@ ferretd serve
             -> internal/workspace
             -> internal/exec
             -> Universal Runtime API
-                -> Ferret uapi -> native Ferret
+                -> Ferret uapi -> native Ferret, or Wire -> hosted runtime
 
 local daemon client
     -> client
@@ -40,14 +40,21 @@ debug adapter client
     -> internal/dap
     -> internal/workspace + internal/exec + internal/debug
     -> Universal Runtime API
-        -> Ferret uapi -> native Ferret debugger
+        -> Ferret uapi -> native debugger, or Wire -> hosted debugger
 ```
 
 The `lsp` and `dap` commands compose in-process services independently of
 `ferretd serve`. The daemon exposes workspace and execution behavior over gRPC;
 debugging is not currently a daemon gRPC capability. Daemon and DAP composition
-each construct an owning Universal runtime with Ferret's `uapi.New()` and
-retain it through final cleanup.
+each transfer a native Universal runtime from Ferret's `uapi.New` to an independent
+`runtimes.Owner`. Compiled Sessions acquire and own bindings through child and
+plan cleanup.
+
+Daemon and DAP composition first build independent immutable runtime catalogs
+from the same optional startup schema. Daemon Sessions and DAP launch select
+exact names or the configured default,
+acquiring Wire lazily during compiled Session creation. Initialization never
+probes runtime reachability or debugger support.
 
 ## Dependency direction
 
@@ -81,6 +88,12 @@ than access to protected state.
   and execution services, and graceful shutdown.
 * `internal/transport` owns local endpoint parsing, defaults, listening, dialing,
   and platform security behavior.
+* `internal/runtimes` owns startup definitions, strict file loading, endpoint
+  normalization/validation, immutable metadata lookup, and runtime acquisition.
+  Each `Owner` owns one shared native root, fresh Wire roots per acquisition,
+  pending construction, and cleanup. A `Binding` supplies the resolved name,
+  borrowed canonical runtime, and idempotent release. Discovery exposes only
+  names, labels, providers, and the authoritative default name.
 * `internal/grpc` translates the versioned daemon, workspace, and execution wire
   contracts without owning domain state.
 * `client` is the supported public Go client. It hides generated clients and
@@ -88,11 +101,11 @@ than access to protected state.
   and public error classification.
 * `internal/workspace` owns process-local workspace identity, dynamic discovery,
   retained documents and Ferret syntax state, refresh, and close coordination.
-* `internal/exec` borrows a composition-owned `api.Runtime` and owns compiled
-  Sessions, common per-run execution state, `Parameters`, normalized
-  `RuntimeOptions`, copied `api.Output` and `RuntimeFailure` results, one-shot
-  Executions, watches, cancellation, lazy debug Plans, and debugger-runtime
-  leases.
+* `internal/exec` borrows the composition-owned acquisition owner and owns compiled
+  Sessions with their runtime bindings, common per-run execution state, `Parameters`, normalized
+  `RuntimeOptions`, live output ownership, detached `api.Content` and
+  `RuntimeFailure` results, one-shot Executions, watches, cancellation, lazy debug
+  Plans, and debugger-runtime leases.
 * Ferret's upstream `uapi` package adapts native runtime objects and diagnostics
   to the Universal API. Composition constructs an owning runtime with `uapi.New`;
   no local package translates between the two runtime APIs.
@@ -113,12 +126,30 @@ than access to protected state.
 
 ## State and resource hierarchy
 
-Each daemon or DAP service graph constructs one shared Universal runtime with
-`uapi.New()` and closes it after its child services. That runtime owns the
-native engine. An open workspace owns retained file and document snapshots, but
-no execution engine.
+Each daemon or DAP service graph transfers one shared Universal runtime from
+`uapi.New` to its runtime owner, closed after child services and their Session
+bindings. That runtime owns the native engine. Both compositions supply
+`runtimes.NativeVersion`, checked against
+the selected Ferret dependency in tests. An open workspace owns retained file
+and document snapshots, but no execution engine.
+
+Each graph also retains its own startup catalog. Supplying the same absolute
+`--runtime-config` path aligns definitions without sharing services or connections.
+Discovery is an in-memory metadata operation and makes no reachability or
+capability claims. Internal Wire acquisition uses the owning `wire/client.New`
+constructor and creates an independent logical connection and channel each time.
+Each compiled Session acquires independently and retains its resolved name.
+Daemon and DAP Wire defaults remain lazy. No Wire definition connects at startup.
+
+Acquisition registers pending construction before I/O and publishes only while
+the owner and caller permit it. Shutdown cancels and waits for construction and
+rollback; release and shutdown share one retained close result per binding.
+Neither connection establishment nor root closure holds the owner mutex. Binding
+release requires callers to settle outputs, sessions/debuggers, and plans first:
+Wire root closure gates new calls but does not forcibly close descendants.
+
 An execution Session is a child of that workspace and owns an immutable
-`api.Plan` compiled by the shared runtime. Each ordinary Execution is a one-shot
+`api.Plan` compiled by its selected bound runtime. Each ordinary Execution is a one-shot
 child of a Session and creates a fresh `api.Session`.
 
 A Session can also lazily own one matching debug Plan. `internal/exec` builds an
@@ -128,12 +159,16 @@ the common runtime's one-time session close attempt. `internal/debug` layers
 DebugSession identity, commands, presentation scopes, events, and state on that
 DebugRuntime while consuming Universal debugger and source values directly.
 Ferret's `uapi` forwards canonical debugger values and projects diagnostics.
-Execution and debug services copy output before cleanup and for each snapshot.
+Ordinary execution consumes its live output handle into detached content and
+settles output and session cleanup before publishing its terminal state.
+Debugger events already contain detached content. Snapshots and watcher events
+copy content metadata and mutable bytes, never live handles.
 Ordinary Executions and DebugSessions remain sibling resources
 with distinct observable state machines. Closing a parent stops new runtime
 creation, settles both child kinds, releases leases, and only then closes its
-Plans. Composition cleanup then clears workspaces and closes the shared runtime
-exactly once last.
+Plans and releases its binding. Parent closure cancels pending construction
+before waiting for rollback. Composition cleanup then clears workspaces and
+closes the owner, which closes the shared native root exactly once last.
 
 The language service consumes workspace documents as saved-source baselines but
 owns editor overlays separately. Opening or changing an editor document does

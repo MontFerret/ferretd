@@ -31,7 +31,7 @@ func TestDAPReplacementOrdersResponseAndPreservesConcurrentHitIDs(t *testing.T) 
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			native, err := uapi.New()
+			native, err := uapi.New("test")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -188,13 +188,13 @@ func TestDAPReplacementOrdersResponseAndPreservesConcurrentHitIDs(t *testing.T) 
 }
 
 func TestDAPEmitsAvailableOutputBeforeCommandFailure(t *testing.T) {
-	native, err := uapi.New()
+	native, err := uapi.New("test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	d := &breakpointDebugger{continueFn: func(context.Context) (*apidebugger.Event, error) {
-		return &apidebugger.Event{Reason: apidebugger.ReasonCompleted, Output: &api.Output{Content: []byte("42")}}, errors.New("completion cleanup")
+		return &apidebugger.Event{Reason: apidebugger.ReasonCompleted, Output: &api.Content{Data: []byte("42")}}, errors.New("completion cleanup")
 	}}
 	client := newTestClientWithRuntime(t, Options{}, &breakpointRuntime{Runtime: native, debugger: d})
 	root := t.TempDir()

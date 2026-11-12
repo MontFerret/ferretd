@@ -307,10 +307,37 @@ func TestExplicitSourceWatcherAndOverflow(t *testing.T) {
 	}
 
 	watcher := workspaceWatcherForTest(t, opened)
-	// The backend owns and closes its real error channel. Inject errors through
-	// a test-owned channel before starting the consumer to avoid send/close races.
+	// Keep native errors flowing: leaving the backend's real channel unread can
+	// block event delivery. Only the test-owned channel accepts injected errors.
+	backendErrors := watcher.backend.Errors
 	errorsChannel := make(chan error)
 	watcher.backend.Errors = errorsChannel
+	forwardCtx, stopForwarding := context.WithCancel(t.Context())
+	forwardDone := make(chan struct{})
+	go func() {
+		defer close(forwardDone)
+
+		for {
+			select {
+			case <-forwardCtx.Done():
+				return
+			case err, ok := <-backendErrors:
+				if !ok {
+					return
+				}
+
+				select {
+				case errorsChannel <- err:
+				case <-forwardCtx.Done():
+					return
+				}
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		stopForwarding()
+		<-forwardDone
+	})
 	watcher.Start(opened)
 
 	if _, err := opened.RefreshDocument(context.Background(), selected); err != nil {
@@ -325,19 +352,42 @@ func TestExplicitSourceWatcherAndOverflow(t *testing.T) {
 	}
 
 	waitForWorkspaceChange(t, opened, "explicit source removal", func() bool { _, ok := opened.Document(selected); return !ok })
-	writeWorkspaceSource(t, root, selected, "RETURN 3")
-	waitForWorkspaceChange(t, opened, "explicit source recreation", func() bool { doc, ok := opened.Document(selected); return ok && doc.Content() == "RETURN 3" })
+	// Publish complete recreations: Create may arrive before a new file's
+	// contents and native watch are ready when writing directly in the workspace.
+	staging := t.TempDir()
+	writeWorkspaceSource(t, staging, selected, "RETURN 3")
 
-	if err := os.RemoveAll(filepath.Join(root, ".tmp")); err != nil {
+	if err := os.Rename(filepath.Join(staging, filepath.FromSlash(selected)), filepath.Join(root, filepath.FromSlash(selected))); err != nil {
 		t.Fatal(err)
 	}
+
+	waitForWorkspaceChange(t, opened, "explicit source recreation", func() bool { doc, ok := opened.Document(selected); return ok && doc.Content() == "RETURN 3" })
+
+	// Avoid scanning partially removed ancestors, which Windows can report as
+	// access denied while directory deletion is pending.
+	func() {
+		if err := opened.beginMutation(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+
+		defer opened.finishMutation()
+
+		if err := os.RemoveAll(filepath.Join(root, ".tmp")); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
 	waitForWorkspaceChange(t, opened, "selected ancestor removal", func() bool {
 		_, ok := opened.Document(selected)
 
 		return !ok && !watcher.WatchesSubtree(".tmp")
 	})
-	writeWorkspaceSource(t, root, selected, "RETURN 4")
+	writeWorkspaceSource(t, staging, selected, "RETURN 4")
+
+	if err := os.Rename(filepath.Join(staging, ".tmp"), filepath.Join(root, ".tmp")); err != nil {
+		t.Fatal(err)
+	}
+
 	waitForWorkspaceChange(t, opened, "selected ancestor recreation", func() bool {
 		doc, ok := opened.Document(selected)
 

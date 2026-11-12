@@ -18,18 +18,22 @@ The supported launch arguments and wire behavior are documented in
 ## Debug runtimes and Plan ownership
 
 An execution Session eagerly owns its normal Plan and lazily compiles one
-matching debug Plan. Lazy construction is coordinated so concurrent debug
-requests converge on one result. A failed debug compilation is retained
+matching debug Plan on its retained runtime binding, using the original source.
+Lazy construction is coordinated so concurrent debug requests converge on one result. A failed debug compilation is retained
 consistently with the Session's source snapshot.
 
-`internal/exec` creates a DebugRuntime through the same lower-level machinery as
-ordinary execution. The common execution state owns cloned parameters,
+`internal/exec` creates a DebugRuntime through the same lower-level machinery
+as ordinary execution. The common execution state owns cloned parameters,
 normalized `exec.RuntimeOptions`, immutable source/Plan data, manager-owned
-cancellation, one Universal debugger Session, `RuntimeFailure` materialization,
-and idempotent cleanup. The retained debug Session copies `api.Output` when
-accepting completion and when returning snapshots. The DebugRuntime
-exposes the Universal debugger capability and owns the debug-Plan lease. It does
-not expose mutable Session maps, locks, or child state.
+cancellation, one Universal debugger Session, `RuntimeFailure`
+materialization, and idempotent cleanup. Universal debugger events already
+carry detached `*api.Content`; they are never consumed as live output handles.
+The retained debug Session copies the complete metadata value and mutable
+bytes when accepting completion and returning snapshots, preserving absent and
+present-empty content, unknown lengths, and partial-content descriptors
+through cleanup. The DebugRuntime exposes the Universal debugger capability
+and owns the debug-Plan lease. It does not expose mutable Session maps, locks,
+or child state.
 
 ## Retained DebugSessions
 
@@ -83,15 +87,22 @@ events. Terminal states eventually close the common runtime and end every watch.
 Closing a DebugSession is idempotent and guarantees eventual common-runtime
 cleanup even when an individual caller stops waiting. Closing the parent
 execution Session closes all DebugSessions and their DebugRuntimes before
-releasing normal or debug Plans.
+releasing normal/debug Plans and the runtime binding. Pending debug compilation
+and debugger construction are cancelled before Session close waits for creators.
 
 ## DAP composition
 
 The `dap` command runs one protocol-pure server over stdin and stdout. It does
 not connect to `ferretd serve`. DAP composition constructs an owning Universal
-runtime with Ferret's `uapi.New()` plus in-process workspace, execution, and debug
-managers. It also owns one launched
-workspace, execution Session, and DebugSession.
+runtime with Ferret's `uapi.New`, transfers it to its own `runtimes.Owner`, and
+passes that owner to in-process execution alongside workspace and debug managers.
+The compiled launch Session acquires the exact `runtimeName` or configured
+default and retains its binding. Normal/debug Plans and the debugger share that
+binding and immutable source. DAP reads the resolved name from the Session
+snapshot and acknowledges it in the successful launch response. Initialization
+advertises selection/cancel support without acquiring or probing any runtime.
+Unused Wire definitions never connect. DAP also owns one launched workspace,
+execution Session, and DebugSession.
 
 Launch explicitly selects its `program` through the same workspace refresh as
 gRPC Session creation. A regular lowercase `.fql` file under `.tmp`, another
@@ -103,16 +114,39 @@ identity; no copied source or substituted workspace is used.
 Launch `cwd` remains the compilation/workspace root and the base for debugger
 source identity. The optional Ferret-specific `workingDirectory` is passed
 separately through `exec.RuntimeOptions` to debug Session creation. DAP rejects
-explicit null, non-string, and empty values; execution owns normalization and
-filesystem validation. The runtime directory must be absolute and may be outside
-the workspace. Omission preserves the workspace-root runtime default without
-retaining an explicit override or changing source paths.
+explicit null, non-string, and blank values. The bound Session owns provider
+policy: native overrides are absolute, canonicalized, locally validated, and may
+be outside the workspace; Wire values retain exact bytes for host interpretation.
+Omission retains no override, using the workspace root for native and the host's
+default for Wire. Source paths remain local and unchanged.
 
 Launch follows the DAP initialization and configuration sequence. The launch
 request remains pending while breakpoints are configured. After
 `configurationDone`, the adapter acknowledges configuration, starts the debug
 Session, responds to launch, and then emits stopped or terminal events in the
 required order.
+
+Framed ingress runs independently from one serialized dispatch worker through a
+64-request FIFO. Ingress validates controls before signalling pending-launch and
+active-operation cancellation, without `eventMu` or protocol writes. Overflow
+fails the adapter, cancels blocked work, and settles resources without requiring
+another response. It never reconnects or replays a query.
+
+A pending attempt exists from admission through the deferred launch-response
+commit, including configuration. Queued launch tokens prevent lost cancellation
+before dispatch. Matching `cancel` fails the original launch exactly once with
+`message: "cancelled"`, with cleanup causes retained separately in error details.
+Missing/unknown/completed IDs are successful no-ops. Valid termination and
+disconnect mark the current and every already queued launch under the state lock,
+then interrupt active work outside it. Termination retains that snapshot until
+dispatch to validate whether any affected attempt was admitted. Restart/suspend
+modes are rejected before any effect. Configuration-time start cancellation
+retains its error for reconciliation or the queued control, preserving control
+acknowledgments and launch-failure/event ordering.
+Unpublished attempts roll back and permit another launch. Once published, abort
+ends the one-launch session. Temporary request contexts never own the published
+debugger's execution lifetime. Outcome commitment and cancellation share the
+state lock; writes and all blocking teardown waits happen outside that lock.
 
 DAP temporarily retains the resolved breakpoint bindings configured before
 start. Once start is accepted, those bindings are frozen under the adapter's
@@ -192,16 +226,28 @@ Runtime errors stop as inspectable DAP exceptions. Continuing from that stop
 reports error output and terminal events. Successful completion reports encoded
 result output and successful exit. If a command returns completion output together
 with an error, the debug Session retains both and DAP emits the available result
-before the failure output and unsuccessful exit. Explicit termination ends the
+before the failure output and unsuccessful exit. DAP reads the detached
+`Content.Data`; successful and failed exits preserve output, exited, then
+terminated event ordering. Retained content remains valid after debugger
+cleanup and is isolated between observers. Explicit termination ends the
 session without inventing a normal process exit.
 
-Adapter cleanup cancels the active watch, terminates and closes the DebugSession,
+Adapter cleanup interrupts active work, waits for preparation rollback, cancels
+and joins the watch outside `eventMu`, terminates and closes the DebugSession,
 closes its execution Session, closes the workspace, closes each manager, and
-then closes the composition runtime exactly once. The common execution state
+then closes the runtime owner exactly once. The execution Session releases its
+binding after children, leases, and plans settle.
+Owners close the shared native root and any remaining Wire roots after child
+cleanup; binding release never substitutes for output/session/debugger/plan
+settlement. The common execution state
 owns the Universal debugger Session and performs cancellation and its one-time
 close attempt. The DebugRuntime releases its debug-Plan lease afterward even
 when cleanup reports failure. Repeated disconnect, termination, context
-cancellation, or transport failure cannot release resources twice.
+cancellation, or transport failure cannot release resources twice. Termination
+also closes the compiled Session and releases its binding; it never stops the
+external application or Wire server. Preparation rollback failures remain in
+failure details and final close results. Watch/send failure settles outstanding
+launch state and cannot emit duplicate terminal events.
 
 ## Deliberate exclusions
 
