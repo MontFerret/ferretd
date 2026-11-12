@@ -18,7 +18,14 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	writeWorkspaceSource(t, root, "invalid.fql", "RETURN")
 	manager, opened := openWatchedWorkspace(t, root)
 
-	writeWorkspaceSource(t, root, "created.fql", "RETURN 2")
+	// Publish complete creations so the first event cannot observe partial data.
+	staging := t.TempDir()
+	writeWorkspaceSource(t, staging, "created.fql", "RETURN 2")
+
+	if err := os.Rename(filepath.Join(staging, "created.fql"), filepath.Join(root, "created.fql")); err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+
 	waitForWorkspaceChange(t, opened, "created source", func() bool {
 		document, ok := opened.Document("created.fql")
 
@@ -64,7 +71,12 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		return found && document.Content() == "RETURN 3"
 	})
 
-	writeWorkspaceSource(t, root, "new-directory/nested.fql", "RETURN 4")
+	writeWorkspaceSource(t, staging, "new-directory/nested.fql", "RETURN 4")
+
+	if err := os.Rename(filepath.Join(staging, "new-directory"), filepath.Join(root, "new-directory")); err != nil {
+		t.Fatalf("create directory: %v", err)
+	}
+
 	waitForWorkspaceChange(t, opened, "new directory source", func() bool {
 		document, found := opened.Document("new-directory/nested.fql")
 
@@ -92,9 +104,17 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		return !oldFound && newFound && moved.Content() == "RETURN 4"
 	})
 
-	if err := os.RemoveAll(filepath.Join(root, "moved-directory")); err != nil {
-		t.Fatalf("Remove directory: %v", err)
-	}
+	func() {
+		if err := opened.beginMutation(t.Context()); err != nil {
+			t.Fatalf("begin directory removal: %v", err)
+		}
+
+		defer opened.finishMutation()
+
+		if err := os.RemoveAll(filepath.Join(root, "moved-directory")); err != nil {
+			t.Fatalf("Remove directory: %v", err)
+		}
+	}()
 
 	waitForWorkspaceChange(t, opened, "deleted directory", func() bool {
 		_, found := opened.Document("moved-directory/nested.fql")
