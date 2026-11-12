@@ -71,9 +71,19 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		return found && document.Content() == "RETURN 4"
 	})
 
-	if err := os.Rename(filepath.Join(root, "new-directory"), filepath.Join(root, "moved-directory")); err != nil {
-		t.Fatalf("Rename directory: %v", err)
-	}
+	// Windows cannot rename a directory while reconciliation holds descendant
+	// handles. Serialize this mutation with scans using the existing gate.
+	func() {
+		if err := opened.beginMutation(t.Context()); err != nil {
+			t.Fatalf("begin directory rename: %v", err)
+		}
+
+		defer opened.finishMutation()
+
+		if err := os.Rename(filepath.Join(root, "new-directory"), filepath.Join(root, "moved-directory")); err != nil {
+			t.Fatalf("Rename directory: %v", err)
+		}
+	}()
 
 	waitForWorkspaceChange(t, opened, "renamed directory", func() bool {
 		_, oldFound := opened.Document("new-directory/nested.fql")
