@@ -12,7 +12,10 @@ import (
 
 func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 	root := t.TempDir()
+	// kqueue can deliver Create before installing the file's watch. Use
+	// pre-existing files for the update and deletion checks below.
 	writeWorkspaceSource(t, root, "existing.fql", "RETURN 1")
+	writeWorkspaceSource(t, root, "invalid.fql", "RETURN")
 	manager, opened := openWatchedWorkspace(t, root)
 
 	writeWorkspaceSource(t, root, "created.fql", "RETURN 2")
@@ -22,20 +25,20 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		return ok && document.Content() == "RETURN 2"
 	})
 
-	created, _ := opened.Document("created.fql")
-	writeWorkspaceSource(t, root, "created.fql", "RETURN 3")
+	existing, _ := opened.Document("existing.fql")
+	writeWorkspaceSource(t, root, "existing.fql", "RETURN 3")
 	waitForWorkspaceChange(t, opened, "updated source", func() bool {
-		document, ok := opened.Document("created.fql")
+		document, ok := opened.Document("existing.fql")
 
-		return ok && document.Content() == "RETURN 3" && document.Revision() > created.Revision()
+		return ok && document.Content() == "RETURN 3" && document.Revision() > existing.Revision()
 	})
 
-	if err := os.Rename(filepath.Join(root, "created.fql"), filepath.Join(root, "renamed.fql")); err != nil {
+	if err := os.Rename(filepath.Join(root, "existing.fql"), filepath.Join(root, "renamed.fql")); err != nil {
 		t.Fatalf("Rename .fql to .fql: %v", err)
 	}
 
 	waitForWorkspaceChange(t, opened, "renamed source", func() bool {
-		_, oldFound := opened.Document("created.fql")
+		_, oldFound := opened.Document("existing.fql")
 		renamed, newFound := opened.Document("renamed.fql")
 
 		return !oldFound && newFound && renamed.Content() == "RETURN 3"
@@ -112,7 +115,6 @@ func TestWorkspaceWatcherReconcilesFilesystemChanges(t *testing.T) {
 		t.Fatal("dynamic directory symlink source was retained")
 	}
 
-	writeWorkspaceSource(t, root, "invalid.fql", "RETURN")
 	waitForWorkspaceChange(t, opened, "invalid source diagnostics", func() bool {
 		document, found := opened.Document("invalid.fql")
 
