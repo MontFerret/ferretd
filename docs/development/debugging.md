@@ -232,6 +232,13 @@ terminated event ordering. Retained content remains valid after debugger
 cleanup and is isolated between observers. Explicit termination ends the
 session without inventing a normal process exit.
 
+At the first suspension on a Wire runtime, the debug Session observes the
+logical connection used by its compiled parent. Unexpected loss while stopped
+publishes a retained failure with the runtime name and transport cause. During
+a resume the command owns its terminal result and any partial output. A
+subsequent stop checks for loss before publication. The terminal transition
+detaches the observer.
+
 Adapter cleanup interrupts active work, waits for preparation rollback, cancels
 and joins the watch outside `eventMu`, terminates and closes the DebugSession,
 closes its execution Session, closes the workspace, closes each manager, and

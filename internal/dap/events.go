@@ -98,6 +98,12 @@ func (s *Server) handleDebugEvent(event debug.Event) {
 			s.invalidateHandles("suppressed entry")
 
 			if _, err := s.debugs.ContinueSession(context.Background(), snapshot.ID); err != nil {
+				// Loss can commit after entry was queued. The terminal snapshot
+				// owns its output, exit code and termination ordering.
+				if errors.Is(err, debug.ErrSessionTerminal) {
+					return
+				}
+
 				s.logger.Error().Err(err).Msg("DAP continue after entry failed")
 
 				if sendErr := s.sendOutput(outputCategoryStderr, fmt.Sprintf("continue after entry failed: %v\n", err)); sendErr != nil {

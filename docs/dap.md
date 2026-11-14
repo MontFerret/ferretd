@@ -203,7 +203,10 @@ cancelled and cleanup proceeds without depending on another DAP response.
 
 Termination, disconnect (including terminate-related options), EOF, and adapter
 failure release the query's resources while leaving the hosting application and
-Wire server alive. There is no reconnection or query replay. Debugging steps
+Wire server alive. If that application disappears while execution is suspended,
+DAP emits a stderr diagnostic naming the runtime, followed by `exited` with
+code 1 and `terminated`, without waiting for another debugger request.
+There is no reconnection or query replay. Debugging steps
 through FQL around application functions, not inside their native Go bodies.
 
 ## Supported behavior

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/MontFerret/api"
+	wireclient "github.com/MontFerret/wire/client"
 
 	"github.com/MontFerret/ferretd/internal/lifecycle"
 )
@@ -38,6 +39,17 @@ func (b *Binding) Provider() Provider {
 // Runtime returns the borrowed runtime. The caller must not close it directly.
 func (b *Binding) Runtime() api.Runtime {
 	return b.runtime
+}
+
+// ConnectionLifetime returns this acquisition's optional Wire connection observer.
+func (b *Binding) ConnectionLifetime() wireclient.ConnectionLifetime {
+	if b.provider != ProviderWire {
+		return nil
+	}
+
+	lifetime, _ := b.runtime.(wireclient.ConnectionLifetime)
+
+	return lifetime
 }
 
 // Release settles this binding exactly once and retains its result. Native

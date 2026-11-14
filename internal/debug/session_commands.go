@@ -139,18 +139,17 @@ func (d *session) runCommand(command func() (*apidebugger.Event, error), runtime
 		return
 	}
 
+	if err != nil && event != nil {
+		d.output = cloneContent(event.Output)
+	}
+
+	// The committed termination owns the result of a racing command. Retain
+	// available error output while the termination worker settles cleanup.
+	if d.terminating || d.close.Started() {
+		return
+	}
+
 	if err != nil {
-		if event != nil {
-			d.output = cloneContent(event.Output)
-		}
-
-		if d.terminating {
-			d.state = StateTerminated
-			d.publishLocked(EventTerminated, true)
-
-			return
-		}
-
 		d.failLocked(err)
 
 		return

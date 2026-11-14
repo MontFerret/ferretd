@@ -8,6 +8,7 @@ import (
 	apidebugger "github.com/MontFerret/api/debugger"
 	"github.com/MontFerret/ferretd/internal/diagnostic"
 	"github.com/MontFerret/ferretd/internal/workspace"
+	wireclient "github.com/MontFerret/wire/client"
 )
 
 type (
@@ -52,6 +53,13 @@ func (r *DebugRuntime) Context() context.Context {
 // debugger session.
 func (r *DebugRuntime) Debugger() apidebugger.Session {
 	return r.debugger
+}
+
+// ConnectionLifetime identifies the acquired runtime and its optional logical connection.
+func (r *DebugRuntime) ConnectionLifetime() (string, wireclient.ConnectionLifetime) {
+	binding := r.lease.parent.binding
+
+	return binding.Name(), binding.ConnectionLifetime()
 }
 
 // Parameters returns an independent copy of the retained caller parameters.
