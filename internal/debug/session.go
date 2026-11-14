@@ -8,6 +8,7 @@ import (
 	apisource "github.com/MontFerret/api/source"
 	"github.com/MontFerret/ferretd/internal/exec"
 	"github.com/MontFerret/ferretd/internal/lifecycle"
+	wireclient "github.com/MontFerret/wire/client"
 )
 
 // session owns one exec.DebugRuntime and its retained debugger-specific state.
@@ -16,6 +17,10 @@ import (
 type session struct {
 	mu        sync.Mutex
 	controlMu sync.Mutex
+
+	runtimeName        string
+	connection         wireclient.ConnectionLifetime
+	watchingConnection bool
 
 	id               SessionID
 	runtime          *exec.DebugRuntime
@@ -38,7 +43,10 @@ func newSession(
 	id SessionID,
 	runtime *exec.DebugRuntime,
 ) *session {
+	name, connection := runtime.ConnectionLifetime()
 	result := &session{
+		runtimeName:  name,
+		connection:   connection,
 		id:           id,
 		runtime:      runtime,
 		state:        StateCreated,
