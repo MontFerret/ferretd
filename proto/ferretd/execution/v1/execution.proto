@@ -9,6 +9,7 @@ option go_package = "github.com/MontFerret/ferretd/gen/ferretd/execution/v1;exec
 
 service ExecutionService {
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc CancelSessionAcquisition(CancelSessionAcquisitionRequest) returns (CancelSessionAcquisitionResponse);
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
   rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse);
   rpc CreateExecution(CreateExecutionRequest) returns (CreateExecutionResponse);
@@ -39,6 +40,7 @@ message Session {
   SourceSnapshot source = 2;
   repeated string parameters = 3;
   string runtime_name = 4;
+  string acquisition_id = 5;
 }
 
 enum ExecutionState {
@@ -181,11 +183,21 @@ message CreateSessionRequest {
   ferretd.workspace.v1.WorkspaceId workspace_id = 1;
   string relative_path = 2;
   string runtime_name = 3;
+  // Fresh client UUID, scoped to this registered workspace (API 1.4).
+  optional string acquisition_id = 4;
 }
 
 message CreateSessionResponse {
   Session session = 1;
 }
+
+// Success confirms settlement and prevents later publication under this key.
+message CancelSessionAcquisitionRequest {
+  ferretd.workspace.v1.WorkspaceId workspace_id = 1;
+  string acquisition_id = 2;
+}
+
+message CancelSessionAcquisitionResponse {}
 
 message GetSessionRequest {
   SessionId id = 1;

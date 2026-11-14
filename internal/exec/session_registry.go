@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/MontFerret/ferretd/internal/lifecycle"
 	"github.com/MontFerret/ferretd/internal/workspace"
 )
 
@@ -12,8 +13,9 @@ type (
 	registryState uint8
 
 	// sessionRegistry owns Session reachability, lifecycle state, workspace
-	// membership, and service-wide creation admission. Its lock may nest only into
-	// a workspaceGroup or Session lifecycle gate.
+	// membership, and service-wide creation admission. Its lock precedes the
+	// group and Session gates. Installing a cancellation fence also reads
+	// workspace membership; workspace close hooks run outside that manager's lock.
 	sessionRegistry struct {
 		mu sync.RWMutex
 
@@ -27,10 +29,19 @@ type (
 		state   registryState
 	}
 
-	sessionCreation struct {
-		workspace workspace.ID
-		group     *workspaceGroup
+	sessionAcquisition struct {
 		operation *construction
+		published *sessionEntry
+		cancelled bool
+		settled   lifecycle.CloseOperation
+	}
+
+	sessionCreation struct {
+		acquisitionID string
+		acquisition   *sessionAcquisition
+		workspace     workspace.ID
+		group         *workspaceGroup
+		operation     *construction
 	}
 
 	runtimeCreation struct {
@@ -57,7 +68,7 @@ func newSessionRegistry() *sessionRegistry {
 	}
 }
 
-func (r *sessionRegistry) beginCreate(id workspace.ID, operation *construction) (sessionCreation, error) {
+func (r *sessionRegistry) beginCreate(id workspace.ID, operation *construction, acquisitionID string) (sessionCreation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -71,19 +82,46 @@ func (r *sessionRegistry) beginCreate(id workspace.ID, operation *construction) 
 		r.groups[id] = group
 	}
 
+	if prior := group.acquisitions[acquisitionID]; prior != nil {
+		if prior.cancelled {
+			return sessionCreation{}, context.Canceled
+		}
+
+		return sessionCreation{}, ErrDuplicateAcquisition
+	}
+
 	if !group.beginCreate(operation) {
 		return sessionCreation{}, workspace.ErrClosed
 	}
 
-	return sessionCreation{workspace: id, group: group, operation: operation}, nil
+	creation := sessionCreation{workspace: id, group: group, operation: operation, acquisitionID: acquisitionID}
+	if acquisitionID != "" {
+		creation.acquisition = group.newAcquisition(acquisitionID)
+		creation.acquisition.operation = operation
+	}
+
+	return creation, nil
 }
 
 func (r *sessionRegistry) finishCreate(creation sessionCreation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if a := creation.acquisition; a != nil && a.operation != nil {
+		a.operation = nil
+		a.settled.Finish(creation.operation.cleanupErr)
+
+		if creation.operation.cleanupErr != nil {
+			a.cancelled = true
+		}
+
+		if !a.cancelled {
+			delete(creation.group.acquisitions, creation.acquisitionID)
+		}
+	}
+
 	discard, closedErr := creation.group.finishCreate(creation.operation)
-	if discard && r.groups[creation.workspace] == creation.group {
+	if discard && len(creation.group.acquisitions) == 0 && r.groups[creation.workspace] == creation.group {
 		delete(r.groups, creation.workspace)
 	}
 
@@ -102,6 +140,10 @@ func (r *sessionRegistry) commitCreate(
 		return errors.Join(workspace.ErrClosed, constructionError(ctx))
 	}
 
+	if a := creation.acquisition; a != nil && a.cancelled {
+		return context.Canceled
+	}
+
 	if err := constructionError(ctx); err != nil {
 		return err
 	}
@@ -109,6 +151,12 @@ func (r *sessionRegistry) commitCreate(
 	entry := &sessionEntry{session: session, state: registryStateActive}
 	if !creation.group.add(entry) {
 		return workspace.ErrClosed
+	}
+
+	if a := creation.acquisition; a != nil {
+		a.published = entry
+		a.operation = nil
+		session.acquisitionID = creation.acquisitionID
 	}
 
 	r.entries[session.id] = entry
@@ -184,9 +232,11 @@ func (r *sessionRegistry) beginClose(id SessionID, retained *sessionEntry) (*ses
 	return entry, true
 }
 
-func (r *sessionRegistry) finishClose(entry *sessionEntry) {
+func (r *sessionRegistry) finishClose(entry *sessionEntry, result error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// A waiter that sees ordinary close succeed may immediately reuse the key.
+	defer entry.session.finishClose(result)
 
 	if r.entries[entry.session.id] == entry {
 		delete(r.entries, entry.session.id)
@@ -199,8 +249,21 @@ func (r *sessionRegistry) finishClose(entry *sessionEntry) {
 		return
 	}
 
+	if a := group.acquisitions[entry.session.acquisitionID]; a != nil {
+		a.published = nil
+		a.settled.Finish(result)
+
+		if result != nil {
+			a.cancelled = true
+		}
+
+		if !a.cancelled {
+			delete(group.acquisitions, entry.session.acquisitionID)
+		}
+	}
+
 	discard := group.removeCompleted(entry)
-	if discard && r.groups[workspaceID] == group {
+	if discard && len(group.acquisitions) == 0 && r.groups[workspaceID] == group {
 		delete(r.groups, workspaceID)
 	}
 }

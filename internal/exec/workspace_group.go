@@ -15,10 +15,12 @@ import (
 type workspaceGroup struct {
 	mu sync.Mutex
 
-	gate       lifecycle.Gate
-	sessions   map[SessionID]*sessionEntry
-	pending    map[*construction]struct{}
-	cleanupErr error
+	gate lifecycle.Gate
+	// acquisitions is protected by sessionRegistry.mu. Cancelled keys survive until workspace close.
+	acquisitions map[string]*sessionAcquisition
+	sessions     map[SessionID]*sessionEntry
+	pending      map[*construction]struct{}
+	cleanupErr   error
 }
 
 func newWorkspaceGroup() *workspaceGroup {
@@ -134,4 +136,17 @@ func (g *workspaceGroup) cancelPending() {
 	for _, operation := range pending {
 		operation.stop(workspace.ErrClosed)
 	}
+}
+
+// newAcquisition is called with the Session registry lock held.
+func (g *workspaceGroup) newAcquisition(id string) *sessionAcquisition {
+	if g.acquisitions == nil {
+		g.acquisitions = make(map[string]*sessionAcquisition)
+	}
+
+	a := &sessionAcquisition{}
+	a.settled.Begin()
+	g.acquisitions[id] = a
+
+	return a
 }

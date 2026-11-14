@@ -2,16 +2,27 @@ package grpc
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	"github.com/MontFerret/api"
 )
 
-// These adapter tests exercise composition, framing, and validation; execution
-// through the concrete runtime is covered by daemon end-to-end tests.
-type unusedRuntime struct {
-	t testing.TB
-}
+type (
+	// These adapter tests exercise composition, framing, and validation.
+	unusedRuntime struct{ t testing.TB }
+
+	acquisitionRuntime struct {
+		unusedRuntime
+		releases atomic.Int32
+	}
+
+	// The transport test only compiles and closes plans.
+	acquisitionPlan struct {
+		api.Plan
+		runtime *acquisitionRuntime
+	}
+)
 
 var _ api.Runtime = (*unusedRuntime)(nil)
 
@@ -40,5 +51,17 @@ func (r *unusedRuntime) CompileDebug(context.Context, api.Source, ...api.PlanOpt
 }
 
 func (r *unusedRuntime) Close() error {
+	return nil
+}
+
+func (r *acquisitionRuntime) Compile(context.Context, api.Source, ...api.PlanOption) (api.Plan, error) {
+	return &acquisitionPlan{runtime: r}, nil
+}
+
+func (p *acquisitionPlan) Params(context.Context) ([]string, error) { return nil, nil }
+
+func (p *acquisitionPlan) Close() error {
+	p.runtime.releases.Add(1)
+
 	return nil
 }

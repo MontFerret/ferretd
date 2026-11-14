@@ -15,6 +15,8 @@ var (
 
 	// ErrClosed reports an execution service that is shutting down.
 	ErrClosed = errors.New("execution service closed")
+	// ErrDuplicateAcquisition reports reuse of a live acquisition key.
+	ErrDuplicateAcquisition = errors.New("session acquisition ID already in use")
 	// ErrSessionNotFound reports an unknown daemon Session ID.
 	ErrSessionNotFound = errors.New("session not found")
 	// ErrSessionClosed reports a daemon Session that cannot create new Executions.

@@ -103,6 +103,10 @@ func (o *Owner) Acquire(ctx context.Context, name string) (*Binding, error) {
 	if err != nil {
 		if remote != nil {
 			err = errors.Join(err, o.rollback(definition.Name, remote))
+		} else if joined, ok := err.(interface{ Unwrap() []error }); ok && len(joined.Unwrap()) > 1 {
+			// Wire joins construction and detached cleanup errors when it cannot
+			// return a runtime. Release cannot be acknowledged in this case.
+			err = &RollbackError{Cause: err}
 		}
 
 		return nil, fmt.Errorf("connect runtime %q: %w", definition.Name, errors.Join(ErrRuntimeUnavailable, err))
@@ -166,7 +170,7 @@ func (o *Owner) rollback(name string, runtime api.Runtime) error {
 		return nil
 	}
 
-	err = fmt.Errorf("release unpublished runtime %q: %w", name, err)
+	err = &RollbackError{Cause: fmt.Errorf("release unpublished runtime %q: %w", name, err)}
 	o.mu.Lock()
 	o.cleanupErr = errors.Join(o.cleanupErr, err)
 	o.mu.Unlock()

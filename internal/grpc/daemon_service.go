@@ -13,7 +13,7 @@ import (
 
 const (
 	apiMajor uint32 = 1
-	apiMinor uint32 = 3
+	apiMinor uint32 = 4
 )
 
 type daemonService struct {

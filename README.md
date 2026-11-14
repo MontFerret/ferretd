@@ -177,6 +177,14 @@ and `ErrRuntimeUnavailable`, separately from daemon availability, source failure
 and `CompilationError`. Compilation/preparation failures retain diagnostics when
 available and otherwise a readable cause.
 
+On API 1.4, supply a fresh UUID in `CreateSessionRequest.AcquisitionID` to
+recover the acquisition even if its creation reply is lost. Call
+`Executions().CancelSessionAcquisition(cleanupCtx, workspaceID, acquisitionID)`
+on the original client with an independent deadline. A successful reply confirms
+rollback or completed Session closure. A later create with the cancelled key
+is rejected for the lifetime of that workspace. Ordinary completion still uses
+`CloseSession`. An explicitly requested acquisition ID requires API 1.4.
+
 For the opt-in TCP transport, parse the endpoint from the `ferretd.ready` event
 and pass the same token explicitly:
 
@@ -332,7 +340,7 @@ parameters, expressions, or evaluated values. See
 
 ## Current Status
 
-The daemon exposes API v1.3 `DaemonService`, `WorkspaceService`, and
+The daemon exposes API v1.4 `DaemonService`, `WorkspaceService`, and
 `ExecutionService` contracts over permission-restricted native local transports
 or authenticated ephemeral IPv4 loopback TCP, plus the standard gRPC health
 service. The checked-in Go code under `gen/` is generated from `proto/` with

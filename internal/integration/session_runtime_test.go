@@ -25,7 +25,16 @@ import (
 )
 
 func TestSessionRuntimeThroughSupportedClient(t *testing.T) {
-	wire := newWireFixture(t, 41)
+	released := make(chan struct{}, 4)
+	wire := newWireFixture(t, 41, wireserver.WithStreamInterceptors(func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		err := handler(srv, stream)
+
+		if strings.HasSuffix(info.FullMethod, "/Connect") {
+			released <- struct{}{}
+		}
+
+		return err
+	}))
 	f := newDaemonFixture(t, runtimes.Config{Runtimes: []runtimes.DefinitionConfig{{Name: "application", Provider: runtimes.ProviderWire, Endpoint: wire.endpoint, Insecure: true}}})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -40,7 +49,7 @@ func TestSessionRuntimeThroughSupportedClient(t *testing.T) {
 
 	c := f.connection.Executions()
 
-	created, err := c.CreateSession(ctx, client.CreateSessionRequest{WorkspaceID: opened.ID, RelativePath: "query.fql", RuntimeName: "application"})
+	created, err := c.CreateSession(ctx, client.CreateSessionRequest{WorkspaceID: opened.ID, RelativePath: "query.fql", RuntimeName: "application", AcquisitionID: "0ffea85f-f0a4-473d-8028-f31c98e71024"})
 	if err != nil || created.RuntimeName != "application" || len(created.Parameters) != 1 {
 		t.Fatalf("CreateSession = %+v, %v", created, err)
 	}
@@ -76,8 +85,16 @@ func TestSessionRuntimeThroughSupportedClient(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.CloseSession(ctx, created.ID); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if err := c.CancelSessionAcquisition(ctx, opened.ID, created.AcquisitionID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	select {
+	case <-released:
+	case <-ctx.Done():
+		t.Fatal("Wire binding was not released")
 	}
 
 	if got := runPublicSession(ctx, t, c, second.ID); got != "42" || wire.acquisitions.Load() != 2 {

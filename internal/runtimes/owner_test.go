@@ -338,6 +338,21 @@ func TestOwnerRejectsCancelledPublicationAndRetainsRollback(t *testing.T) {
 	}
 }
 
+func TestOwnerPreservesWireConstructorRollbackWithoutHandle(t *testing.T) {
+	owner, _ := newTestOwner(t, wireConfig())
+	failure := errors.New("connection release failed")
+	owner.connect = func(context.Context, string, ...wireclient.Option) (api.Runtime, error) {
+		return nil, errors.Join(context.Canceled, failure)
+	}
+
+	_, err := owner.Acquire(t.Context(), "app")
+
+	var rollback *RollbackError
+	if !errors.As(err, &rollback) || !errors.Is(rollback, failure) {
+		t.Fatalf("constructor lost rollback result: %v", err)
+	}
+}
+
 func TestOwnerShutdownWaitsForUnpublishedRollback(t *testing.T) {
 	owner, native := newTestOwner(t, wireConfig())
 	entered, resume := make(chan struct{}), make(chan struct{})

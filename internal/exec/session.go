@@ -18,17 +18,18 @@ import (
 type session struct {
 	mu sync.Mutex
 
-	id           SessionID
-	source       workspace.SourceSnapshot
-	parameters   []string
-	text         string
-	fsRoot       string
-	binding      *runtimes.Binding
-	pending      map[*construction]struct{}
-	cleanupErr   error
-	compileDebug func(context.Context) (api.Plan, error)
-	plan         api.Plan
-	debugPlan    api.Plan
+	id            SessionID
+	acquisitionID string
+	source        workspace.SourceSnapshot
+	parameters    []string
+	text          string
+	fsRoot        string
+	binding       *runtimes.Binding
+	pending       map[*construction]struct{}
+	cleanupErr    error
+	compileDebug  func(context.Context) (api.Plan, error)
+	plan          api.Plan
+	debugPlan     api.Plan
 
 	debugCompileDone   chan struct{}
 	debugCompileErr    error
@@ -67,11 +68,12 @@ func (s *session) snapshot() SessionSnapshot {
 	defer s.mu.Unlock()
 
 	return SessionSnapshot{
-		ID:          s.id,
-		RuntimeName: s.binding.Name(),
-		Source:      s.source,
-		Text:        s.text,
-		Parameters:  append([]string(nil), s.parameters...),
+		ID:            s.id,
+		AcquisitionID: s.acquisitionID,
+		RuntimeName:   s.binding.Name(),
+		Source:        s.source,
+		Text:          s.text,
+		Parameters:    append([]string(nil), s.parameters...),
 	}
 }
 
