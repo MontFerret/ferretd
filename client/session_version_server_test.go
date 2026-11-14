@@ -19,6 +19,7 @@ type sessionVersionServer struct {
 	minor   atomic.Uint32
 	infos   atomic.Int32
 	creates atomic.Int32
+	cancels atomic.Int32
 }
 
 func newSessionVersionServer(t *testing.T, minor uint32) (*sessionVersionServer, *Client) {
@@ -76,5 +77,14 @@ func (s *sessionVersionServer) CreateSession(_ context.Context, request *executi
 		name = "local"
 	}
 
-	return &executionv1.CreateSessionResponse{Session: sessionResponse(name)}, nil
+	session := sessionResponse(name)
+	session.AcquisitionId = request.GetAcquisitionId()
+
+	return &executionv1.CreateSessionResponse{Session: session}, nil
+}
+
+func (s *sessionVersionServer) CancelSessionAcquisition(_ context.Context, _ *executionv1.CancelSessionAcquisitionRequest) (*executionv1.CancelSessionAcquisitionResponse, error) {
+	s.cancels.Add(1)
+
+	return &executionv1.CancelSessionAcquisitionResponse{}, nil
 }

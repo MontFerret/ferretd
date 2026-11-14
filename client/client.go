@@ -15,7 +15,7 @@ import (
 	"github.com/MontFerret/ferretd/internal/transport"
 )
 
-var currentAPIVersion = APIVersion{Major: 1, Minor: 3}
+var currentAPIVersion = APIVersion{Major: 1, Minor: 4}
 
 // Client owns a negotiated connection to a local daemon.
 type Client struct {

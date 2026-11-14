@@ -253,3 +253,19 @@ benchmarks live under the test-only `internal/integration` package. Dependency
 integration tests cover the upstream adapter's source coordinates, debugger
 operations, diagnostics, and live breakpoint replacement. Debug lifecycle
 benchmarks remain with the debug manager.
+
+### Recoverable Session acquisition (API 1.4)
+
+A client can send a fresh, canonical UUID in `CreateSession.acquisition_id`.
+The Session echoes it. The pair of registered workspace ID and acquisition ID
+identifies the operation before the client knows its Session ID. A duplicate
+live create fails with ALREADY_EXISTS. Omission preserves legacy behavior.
+
+Use `CancelSessionAcquisition` on the original daemon after a lost reply.
+Cancellation fences a later create, joins rollback of a pending compilation, or
+closes the published Session and its children. Success confirms settlement.
+Concurrent cancellations share the cleanup result. A client deadline stops its
+wait while committed cleanup continues. Cancelled keys and cleanup failures
+are retained until workspace teardown. An ordinary successful CloseSession
+releases the acquisition record. The Go client exposes the key on
+CreateSessionRequest and Session, and checks negotiation before dispatch.

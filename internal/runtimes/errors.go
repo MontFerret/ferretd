@@ -2,6 +2,12 @@ package runtimes
 
 import "errors"
 
+// RollbackError identifies failure to release a partially acquired runtime.
+type RollbackError struct{ Cause error }
+
+func (e *RollbackError) Error() string { return e.Cause.Error() }
+func (e *RollbackError) Unwrap() error { return e.Cause }
+
 var (
 	errNilContext = errors.New("runtime owner: nil context")
 

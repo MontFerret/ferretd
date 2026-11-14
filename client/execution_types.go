@@ -17,7 +17,8 @@ type (
 
 	// Session is an immutable daemon execution-session snapshot.
 	Session struct {
-		ID SessionID
+		ID            SessionID
+		AcquisitionID string
 		// RuntimeName is the resolved name; empty means unreported by an older server.
 		RuntimeName string
 		Source      SourceSnapshot
@@ -28,8 +29,10 @@ type (
 	// file to refresh and compile, including beneath discovery-excluded directories.
 	// Workspace containment and nested-symlink restrictions still apply.
 	CreateSessionRequest struct {
-		WorkspaceID  string
-		RelativePath string
+		// AcquisitionID is an optional fresh UUID for cancellation before the Session ID is known.
+		AcquisitionID string
+		WorkspaceID   string
+		RelativePath  string
 		// RuntimeName selects an exact catalog name; empty uses the daemon default.
 		RuntimeName string
 	}

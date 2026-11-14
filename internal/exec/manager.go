@@ -69,7 +69,12 @@ func (m *Manager) CreateSession(
 	workspaceID workspace.ID,
 	relativePath string,
 	runtimeName string,
-) (snapshot SessionSnapshot, resultErr error) {
+) (SessionSnapshot, error) {
+	return m.AcquireSession(ctx, workspaceID, relativePath, runtimeName, "")
+}
+
+// AcquireSession associates creation and its rollback with an optional client acquisition key.
+func (m *Manager) AcquireSession(ctx context.Context, workspaceID workspace.ID, relativePath, runtimeName, acquisitionID string) (snapshot SessionSnapshot, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return SessionSnapshot{}, err
 	}
@@ -77,7 +82,7 @@ func (m *Manager) CreateSession(
 	operation, operationCtx := newConstruction(ctx)
 	defer operation.finish()
 
-	creation, err := m.sessions.beginCreate(workspaceID, operation)
+	creation, err := m.sessions.beginCreate(workspaceID, operation, acquisitionID)
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
@@ -142,6 +147,11 @@ func (m *Manager) prepareSession(
 
 	binding, err := m.runtimes.Acquire(ctx, runtimeName)
 	if err != nil {
+		var rollback *runtimes.RollbackError
+		if errors.As(err, &rollback) {
+			_ = operation.recordCleanup(rollback)
+		}
+
 		return nil, err
 	}
 
@@ -422,8 +432,7 @@ func (m *Manager) finishSessionClose(entry *sessionEntry) {
 
 	result = errors.Join(result, session.binding.Release())
 
-	session.finishClose(result)
-	m.sessions.finishClose(entry)
+	m.sessions.finishClose(entry, result)
 }
 
 func (m *Manager) finishExecutionClose(entry *executionEntry) {

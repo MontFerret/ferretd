@@ -177,3 +177,21 @@ func TestNegotiatedVersionIsRetainedWithoutPerRequestInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestAcquisitionNegotiationAndEcho(t *testing.T) {
+	const key = "0ffea85f-f0a4-473d-8028-f31c98e71024"
+	for _, minor := range []uint32{3, 4} {
+		server, conn := newSessionVersionServer(t, minor)
+		request := CreateSessionRequest{WorkspaceID: "ws", RelativePath: "query.fql", AcquisitionID: key}
+		session, err := conn.Executions().CreateSession(t.Context(), request)
+
+		cancelled := conn.Executions().CancelSessionAcquisition(t.Context(), "ws", key)
+		if minor < 4 {
+			if !errors.Is(err, ErrUnsupportedOperation) || !errors.Is(cancelled, ErrUnsupportedOperation) || server.creates.Load() != 0 || server.cancels.Load() != 0 {
+				t.Fatalf("older daemon: %v, %v", err, cancelled)
+			}
+		} else if err != nil || session.AcquisitionID != key || cancelled != nil || server.cancels.Load() != 1 {
+			t.Fatalf("acquisition: %+v, %v, %v", session, err, cancelled)
+		}
+	}
+}

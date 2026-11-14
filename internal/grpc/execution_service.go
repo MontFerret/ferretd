@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 
+	"github.com/google/uuid"
 	grpcgo "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -37,17 +38,40 @@ func (s *executionService) CreateSession(
 		return nil, status.Error(codes.InvalidArgument, "workspace-relative source path is required")
 	}
 
-	result, err := s.executions.CreateSession(
+	if request.AcquisitionId != nil && !validAcquisitionID(request.GetAcquisitionId()) {
+		return nil, status.Error(codes.InvalidArgument, "acquisition ID must be a canonical UUID")
+	}
+
+	result, err := s.executions.AcquireSession(
 		ctx,
 		workspace.ID(request.WorkspaceId.Value),
 		request.RelativePath,
 		request.RuntimeName,
+		request.GetAcquisitionId(),
 	)
 	if err != nil {
 		return nil, toExecutionStatusError(err)
 	}
 
 	return &executionv1.CreateSessionResponse{Session: toProtoSession(result)}, nil
+}
+
+func validAcquisitionID(key string) bool {
+	id, err := uuid.Parse(key)
+
+	return err == nil && id != uuid.Nil && id.String() == key
+}
+
+func (s *executionService) CancelSessionAcquisition(ctx context.Context, request *executionv1.CancelSessionAcquisitionRequest) (*executionv1.CancelSessionAcquisitionResponse, error) {
+	if request.GetWorkspaceId().GetValue() == "" || !validAcquisitionID(request.GetAcquisitionId()) {
+		return nil, status.Error(codes.InvalidArgument, "workspace ID and canonical acquisition UUID are required")
+	}
+
+	if err := s.executions.CancelSessionAcquisition(ctx, workspace.ID(request.WorkspaceId.Value), request.AcquisitionId); err != nil {
+		return nil, toExecutionStatusError(err)
+	}
+
+	return &executionv1.CancelSessionAcquisitionResponse{}, nil
 }
 
 func (s *executionService) GetSession(

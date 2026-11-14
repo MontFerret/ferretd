@@ -473,7 +473,7 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 	manager := mustNewManager(t, workspace.New())
 	workspaceID := workspace.ID("workspace")
 
-	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t))
+	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t), "")
 	if err != nil {
 		t.Fatalf("begin Session creation: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestCloseWorkspaceWaitsForInFlightSessionCreation(t *testing.T) {
 		t.Fatalf("CloseWorkspace error = %v, want context.Canceled", err)
 	}
 
-	if _, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t)); !errors.Is(err, workspace.ErrClosed) {
+	if _, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t), ""); !errors.Is(err, workspace.ErrClosed) {
 		t.Fatalf("begin Session creation during workspace close error = %v, want workspace.ErrClosed", err)
 	}
 
@@ -570,7 +570,7 @@ func TestManagerCloseWaitsForAdmittedSessionCreation(t *testing.T) {
 	manager := mustNewManager(t, workspace.New())
 	workspaceID := workspace.ID("workspace")
 
-	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t))
+	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t), "")
 	if err != nil {
 		t.Fatalf("begin Session creation: %v", err)
 	}
@@ -582,7 +582,7 @@ func TestManagerCloseWaitsForAdmittedSessionCreation(t *testing.T) {
 	}()
 	waitForSignal(t, closeContext.observed, "Manager close wait")
 
-	if _, err := manager.sessions.beginCreate(workspace.ID("other"), newTestConstruction(t)); !errors.Is(err, ErrClosed) {
+	if _, err := manager.sessions.beginCreate(workspace.ID("other"), newTestConstruction(t), ""); !errors.Is(err, ErrClosed) {
 		t.Fatalf("begin Session creation after Manager close error = %v, want ErrClosed", err)
 	}
 

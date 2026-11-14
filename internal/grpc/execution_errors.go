@@ -45,6 +45,8 @@ func toExecutionStatusError(err error) error {
 	}
 
 	switch {
+	case errors.Is(err, exec.ErrDuplicateAcquisition):
+		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, runtimes.ErrRuntimeNotFound):
 		return resourceStatusError(codes.NotFound, err, executionv1.ResourceKind_RESOURCE_KIND_RUNTIME, executionv1.ResourceCondition_RESOURCE_CONDITION_NOT_FOUND)
 	case errors.Is(err, runtimes.ErrRuntimeUnavailable):

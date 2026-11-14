@@ -15,10 +15,11 @@ import (
 
 func toProtoSession(value exec.SessionSnapshot) *executionv1.Session {
 	return &executionv1.Session{
-		Id:          &executionv1.SessionId{Value: value.ID.String()},
-		Source:      toProtoSourceSnapshot(value.Source),
-		Parameters:  append([]string(nil), value.Parameters...),
-		RuntimeName: value.RuntimeName,
+		Id:            &executionv1.SessionId{Value: value.ID.String()},
+		Source:        toProtoSourceSnapshot(value.Source),
+		Parameters:    append([]string(nil), value.Parameters...),
+		RuntimeName:   value.RuntimeName,
+		AcquisitionId: value.AcquisitionID,
 	}
 }
 

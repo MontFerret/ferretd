@@ -140,7 +140,7 @@ domain errors without retaining workspace, Session, or Execution state.
 
 Clients send their API version during daemon information negotiation. A major
 version mismatch is rejected with structured compatibility detail; minor
-versions are additive. The current version is 1.3; transport and bootstrap
+versions are additive. The current version is 1.4. Transport and bootstrap
 features do not change the RPC API version. Process-local state survives client
 disconnects but not daemon restarts.
 
@@ -167,6 +167,10 @@ Session require bounded detached cleanup without replay. The Go client retains
 initial negotiation, uses a five-second cleanup timeout, and distinguishes
 runtime lookup/acquisition failures from source and daemon failures through
 execution resource details.
+
+API 1.4 adds workspace-scoped Session acquisition cancellation. Clients that
+need to recover from a lost creation reply can allocate a UUID before dispatch.
+See [Recoverable Session acquisition](execution.md#recoverable-session-acquisition-api-14).
 
 ## Protobuf ownership and generation
 

@@ -137,7 +137,7 @@ func newHookedManager(
 		t.Fatalf("New: %v", err)
 	}
 
-	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t))
+	creation, err := manager.sessions.beginCreate(workspaceID, newTestConstruction(t), "")
 	if err != nil {
 		t.Fatalf("begin Session creation: %v", err)
 	}

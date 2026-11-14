@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	errInvalidAcquisitionAck    = errors.New("invalid session acquisition acknowledgment")
 	errIncompleteServerInfo     = errors.New("daemon returned incomplete server information")
 	errIncompleteWorkspace      = errors.New("daemon returned an incomplete workspace")
 	errIncompleteRuntimeCatalog = errors.New("daemon returned an incomplete runtime catalog")

@@ -19,15 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ExecutionService_CreateSession_FullMethodName   = "/ferretd.execution.v1.ExecutionService/CreateSession"
-	ExecutionService_GetSession_FullMethodName      = "/ferretd.execution.v1.ExecutionService/GetSession"
-	ExecutionService_CloseSession_FullMethodName    = "/ferretd.execution.v1.ExecutionService/CloseSession"
-	ExecutionService_CreateExecution_FullMethodName = "/ferretd.execution.v1.ExecutionService/CreateExecution"
-	ExecutionService_RunExecution_FullMethodName    = "/ferretd.execution.v1.ExecutionService/RunExecution"
-	ExecutionService_GetExecution_FullMethodName    = "/ferretd.execution.v1.ExecutionService/GetExecution"
-	ExecutionService_CancelExecution_FullMethodName = "/ferretd.execution.v1.ExecutionService/CancelExecution"
-	ExecutionService_CloseExecution_FullMethodName  = "/ferretd.execution.v1.ExecutionService/CloseExecution"
-	ExecutionService_WatchExecution_FullMethodName  = "/ferretd.execution.v1.ExecutionService/WatchExecution"
+	ExecutionService_CreateSession_FullMethodName            = "/ferretd.execution.v1.ExecutionService/CreateSession"
+	ExecutionService_CancelSessionAcquisition_FullMethodName = "/ferretd.execution.v1.ExecutionService/CancelSessionAcquisition"
+	ExecutionService_GetSession_FullMethodName               = "/ferretd.execution.v1.ExecutionService/GetSession"
+	ExecutionService_CloseSession_FullMethodName             = "/ferretd.execution.v1.ExecutionService/CloseSession"
+	ExecutionService_CreateExecution_FullMethodName          = "/ferretd.execution.v1.ExecutionService/CreateExecution"
+	ExecutionService_RunExecution_FullMethodName             = "/ferretd.execution.v1.ExecutionService/RunExecution"
+	ExecutionService_GetExecution_FullMethodName             = "/ferretd.execution.v1.ExecutionService/GetExecution"
+	ExecutionService_CancelExecution_FullMethodName          = "/ferretd.execution.v1.ExecutionService/CancelExecution"
+	ExecutionService_CloseExecution_FullMethodName           = "/ferretd.execution.v1.ExecutionService/CloseExecution"
+	ExecutionService_WatchExecution_FullMethodName           = "/ferretd.execution.v1.ExecutionService/WatchExecution"
 )
 
 // ExecutionServiceClient is the client API for ExecutionService service.
@@ -35,6 +36,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ExecutionServiceClient interface {
 	CreateSession(ctx context.Context, in *CreateSessionRequest, opts ...grpc.CallOption) (*CreateSessionResponse, error)
+	CancelSessionAcquisition(ctx context.Context, in *CancelSessionAcquisitionRequest, opts ...grpc.CallOption) (*CancelSessionAcquisitionResponse, error)
 	GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error)
 	CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionResponse, error)
 	CreateExecution(ctx context.Context, in *CreateExecutionRequest, opts ...grpc.CallOption) (*CreateExecutionResponse, error)
@@ -57,6 +59,16 @@ func (c *executionServiceClient) CreateSession(ctx context.Context, in *CreateSe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateSessionResponse)
 	err := c.cc.Invoke(ctx, ExecutionService_CreateSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *executionServiceClient) CancelSessionAcquisition(ctx context.Context, in *CancelSessionAcquisitionRequest, opts ...grpc.CallOption) (*CancelSessionAcquisitionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelSessionAcquisitionResponse)
+	err := c.cc.Invoke(ctx, ExecutionService_CancelSessionAcquisition_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +169,7 @@ type ExecutionService_WatchExecutionClient = grpc.ServerStreamingClient[WatchExe
 // for forward compatibility.
 type ExecutionServiceServer interface {
 	CreateSession(context.Context, *CreateSessionRequest) (*CreateSessionResponse, error)
+	CancelSessionAcquisition(context.Context, *CancelSessionAcquisitionRequest) (*CancelSessionAcquisitionResponse, error)
 	GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error)
 	CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionResponse, error)
 	CreateExecution(context.Context, *CreateExecutionRequest) (*CreateExecutionResponse, error)
@@ -177,6 +190,9 @@ type UnimplementedExecutionServiceServer struct{}
 
 func (UnimplementedExecutionServiceServer) CreateSession(context.Context, *CreateSessionRequest) (*CreateSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateSession not implemented")
+}
+func (UnimplementedExecutionServiceServer) CancelSessionAcquisition(context.Context, *CancelSessionAcquisitionRequest) (*CancelSessionAcquisitionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelSessionAcquisition not implemented")
 }
 func (UnimplementedExecutionServiceServer) GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSession not implemented")
@@ -237,6 +253,24 @@ func _ExecutionService_CreateSession_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ExecutionServiceServer).CreateSession(ctx, req.(*CreateSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExecutionService_CancelSessionAcquisition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelSessionAcquisitionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecutionServiceServer).CancelSessionAcquisition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExecutionService_CancelSessionAcquisition_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecutionServiceServer).CancelSessionAcquisition(ctx, req.(*CancelSessionAcquisitionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -388,6 +422,10 @@ var ExecutionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateSession",
 			Handler:    _ExecutionService_CreateSession_Handler,
+		},
+		{
+			MethodName: "CancelSessionAcquisition",
+			Handler:    _ExecutionService_CancelSessionAcquisition_Handler,
 		},
 		{
 			MethodName: "GetSession",

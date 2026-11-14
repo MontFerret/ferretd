@@ -466,6 +466,7 @@ type Session struct {
 	Source        *SourceSnapshot        `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
 	Parameters    []string               `protobuf:"bytes,3,rep,name=parameters,proto3" json:"parameters,omitempty"`
 	RuntimeName   string                 `protobuf:"bytes,4,opt,name=runtime_name,json=runtimeName,proto3" json:"runtime_name,omitempty"`
+	AcquisitionId string                 `protobuf:"bytes,5,opt,name=acquisition_id,json=acquisitionId,proto3" json:"acquisition_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -524,6 +525,13 @@ func (x *Session) GetParameters() []string {
 func (x *Session) GetRuntimeName() string {
 	if x != nil {
 		return x.RuntimeName
+	}
+	return ""
+}
+
+func (x *Session) GetAcquisitionId() string {
+	if x != nil {
+		return x.AcquisitionId
 	}
 	return ""
 }
@@ -1511,10 +1519,12 @@ func (*WatchExecutionResponse_Failed) isWatchExecutionResponse_Payload() {}
 func (*WatchExecutionResponse_Cancelled) isWatchExecutionResponse_Payload() {}
 
 type CreateSessionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   *v1.WorkspaceId        `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	RelativePath  string                 `protobuf:"bytes,2,opt,name=relative_path,json=relativePath,proto3" json:"relative_path,omitempty"`
-	RuntimeName   string                 `protobuf:"bytes,3,opt,name=runtime_name,json=runtimeName,proto3" json:"runtime_name,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId  *v1.WorkspaceId        `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	RelativePath string                 `protobuf:"bytes,2,opt,name=relative_path,json=relativePath,proto3" json:"relative_path,omitempty"`
+	RuntimeName  string                 `protobuf:"bytes,3,opt,name=runtime_name,json=runtimeName,proto3" json:"runtime_name,omitempty"`
+	// Fresh client UUID, scoped to this registered workspace (API 1.4).
+	AcquisitionId *string `protobuf:"bytes,4,opt,name=acquisition_id,json=acquisitionId,proto3,oneof" json:"acquisition_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1570,6 +1580,13 @@ func (x *CreateSessionRequest) GetRuntimeName() string {
 	return ""
 }
 
+func (x *CreateSessionRequest) GetAcquisitionId() string {
+	if x != nil && x.AcquisitionId != nil {
+		return *x.AcquisitionId
+	}
+	return ""
+}
+
 type CreateSessionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Session       *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
@@ -1614,6 +1631,95 @@ func (x *CreateSessionResponse) GetSession() *Session {
 	return nil
 }
 
+// Success confirms settlement and prevents later publication under this key.
+type CancelSessionAcquisitionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   *v1.WorkspaceId        `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	AcquisitionId string                 `protobuf:"bytes,2,opt,name=acquisition_id,json=acquisitionId,proto3" json:"acquisition_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelSessionAcquisitionRequest) Reset() {
+	*x = CancelSessionAcquisitionRequest{}
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelSessionAcquisitionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelSessionAcquisitionRequest) ProtoMessage() {}
+
+func (x *CancelSessionAcquisitionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelSessionAcquisitionRequest.ProtoReflect.Descriptor instead.
+func (*CancelSessionAcquisitionRequest) Descriptor() ([]byte, []int) {
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *CancelSessionAcquisitionRequest) GetWorkspaceId() *v1.WorkspaceId {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return nil
+}
+
+func (x *CancelSessionAcquisitionRequest) GetAcquisitionId() string {
+	if x != nil {
+		return x.AcquisitionId
+	}
+	return ""
+}
+
+type CancelSessionAcquisitionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelSessionAcquisitionResponse) Reset() {
+	*x = CancelSessionAcquisitionResponse{}
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelSessionAcquisitionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelSessionAcquisitionResponse) ProtoMessage() {}
+
+func (x *CancelSessionAcquisitionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelSessionAcquisitionResponse.ProtoReflect.Descriptor instead.
+func (*CancelSessionAcquisitionResponse) Descriptor() ([]byte, []int) {
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{23}
+}
+
 type GetSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            *SessionId             `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1623,7 +1729,7 @@ type GetSessionRequest struct {
 
 func (x *GetSessionRequest) Reset() {
 	*x = GetSessionRequest{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[22]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1635,7 +1741,7 @@ func (x *GetSessionRequest) String() string {
 func (*GetSessionRequest) ProtoMessage() {}
 
 func (x *GetSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[22]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1648,7 +1754,7 @@ func (x *GetSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionRequest.ProtoReflect.Descriptor instead.
 func (*GetSessionRequest) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{22}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetSessionRequest) GetId() *SessionId {
@@ -1667,7 +1773,7 @@ type GetSessionResponse struct {
 
 func (x *GetSessionResponse) Reset() {
 	*x = GetSessionResponse{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[23]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1679,7 +1785,7 @@ func (x *GetSessionResponse) String() string {
 func (*GetSessionResponse) ProtoMessage() {}
 
 func (x *GetSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[23]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1692,7 +1798,7 @@ func (x *GetSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionResponse.ProtoReflect.Descriptor instead.
 func (*GetSessionResponse) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{23}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetSessionResponse) GetSession() *Session {
@@ -1711,7 +1817,7 @@ type CloseSessionRequest struct {
 
 func (x *CloseSessionRequest) Reset() {
 	*x = CloseSessionRequest{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[24]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1723,7 +1829,7 @@ func (x *CloseSessionRequest) String() string {
 func (*CloseSessionRequest) ProtoMessage() {}
 
 func (x *CloseSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[24]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1736,7 +1842,7 @@ func (x *CloseSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseSessionRequest.ProtoReflect.Descriptor instead.
 func (*CloseSessionRequest) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{24}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CloseSessionRequest) GetId() *SessionId {
@@ -1754,7 +1860,7 @@ type CloseSessionResponse struct {
 
 func (x *CloseSessionResponse) Reset() {
 	*x = CloseSessionResponse{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[25]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1766,7 +1872,7 @@ func (x *CloseSessionResponse) String() string {
 func (*CloseSessionResponse) ProtoMessage() {}
 
 func (x *CloseSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[25]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1779,7 +1885,7 @@ func (x *CloseSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseSessionResponse.ProtoReflect.Descriptor instead.
 func (*CloseSessionResponse) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{25}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{27}
 }
 
 type CreateExecutionRequest struct {
@@ -1793,7 +1899,7 @@ type CreateExecutionRequest struct {
 
 func (x *CreateExecutionRequest) Reset() {
 	*x = CreateExecutionRequest{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[26]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1805,7 +1911,7 @@ func (x *CreateExecutionRequest) String() string {
 func (*CreateExecutionRequest) ProtoMessage() {}
 
 func (x *CreateExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[26]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1818,7 +1924,7 @@ func (x *CreateExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExecutionRequest.ProtoReflect.Descriptor instead.
 func (*CreateExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{26}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreateExecutionRequest) GetSessionId() *SessionId {
@@ -1851,7 +1957,7 @@ type CreateExecutionResponse struct {
 
 func (x *CreateExecutionResponse) Reset() {
 	*x = CreateExecutionResponse{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[27]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1863,7 +1969,7 @@ func (x *CreateExecutionResponse) String() string {
 func (*CreateExecutionResponse) ProtoMessage() {}
 
 func (x *CreateExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[27]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1876,7 +1982,7 @@ func (x *CreateExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExecutionResponse.ProtoReflect.Descriptor instead.
 func (*CreateExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{27}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CreateExecutionResponse) GetExecution() *Execution {
@@ -1895,7 +2001,7 @@ type RunExecutionRequest struct {
 
 func (x *RunExecutionRequest) Reset() {
 	*x = RunExecutionRequest{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[28]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1907,7 +2013,7 @@ func (x *RunExecutionRequest) String() string {
 func (*RunExecutionRequest) ProtoMessage() {}
 
 func (x *RunExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[28]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1920,7 +2026,7 @@ func (x *RunExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunExecutionRequest.ProtoReflect.Descriptor instead.
 func (*RunExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{28}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *RunExecutionRequest) GetId() *ExecutionId {
@@ -1939,7 +2045,7 @@ type RunExecutionResponse struct {
 
 func (x *RunExecutionResponse) Reset() {
 	*x = RunExecutionResponse{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[29]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1951,7 +2057,7 @@ func (x *RunExecutionResponse) String() string {
 func (*RunExecutionResponse) ProtoMessage() {}
 
 func (x *RunExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[29]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1964,7 +2070,7 @@ func (x *RunExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunExecutionResponse.ProtoReflect.Descriptor instead.
 func (*RunExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{29}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *RunExecutionResponse) GetExecution() *Execution {
@@ -1983,7 +2089,7 @@ type GetExecutionRequest struct {
 
 func (x *GetExecutionRequest) Reset() {
 	*x = GetExecutionRequest{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[30]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1995,7 +2101,7 @@ func (x *GetExecutionRequest) String() string {
 func (*GetExecutionRequest) ProtoMessage() {}
 
 func (x *GetExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[30]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2008,7 +2114,7 @@ func (x *GetExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExecutionRequest.ProtoReflect.Descriptor instead.
 func (*GetExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{30}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetExecutionRequest) GetId() *ExecutionId {
@@ -2027,7 +2133,7 @@ type GetExecutionResponse struct {
 
 func (x *GetExecutionResponse) Reset() {
 	*x = GetExecutionResponse{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[31]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2039,7 +2145,7 @@ func (x *GetExecutionResponse) String() string {
 func (*GetExecutionResponse) ProtoMessage() {}
 
 func (x *GetExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[31]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2052,7 +2158,7 @@ func (x *GetExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExecutionResponse.ProtoReflect.Descriptor instead.
 func (*GetExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{31}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetExecutionResponse) GetExecution() *Execution {
@@ -2071,7 +2177,7 @@ type CancelExecutionRequest struct {
 
 func (x *CancelExecutionRequest) Reset() {
 	*x = CancelExecutionRequest{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[32]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2083,7 +2189,7 @@ func (x *CancelExecutionRequest) String() string {
 func (*CancelExecutionRequest) ProtoMessage() {}
 
 func (x *CancelExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[32]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2096,7 +2202,7 @@ func (x *CancelExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExecutionRequest.ProtoReflect.Descriptor instead.
 func (*CancelExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{32}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CancelExecutionRequest) GetId() *ExecutionId {
@@ -2115,7 +2221,7 @@ type CancelExecutionResponse struct {
 
 func (x *CancelExecutionResponse) Reset() {
 	*x = CancelExecutionResponse{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[33]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2127,7 +2233,7 @@ func (x *CancelExecutionResponse) String() string {
 func (*CancelExecutionResponse) ProtoMessage() {}
 
 func (x *CancelExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[33]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2140,7 +2246,7 @@ func (x *CancelExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExecutionResponse.ProtoReflect.Descriptor instead.
 func (*CancelExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{33}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CancelExecutionResponse) GetExecution() *Execution {
@@ -2159,7 +2265,7 @@ type CloseExecutionRequest struct {
 
 func (x *CloseExecutionRequest) Reset() {
 	*x = CloseExecutionRequest{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[34]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2171,7 +2277,7 @@ func (x *CloseExecutionRequest) String() string {
 func (*CloseExecutionRequest) ProtoMessage() {}
 
 func (x *CloseExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[34]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2184,7 +2290,7 @@ func (x *CloseExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseExecutionRequest.ProtoReflect.Descriptor instead.
 func (*CloseExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{34}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *CloseExecutionRequest) GetId() *ExecutionId {
@@ -2202,7 +2308,7 @@ type CloseExecutionResponse struct {
 
 func (x *CloseExecutionResponse) Reset() {
 	*x = CloseExecutionResponse{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[35]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2214,7 +2320,7 @@ func (x *CloseExecutionResponse) String() string {
 func (*CloseExecutionResponse) ProtoMessage() {}
 
 func (x *CloseExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[35]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2227,7 +2333,7 @@ func (x *CloseExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseExecutionResponse.ProtoReflect.Descriptor instead.
 func (*CloseExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{35}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{37}
 }
 
 type WatchExecutionRequest struct {
@@ -2239,7 +2345,7 @@ type WatchExecutionRequest struct {
 
 func (x *WatchExecutionRequest) Reset() {
 	*x = WatchExecutionRequest{}
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[36]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2251,7 +2357,7 @@ func (x *WatchExecutionRequest) String() string {
 func (*WatchExecutionRequest) ProtoMessage() {}
 
 func (x *WatchExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[36]
+	mi := &file_ferretd_execution_v1_execution_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2264,7 +2370,7 @@ func (x *WatchExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchExecutionRequest.ProtoReflect.Descriptor instead.
 func (*WatchExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{36}
+	return file_ferretd_execution_v1_execution_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *WatchExecutionRequest) GetId() *ExecutionId {
@@ -2287,14 +2393,15 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	"\fworkspace_id\x18\x01 \x01(\v2!.ferretd.workspace.v1.WorkspaceIdR\vworkspaceId\x12#\n" +
 	"\rrelative_path\x18\x02 \x01(\tR\frelativePath\x12\x10\n" +
 	"\x03uri\x18\x03 \x01(\tR\x03uri\x12\x1a\n" +
-	"\brevision\x18\x04 \x01(\x04R\brevision\"\xbb\x01\n" +
+	"\brevision\x18\x04 \x01(\x04R\brevision\"\xe2\x01\n" +
 	"\aSession\x12/\n" +
 	"\x02id\x18\x01 \x01(\v2\x1f.ferretd.execution.v1.SessionIdR\x02id\x12<\n" +
 	"\x06source\x18\x02 \x01(\v2$.ferretd.execution.v1.SourceSnapshotR\x06source\x12\x1e\n" +
 	"\n" +
 	"parameters\x18\x03 \x03(\tR\n" +
 	"parameters\x12!\n" +
-	"\fruntime_name\x18\x04 \x01(\tR\vruntimeName\"\x8a\x01\n" +
+	"\fruntime_name\x18\x04 \x01(\tR\vruntimeName\x12%\n" +
+	"\x0eacquisition_id\x18\x05 \x01(\tR\racquisitionId\"\x8a\x01\n" +
 	"\x10ExecutionOptions\x12.\n" +
 	"\x13output_content_type\x18\x01 \x01(\tR\x11outputContentType\x120\n" +
 	"\x11working_directory\x18\x02 \x01(\tH\x00R\x10workingDirectory\x88\x01\x01B\x14\n" +
@@ -2360,13 +2467,19 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	"\tcompleted\x18\x05 \x01(\v2(.ferretd.execution.v1.ExecutionCompletedH\x00R\tcompleted\x12?\n" +
 	"\x06failed\x18\x06 \x01(\v2%.ferretd.execution.v1.ExecutionFailedH\x00R\x06failed\x12H\n" +
 	"\tcancelled\x18\a \x01(\v2(.ferretd.execution.v1.ExecutionCancelledH\x00R\tcancelledB\t\n" +
-	"\apayload\"\xa4\x01\n" +
+	"\apayload\"\xe3\x01\n" +
 	"\x14CreateSessionRequest\x12D\n" +
 	"\fworkspace_id\x18\x01 \x01(\v2!.ferretd.workspace.v1.WorkspaceIdR\vworkspaceId\x12#\n" +
 	"\rrelative_path\x18\x02 \x01(\tR\frelativePath\x12!\n" +
-	"\fruntime_name\x18\x03 \x01(\tR\vruntimeName\"P\n" +
+	"\fruntime_name\x18\x03 \x01(\tR\vruntimeName\x12*\n" +
+	"\x0eacquisition_id\x18\x04 \x01(\tH\x00R\racquisitionId\x88\x01\x01B\x11\n" +
+	"\x0f_acquisition_id\"P\n" +
 	"\x15CreateSessionResponse\x127\n" +
-	"\asession\x18\x01 \x01(\v2\x1d.ferretd.execution.v1.SessionR\asession\"D\n" +
+	"\asession\x18\x01 \x01(\v2\x1d.ferretd.execution.v1.SessionR\asession\"\x8e\x01\n" +
+	"\x1fCancelSessionAcquisitionRequest\x12D\n" +
+	"\fworkspace_id\x18\x01 \x01(\v2!.ferretd.workspace.v1.WorkspaceIdR\vworkspaceId\x12%\n" +
+	"\x0eacquisition_id\x18\x02 \x01(\tR\racquisitionId\"\"\n" +
+	" CancelSessionAcquisitionResponse\"D\n" +
 	"\x11GetSessionRequest\x12/\n" +
 	"\x02id\x18\x01 \x01(\v2\x1f.ferretd.execution.v1.SessionIdR\x02id\"M\n" +
 	"\x12GetSessionResponse\x127\n" +
@@ -2431,9 +2544,10 @@ const file_ferretd_execution_v1_execution_proto_rawDesc = "" +
 	"%RESOURCE_CONDITION_INVALID_PARAMETERS\x10\x04\x12\x1d\n" +
 	"\x19RESOURCE_CONDITION_LAGGED\x10\x05\x12&\n" +
 	"\"RESOURCE_CONDITION_INVALID_OPTIONS\x10\x06\x12\"\n" +
-	"\x1eRESOURCE_CONDITION_UNAVAILABLE\x10\a2\xce\a\n" +
+	"\x1eRESOURCE_CONDITION_UNAVAILABLE\x10\a2\xda\b\n" +
 	"\x10ExecutionService\x12h\n" +
-	"\rCreateSession\x12*.ferretd.execution.v1.CreateSessionRequest\x1a+.ferretd.execution.v1.CreateSessionResponse\x12_\n" +
+	"\rCreateSession\x12*.ferretd.execution.v1.CreateSessionRequest\x1a+.ferretd.execution.v1.CreateSessionResponse\x12\x89\x01\n" +
+	"\x18CancelSessionAcquisition\x125.ferretd.execution.v1.CancelSessionAcquisitionRequest\x1a6.ferretd.execution.v1.CancelSessionAcquisitionResponse\x12_\n" +
 	"\n" +
 	"GetSession\x12'.ferretd.execution.v1.GetSessionRequest\x1a(.ferretd.execution.v1.GetSessionResponse\x12e\n" +
 	"\fCloseSession\x12).ferretd.execution.v1.CloseSessionRequest\x1a*.ferretd.execution.v1.CloseSessionResponse\x12n\n" +
@@ -2457,55 +2571,57 @@ func file_ferretd_execution_v1_execution_proto_rawDescGZIP() []byte {
 }
 
 var file_ferretd_execution_v1_execution_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_ferretd_execution_v1_execution_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_ferretd_execution_v1_execution_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_ferretd_execution_v1_execution_proto_goTypes = []any{
-	(ExecutionState)(0),             // 0: ferretd.execution.v1.ExecutionState
-	(FailureCategory)(0),            // 1: ferretd.execution.v1.FailureCategory
-	(DiagnosticSeverity)(0),         // 2: ferretd.execution.v1.DiagnosticSeverity
-	(ResourceKind)(0),               // 3: ferretd.execution.v1.ResourceKind
-	(ResourceCondition)(0),          // 4: ferretd.execution.v1.ResourceCondition
-	(*SessionId)(nil),               // 5: ferretd.execution.v1.SessionId
-	(*ExecutionId)(nil),             // 6: ferretd.execution.v1.ExecutionId
-	(*SourceSnapshot)(nil),          // 7: ferretd.execution.v1.SourceSnapshot
-	(*Session)(nil),                 // 8: ferretd.execution.v1.Session
-	(*ExecutionOptions)(nil),        // 9: ferretd.execution.v1.ExecutionOptions
-	(*Output)(nil),                  // 10: ferretd.execution.v1.Output
-	(*Position)(nil),                // 11: ferretd.execution.v1.Position
-	(*Range)(nil),                   // 12: ferretd.execution.v1.Range
-	(*RelatedInformation)(nil),      // 13: ferretd.execution.v1.RelatedInformation
-	(*Diagnostic)(nil),              // 14: ferretd.execution.v1.Diagnostic
-	(*Failure)(nil),                 // 15: ferretd.execution.v1.Failure
-	(*Execution)(nil),               // 16: ferretd.execution.v1.Execution
-	(*CompilationFailure)(nil),      // 17: ferretd.execution.v1.CompilationFailure
-	(*ResourceErrorDetail)(nil),     // 18: ferretd.execution.v1.ResourceErrorDetail
-	(*ExecutionCreated)(nil),        // 19: ferretd.execution.v1.ExecutionCreated
-	(*ExecutionStarted)(nil),        // 20: ferretd.execution.v1.ExecutionStarted
-	(*ExecutionCompleted)(nil),      // 21: ferretd.execution.v1.ExecutionCompleted
-	(*ExecutionFailed)(nil),         // 22: ferretd.execution.v1.ExecutionFailed
-	(*ExecutionCancelled)(nil),      // 23: ferretd.execution.v1.ExecutionCancelled
-	(*WatchExecutionResponse)(nil),  // 24: ferretd.execution.v1.WatchExecutionResponse
-	(*CreateSessionRequest)(nil),    // 25: ferretd.execution.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),   // 26: ferretd.execution.v1.CreateSessionResponse
-	(*GetSessionRequest)(nil),       // 27: ferretd.execution.v1.GetSessionRequest
-	(*GetSessionResponse)(nil),      // 28: ferretd.execution.v1.GetSessionResponse
-	(*CloseSessionRequest)(nil),     // 29: ferretd.execution.v1.CloseSessionRequest
-	(*CloseSessionResponse)(nil),    // 30: ferretd.execution.v1.CloseSessionResponse
-	(*CreateExecutionRequest)(nil),  // 31: ferretd.execution.v1.CreateExecutionRequest
-	(*CreateExecutionResponse)(nil), // 32: ferretd.execution.v1.CreateExecutionResponse
-	(*RunExecutionRequest)(nil),     // 33: ferretd.execution.v1.RunExecutionRequest
-	(*RunExecutionResponse)(nil),    // 34: ferretd.execution.v1.RunExecutionResponse
-	(*GetExecutionRequest)(nil),     // 35: ferretd.execution.v1.GetExecutionRequest
-	(*GetExecutionResponse)(nil),    // 36: ferretd.execution.v1.GetExecutionResponse
-	(*CancelExecutionRequest)(nil),  // 37: ferretd.execution.v1.CancelExecutionRequest
-	(*CancelExecutionResponse)(nil), // 38: ferretd.execution.v1.CancelExecutionResponse
-	(*CloseExecutionRequest)(nil),   // 39: ferretd.execution.v1.CloseExecutionRequest
-	(*CloseExecutionResponse)(nil),  // 40: ferretd.execution.v1.CloseExecutionResponse
-	(*WatchExecutionRequest)(nil),   // 41: ferretd.execution.v1.WatchExecutionRequest
-	(*v1.WorkspaceId)(nil),          // 42: ferretd.workspace.v1.WorkspaceId
-	(*structpb.Struct)(nil),         // 43: google.protobuf.Struct
+	(ExecutionState)(0),                      // 0: ferretd.execution.v1.ExecutionState
+	(FailureCategory)(0),                     // 1: ferretd.execution.v1.FailureCategory
+	(DiagnosticSeverity)(0),                  // 2: ferretd.execution.v1.DiagnosticSeverity
+	(ResourceKind)(0),                        // 3: ferretd.execution.v1.ResourceKind
+	(ResourceCondition)(0),                   // 4: ferretd.execution.v1.ResourceCondition
+	(*SessionId)(nil),                        // 5: ferretd.execution.v1.SessionId
+	(*ExecutionId)(nil),                      // 6: ferretd.execution.v1.ExecutionId
+	(*SourceSnapshot)(nil),                   // 7: ferretd.execution.v1.SourceSnapshot
+	(*Session)(nil),                          // 8: ferretd.execution.v1.Session
+	(*ExecutionOptions)(nil),                 // 9: ferretd.execution.v1.ExecutionOptions
+	(*Output)(nil),                           // 10: ferretd.execution.v1.Output
+	(*Position)(nil),                         // 11: ferretd.execution.v1.Position
+	(*Range)(nil),                            // 12: ferretd.execution.v1.Range
+	(*RelatedInformation)(nil),               // 13: ferretd.execution.v1.RelatedInformation
+	(*Diagnostic)(nil),                       // 14: ferretd.execution.v1.Diagnostic
+	(*Failure)(nil),                          // 15: ferretd.execution.v1.Failure
+	(*Execution)(nil),                        // 16: ferretd.execution.v1.Execution
+	(*CompilationFailure)(nil),               // 17: ferretd.execution.v1.CompilationFailure
+	(*ResourceErrorDetail)(nil),              // 18: ferretd.execution.v1.ResourceErrorDetail
+	(*ExecutionCreated)(nil),                 // 19: ferretd.execution.v1.ExecutionCreated
+	(*ExecutionStarted)(nil),                 // 20: ferretd.execution.v1.ExecutionStarted
+	(*ExecutionCompleted)(nil),               // 21: ferretd.execution.v1.ExecutionCompleted
+	(*ExecutionFailed)(nil),                  // 22: ferretd.execution.v1.ExecutionFailed
+	(*ExecutionCancelled)(nil),               // 23: ferretd.execution.v1.ExecutionCancelled
+	(*WatchExecutionResponse)(nil),           // 24: ferretd.execution.v1.WatchExecutionResponse
+	(*CreateSessionRequest)(nil),             // 25: ferretd.execution.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),            // 26: ferretd.execution.v1.CreateSessionResponse
+	(*CancelSessionAcquisitionRequest)(nil),  // 27: ferretd.execution.v1.CancelSessionAcquisitionRequest
+	(*CancelSessionAcquisitionResponse)(nil), // 28: ferretd.execution.v1.CancelSessionAcquisitionResponse
+	(*GetSessionRequest)(nil),                // 29: ferretd.execution.v1.GetSessionRequest
+	(*GetSessionResponse)(nil),               // 30: ferretd.execution.v1.GetSessionResponse
+	(*CloseSessionRequest)(nil),              // 31: ferretd.execution.v1.CloseSessionRequest
+	(*CloseSessionResponse)(nil),             // 32: ferretd.execution.v1.CloseSessionResponse
+	(*CreateExecutionRequest)(nil),           // 33: ferretd.execution.v1.CreateExecutionRequest
+	(*CreateExecutionResponse)(nil),          // 34: ferretd.execution.v1.CreateExecutionResponse
+	(*RunExecutionRequest)(nil),              // 35: ferretd.execution.v1.RunExecutionRequest
+	(*RunExecutionResponse)(nil),             // 36: ferretd.execution.v1.RunExecutionResponse
+	(*GetExecutionRequest)(nil),              // 37: ferretd.execution.v1.GetExecutionRequest
+	(*GetExecutionResponse)(nil),             // 38: ferretd.execution.v1.GetExecutionResponse
+	(*CancelExecutionRequest)(nil),           // 39: ferretd.execution.v1.CancelExecutionRequest
+	(*CancelExecutionResponse)(nil),          // 40: ferretd.execution.v1.CancelExecutionResponse
+	(*CloseExecutionRequest)(nil),            // 41: ferretd.execution.v1.CloseExecutionRequest
+	(*CloseExecutionResponse)(nil),           // 42: ferretd.execution.v1.CloseExecutionResponse
+	(*WatchExecutionRequest)(nil),            // 43: ferretd.execution.v1.WatchExecutionRequest
+	(*v1.WorkspaceId)(nil),                   // 44: ferretd.workspace.v1.WorkspaceId
+	(*structpb.Struct)(nil),                  // 45: google.protobuf.Struct
 }
 var file_ferretd_execution_v1_execution_proto_depIdxs = []int32{
-	42, // 0: ferretd.execution.v1.SourceSnapshot.workspace_id:type_name -> ferretd.workspace.v1.WorkspaceId
+	44, // 0: ferretd.execution.v1.SourceSnapshot.workspace_id:type_name -> ferretd.workspace.v1.WorkspaceId
 	5,  // 1: ferretd.execution.v1.Session.id:type_name -> ferretd.execution.v1.SessionId
 	7,  // 2: ferretd.execution.v1.Session.source:type_name -> ferretd.execution.v1.SourceSnapshot
 	11, // 3: ferretd.execution.v1.Range.start:type_name -> ferretd.execution.v1.Position
@@ -2519,7 +2635,7 @@ var file_ferretd_execution_v1_execution_proto_depIdxs = []int32{
 	6,  // 11: ferretd.execution.v1.Execution.id:type_name -> ferretd.execution.v1.ExecutionId
 	5,  // 12: ferretd.execution.v1.Execution.session_id:type_name -> ferretd.execution.v1.SessionId
 	0,  // 13: ferretd.execution.v1.Execution.state:type_name -> ferretd.execution.v1.ExecutionState
-	43, // 14: ferretd.execution.v1.Execution.parameters:type_name -> google.protobuf.Struct
+	45, // 14: ferretd.execution.v1.Execution.parameters:type_name -> google.protobuf.Struct
 	9,  // 15: ferretd.execution.v1.Execution.options:type_name -> ferretd.execution.v1.ExecutionOptions
 	10, // 16: ferretd.execution.v1.Execution.output:type_name -> ferretd.execution.v1.Output
 	15, // 17: ferretd.execution.v1.Execution.failure:type_name -> ferretd.execution.v1.Failure
@@ -2538,46 +2654,49 @@ var file_ferretd_execution_v1_execution_proto_depIdxs = []int32{
 	21, // 30: ferretd.execution.v1.WatchExecutionResponse.completed:type_name -> ferretd.execution.v1.ExecutionCompleted
 	22, // 31: ferretd.execution.v1.WatchExecutionResponse.failed:type_name -> ferretd.execution.v1.ExecutionFailed
 	23, // 32: ferretd.execution.v1.WatchExecutionResponse.cancelled:type_name -> ferretd.execution.v1.ExecutionCancelled
-	42, // 33: ferretd.execution.v1.CreateSessionRequest.workspace_id:type_name -> ferretd.workspace.v1.WorkspaceId
+	44, // 33: ferretd.execution.v1.CreateSessionRequest.workspace_id:type_name -> ferretd.workspace.v1.WorkspaceId
 	8,  // 34: ferretd.execution.v1.CreateSessionResponse.session:type_name -> ferretd.execution.v1.Session
-	5,  // 35: ferretd.execution.v1.GetSessionRequest.id:type_name -> ferretd.execution.v1.SessionId
-	8,  // 36: ferretd.execution.v1.GetSessionResponse.session:type_name -> ferretd.execution.v1.Session
-	5,  // 37: ferretd.execution.v1.CloseSessionRequest.id:type_name -> ferretd.execution.v1.SessionId
-	5,  // 38: ferretd.execution.v1.CreateExecutionRequest.session_id:type_name -> ferretd.execution.v1.SessionId
-	43, // 39: ferretd.execution.v1.CreateExecutionRequest.parameters:type_name -> google.protobuf.Struct
-	9,  // 40: ferretd.execution.v1.CreateExecutionRequest.options:type_name -> ferretd.execution.v1.ExecutionOptions
-	16, // 41: ferretd.execution.v1.CreateExecutionResponse.execution:type_name -> ferretd.execution.v1.Execution
-	6,  // 42: ferretd.execution.v1.RunExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
-	16, // 43: ferretd.execution.v1.RunExecutionResponse.execution:type_name -> ferretd.execution.v1.Execution
-	6,  // 44: ferretd.execution.v1.GetExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
-	16, // 45: ferretd.execution.v1.GetExecutionResponse.execution:type_name -> ferretd.execution.v1.Execution
-	6,  // 46: ferretd.execution.v1.CancelExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
-	16, // 47: ferretd.execution.v1.CancelExecutionResponse.execution:type_name -> ferretd.execution.v1.Execution
-	6,  // 48: ferretd.execution.v1.CloseExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
-	6,  // 49: ferretd.execution.v1.WatchExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
-	25, // 50: ferretd.execution.v1.ExecutionService.CreateSession:input_type -> ferretd.execution.v1.CreateSessionRequest
-	27, // 51: ferretd.execution.v1.ExecutionService.GetSession:input_type -> ferretd.execution.v1.GetSessionRequest
-	29, // 52: ferretd.execution.v1.ExecutionService.CloseSession:input_type -> ferretd.execution.v1.CloseSessionRequest
-	31, // 53: ferretd.execution.v1.ExecutionService.CreateExecution:input_type -> ferretd.execution.v1.CreateExecutionRequest
-	33, // 54: ferretd.execution.v1.ExecutionService.RunExecution:input_type -> ferretd.execution.v1.RunExecutionRequest
-	35, // 55: ferretd.execution.v1.ExecutionService.GetExecution:input_type -> ferretd.execution.v1.GetExecutionRequest
-	37, // 56: ferretd.execution.v1.ExecutionService.CancelExecution:input_type -> ferretd.execution.v1.CancelExecutionRequest
-	39, // 57: ferretd.execution.v1.ExecutionService.CloseExecution:input_type -> ferretd.execution.v1.CloseExecutionRequest
-	41, // 58: ferretd.execution.v1.ExecutionService.WatchExecution:input_type -> ferretd.execution.v1.WatchExecutionRequest
-	26, // 59: ferretd.execution.v1.ExecutionService.CreateSession:output_type -> ferretd.execution.v1.CreateSessionResponse
-	28, // 60: ferretd.execution.v1.ExecutionService.GetSession:output_type -> ferretd.execution.v1.GetSessionResponse
-	30, // 61: ferretd.execution.v1.ExecutionService.CloseSession:output_type -> ferretd.execution.v1.CloseSessionResponse
-	32, // 62: ferretd.execution.v1.ExecutionService.CreateExecution:output_type -> ferretd.execution.v1.CreateExecutionResponse
-	34, // 63: ferretd.execution.v1.ExecutionService.RunExecution:output_type -> ferretd.execution.v1.RunExecutionResponse
-	36, // 64: ferretd.execution.v1.ExecutionService.GetExecution:output_type -> ferretd.execution.v1.GetExecutionResponse
-	38, // 65: ferretd.execution.v1.ExecutionService.CancelExecution:output_type -> ferretd.execution.v1.CancelExecutionResponse
-	40, // 66: ferretd.execution.v1.ExecutionService.CloseExecution:output_type -> ferretd.execution.v1.CloseExecutionResponse
-	24, // 67: ferretd.execution.v1.ExecutionService.WatchExecution:output_type -> ferretd.execution.v1.WatchExecutionResponse
-	59, // [59:68] is the sub-list for method output_type
-	50, // [50:59] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	44, // 35: ferretd.execution.v1.CancelSessionAcquisitionRequest.workspace_id:type_name -> ferretd.workspace.v1.WorkspaceId
+	5,  // 36: ferretd.execution.v1.GetSessionRequest.id:type_name -> ferretd.execution.v1.SessionId
+	8,  // 37: ferretd.execution.v1.GetSessionResponse.session:type_name -> ferretd.execution.v1.Session
+	5,  // 38: ferretd.execution.v1.CloseSessionRequest.id:type_name -> ferretd.execution.v1.SessionId
+	5,  // 39: ferretd.execution.v1.CreateExecutionRequest.session_id:type_name -> ferretd.execution.v1.SessionId
+	45, // 40: ferretd.execution.v1.CreateExecutionRequest.parameters:type_name -> google.protobuf.Struct
+	9,  // 41: ferretd.execution.v1.CreateExecutionRequest.options:type_name -> ferretd.execution.v1.ExecutionOptions
+	16, // 42: ferretd.execution.v1.CreateExecutionResponse.execution:type_name -> ferretd.execution.v1.Execution
+	6,  // 43: ferretd.execution.v1.RunExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
+	16, // 44: ferretd.execution.v1.RunExecutionResponse.execution:type_name -> ferretd.execution.v1.Execution
+	6,  // 45: ferretd.execution.v1.GetExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
+	16, // 46: ferretd.execution.v1.GetExecutionResponse.execution:type_name -> ferretd.execution.v1.Execution
+	6,  // 47: ferretd.execution.v1.CancelExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
+	16, // 48: ferretd.execution.v1.CancelExecutionResponse.execution:type_name -> ferretd.execution.v1.Execution
+	6,  // 49: ferretd.execution.v1.CloseExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
+	6,  // 50: ferretd.execution.v1.WatchExecutionRequest.id:type_name -> ferretd.execution.v1.ExecutionId
+	25, // 51: ferretd.execution.v1.ExecutionService.CreateSession:input_type -> ferretd.execution.v1.CreateSessionRequest
+	27, // 52: ferretd.execution.v1.ExecutionService.CancelSessionAcquisition:input_type -> ferretd.execution.v1.CancelSessionAcquisitionRequest
+	29, // 53: ferretd.execution.v1.ExecutionService.GetSession:input_type -> ferretd.execution.v1.GetSessionRequest
+	31, // 54: ferretd.execution.v1.ExecutionService.CloseSession:input_type -> ferretd.execution.v1.CloseSessionRequest
+	33, // 55: ferretd.execution.v1.ExecutionService.CreateExecution:input_type -> ferretd.execution.v1.CreateExecutionRequest
+	35, // 56: ferretd.execution.v1.ExecutionService.RunExecution:input_type -> ferretd.execution.v1.RunExecutionRequest
+	37, // 57: ferretd.execution.v1.ExecutionService.GetExecution:input_type -> ferretd.execution.v1.GetExecutionRequest
+	39, // 58: ferretd.execution.v1.ExecutionService.CancelExecution:input_type -> ferretd.execution.v1.CancelExecutionRequest
+	41, // 59: ferretd.execution.v1.ExecutionService.CloseExecution:input_type -> ferretd.execution.v1.CloseExecutionRequest
+	43, // 60: ferretd.execution.v1.ExecutionService.WatchExecution:input_type -> ferretd.execution.v1.WatchExecutionRequest
+	26, // 61: ferretd.execution.v1.ExecutionService.CreateSession:output_type -> ferretd.execution.v1.CreateSessionResponse
+	28, // 62: ferretd.execution.v1.ExecutionService.CancelSessionAcquisition:output_type -> ferretd.execution.v1.CancelSessionAcquisitionResponse
+	30, // 63: ferretd.execution.v1.ExecutionService.GetSession:output_type -> ferretd.execution.v1.GetSessionResponse
+	32, // 64: ferretd.execution.v1.ExecutionService.CloseSession:output_type -> ferretd.execution.v1.CloseSessionResponse
+	34, // 65: ferretd.execution.v1.ExecutionService.CreateExecution:output_type -> ferretd.execution.v1.CreateExecutionResponse
+	36, // 66: ferretd.execution.v1.ExecutionService.RunExecution:output_type -> ferretd.execution.v1.RunExecutionResponse
+	38, // 67: ferretd.execution.v1.ExecutionService.GetExecution:output_type -> ferretd.execution.v1.GetExecutionResponse
+	40, // 68: ferretd.execution.v1.ExecutionService.CancelExecution:output_type -> ferretd.execution.v1.CancelExecutionResponse
+	42, // 69: ferretd.execution.v1.ExecutionService.CloseExecution:output_type -> ferretd.execution.v1.CloseExecutionResponse
+	24, // 70: ferretd.execution.v1.ExecutionService.WatchExecution:output_type -> ferretd.execution.v1.WatchExecutionResponse
+	61, // [61:71] is the sub-list for method output_type
+	51, // [51:61] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_ferretd_execution_v1_execution_proto_init() }
@@ -2593,13 +2712,14 @@ func file_ferretd_execution_v1_execution_proto_init() {
 		(*WatchExecutionResponse_Failed)(nil),
 		(*WatchExecutionResponse_Cancelled)(nil),
 	}
+	file_ferretd_execution_v1_execution_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ferretd_execution_v1_execution_proto_rawDesc), len(file_ferretd_execution_v1_execution_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   37,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
