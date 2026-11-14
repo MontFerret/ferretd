@@ -7,7 +7,7 @@ require (
 	github.com/MontFerret/api v1.0.0-alpha.21
 	github.com/MontFerret/ferret/v2 v2.0.0-alpha.62
 	github.com/MontFerret/specs v1.12.0
-	github.com/MontFerret/wire v1.0.0-alpha.4.0.20261114023953-a8475178b533
+	github.com/MontFerret/wire v1.0.0-alpha.5
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/go-dap v0.12.0

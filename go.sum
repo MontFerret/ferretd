@@ -8,8 +8,8 @@ github.com/MontFerret/ferret/v2 v2.0.0-alpha.62 h1:tDkYxxlk4kvNOVlunAREy87f1+5Px
 github.com/MontFerret/ferret/v2 v2.0.0-alpha.62/go.mod h1:1GOEWQoTqOj2kCv7vUfepu5oNh4AtIG1lq3mvQsGLIs=
 github.com/MontFerret/specs v1.12.0 h1:1HaElGLN+tyZIsrb3WVdulxbW5W0LXEdOH0k6F1sFzk=
 github.com/MontFerret/specs v1.12.0/go.mod h1:ENGyEPFjrWVPWOUAsBMc1acUsqpswieTrAJfhcm576E=
-github.com/MontFerret/wire v1.0.0-alpha.4.0.20261114023953-a8475178b533 h1:SLAzLcrxE76krKiZvaZLkUQ31ta7G15OHzEWFR4nPsE=
-github.com/MontFerret/wire v1.0.0-alpha.4.0.20261114023953-a8475178b533/go.mod h1:jzCjXY3SEAC//WZasLJEo3hMAJJrANbnIAbdcn4hWdA=
+github.com/MontFerret/wire v1.0.0-alpha.5 h1:UsMrtQ2Le8uyz8n71H1ELv16uwGXwKGlMzsSP1RmvIk=
+github.com/MontFerret/wire v1.0.0-alpha.5/go.mod h1:jzCjXY3SEAC//WZasLJEo3hMAJJrANbnIAbdcn4hWdA=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
 github.com/antlr4-go/antlr/v4 v4.13.1/go.mod h1:GKmUxMtwp6ZgGwZSva4eWPC5mS6vUAmOABFgjdkM7Nw=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
