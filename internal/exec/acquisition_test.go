@@ -14,7 +14,11 @@ func TestAcquisitionCancelBeforeAndAfterPublication(t *testing.T) {
 	ws := f.workspace.ID()
 
 	ctx := t.Context()
-	if err := f.manager.CancelSessionAcquisition(ctx, ws, "early"); err != nil {
+	// An expired waiter cannot undo a fence once the cancellation is admitted.
+	waiter, stop := context.WithCancel(ctx)
+	stop()
+
+	if err := f.manager.CancelSessionAcquisition(waiter, ws, "early"); err != nil {
 		t.Fatal(err)
 	}
 

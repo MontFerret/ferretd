@@ -26,7 +26,7 @@ func (m *Manager) CancelSessionAcquisition(ctx context.Context, id workspace.ID,
 	if a == nil {
 		// Check membership under the registry lock so workspace teardown cannot
 		// remove the group between validation and installing this tombstone.
-		if _, err := m.workspaces.Get(ctx, id); err != nil {
+		if _, err := m.workspaces.Get(context.WithoutCancel(ctx), id); err != nil {
 			r.mu.Unlock()
 
 			return err
